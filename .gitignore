@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Packed bundles — never commit back into the repo
+*.tgz
+.npm-cache/
+
+# Build artifacts — generated from browser/ by `npm run build:client`
+client.js
+
+# Local preview / scratch
+.preview/
+.tmp-*
+.tmp/
+.verify*
+*.log
+npm-debug.log*
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local runtime home (if anyone points DSH_HOME inside the repo)
+.soulmate-home/
+
+# Tests stay local — not part of the public GitHub tree
+test/

@@ -1,0 +1,61 @@
+{
+  "name": "dsh-plugin-whale-soulmate",
+  "version": "0.2.70",
+  "description": "Modular, pluggable AI companion (Soulmate) for DeepSeek Harness: persona + LLM Wiki memory + five-layer privacy firewall + 3D home + desktop pet + AIGC cloud sync.",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "packages/",
+    "assets/",
+    "README.md",
+    "LICENSE",
+    "NOTICE.md",
+    "docs/DESIGN.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build:client": "node browser/build.mjs",
+    "pretest": "node browser/build.mjs",
+    "test": "node --test test/*.test.mjs",
+    "prepack": "node browser/build.mjs",
+    "preview": "node server-mock/preview-server.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JasperGuWP/dsh-plugin-whale-soulmate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/issues"
+  },
+  "homepage": "https://github.com/JasperGuWP/dsh-plugin-whale-soulmate#readme",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "soulmate",
+    "memory",
+    "3d-home",
+    "desktop-pet"
+  ],
+  "author": "JasperGuWP",
+  "license": "MIT",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

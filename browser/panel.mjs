@@ -1,0 +1,600 @@
+// Sidebar row + the tabbed persona workshop page (slot `main`).
+const React = require('react')
+const h = React.createElement
+const { api, clampNum, PRESET_FALLBACK, API } = require('./util.mjs')
+const { drawNeurons, neuronViews, DEFAULT_VIEW } = require('./neuron/index.mjs')
+const { drawAvatar } = require('./avatar.mjs')
+const { uploadSpriteFile, deleteSprite } = require('./sprite.mjs')
+const { engHead, statusCard, schedulingCard, personaCard } = require('./panel-cards.mjs')
+const { usageCard } = require('./panel-usage.mjs')
+const { diaryCard } = require('./panel-diary.mjs')
+const { trustCard } = require('./panel-trust.mjs')
+const {
+  identityCard,
+  gateCard: gateCardEl,
+  traitsCard,
+  spriteCard,
+  petCard,
+  rhythmCard: rhythmCardEl,
+} = require('./panel-forms.mjs')
+const {
+  TRAIT_LABELS,
+  DEFAULT_SPRITE_URL,
+  draftFromSummary,
+  draftSignature,
+} = require('./panel-draft.mjs')
+const { setMbtiTypeOnDraft, setMbtiAxisOnDraft, persistTraitSchemeSwitch, buildPersonaEvolvePayload, traitsCardInputs, useTraitsStatePoll } = require('./panel-mbti.mjs')
+const { llmBudgetSection } = require('./panel-llm-budget.mjs')
+const { biliAuthCard } = require('./panel-bili.mjs')
+
+    // Sidebar panel — 「小鱼」persona workshop (slot `main` + panellist row).
+    const PANEL_ID = 'soulmate'
+    const PANEL_ORDER = 5
+    // Host panellist `label` is registration metadata — updated after a successful save via
+    // `onSidebarLabelChange` (wired from apply). Draft typing must NOT flicker the sidebar.
+    let onSidebarLabelChange = null
+    const sidebarLabelOf = (name) => {
+      const trimmed = typeof name === 'string' ? name.trim() : ''
+      return trimmed || 'soulmate'
+    }
+
+/** The sidebar glyph: a tiny whale in `currentColor`, so it follows the host theme. */
+    function SoulmatePanelIcon(props) {
+      const size = Number(props && props.size) || 18
+      return h('svg', {
+        width: size,
+        height: size,
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.5,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+      }, [
+        h('path', {
+          key: 'body',
+          d: 'M3.6 12.3c0-3.6 3.5-6.5 8.1-6.5 3.7 0 6.8 2 7.7 4.7l2.1-.8c.5-.2.95.4.7.85l-1.6 2.5c-.15.25-.45.35-.72.25l-1.4-.5c-.9 2.5-3.6 4.2-6.8 4.2-4.5 0-8.1-2.1-8.1-4.7Z',
+        }),
+        h('circle', { key: 'eye', cx: 8.6, cy: 11.1, r: 1.05, fill: 'currentColor', stroke: 'none' }),
+        h('path', { key: 'spout', d: 'M11.6 5.9c-.3-1.1.3-2 1.3-2.4' }),
+      ])
+    }
+
+    /** Project `/api/state` onto the editable draft the page binds to. */
+    /** Live cycling preview of the bundled sprite pack (settings → identity tab). */
+    function PetPreview(props) {
+      const [url, setUrl] = React.useState('')
+      // The preview must show the pack the widget will actually play, so it follows the
+      // draft's skin instead of always fetching the server default.
+      const skin = props.skin || 'winterboy-chibi'
+      React.useEffect(() => {
+        let alive = true
+        let timer = 0
+        let idx = -1
+        let frames = []
+        setUrl('')
+        api('pet/manifest?skin=' + encodeURIComponent(skin)).then((m) => {
+          if (!alive || !m || m.ok === false) return
+          frames = Object.keys(m.frameUrls || {}).sort().map((id) => m.frameUrls[id])
+          if (!frames.length) return
+          idx = 0
+          setUrl(frames[0])
+          timer = setInterval(() => { idx = (idx + 1) % frames.length; setUrl(frames[idx]) }, 850)
+        })
+        return () => { alive = false; clearInterval(timer) }
+      }, [skin])
+      return h('img', { className: 'sm-sprite-preview', src: url || props.fallback || '', alt: '桌面宠物预览' })
+    }
+
+    /** The settings page: identity / traits / memory, split into tabs. */
+    function SoulmatePanelPage() {
+      const [snap, setSnap] = React.useState(null)
+      const [engine, setEngine] = React.useState(null)
+      const [draft, setDraft] = React.useState(null)
+      const [error, setError] = React.useState('')
+      const [busy, setBusy] = React.useState(false)
+      const [note, setNote] = React.useState('')
+      const [tab, setTab] = React.useState('status')
+      const [graph, setGraph] = React.useState(null)
+      const canvasRef = React.useRef(null)
+      const neuronRef = React.useRef(null)
+      const draftRef = React.useRef(null)
+      const graphRef = React.useRef(null)
+      const moodRef = React.useRef('neutral')
+      // Must live with the other hooks — never after the empty-draft early return, or
+      // React crashes on the first successful load and the settings page goes blank.
+      const fileInputRef = React.useRef(null)
+      const [spriteNote, setSpriteNote] = React.useState('')
+      const [proStatus, setProStatus] = React.useState(null)
+      const savedSigRef = React.useRef('')
+      const savingRef = React.useRef(false)
+      // Token tab state: the snapshot comes from GET /api/usage, the knobs are edited locally.
+      const [usage, setUsage] = React.useState(null)
+      const [usageDraft, setUsageDraft] = React.useState(null)
+      const [usageBusy, setUsageBusy] = React.useState(false)
+      const [usageNote, setUsageNote] = React.useState('')
+      const [shelf, setShelf] = React.useState(null)
+      const [diaryBook, setDiaryBook] = React.useState('toYou')
+      const [diaryId, setDiaryId] = React.useState(null)
+      const [quizBusy, setQuizBusy] = React.useState(false)
+      const [quizMsg, setQuizMsg] = React.useState('')
+      const [quizMsgKind, setQuizMsgKind] = React.useState('')
+      const draftSig = draftSignature
+
+      const load = React.useCallback(async () => {
+        const [data, eng] = await Promise.all([api('state'), api('engine')])
+        if (!data || data.ok === false) {
+          setError((data && data.error) || '读取不到伙伴状态')
+          return
+        }
+        setSnap(data)
+        if (eng && eng.ok !== false) setEngine(eng)
+        setError('')
+        moodRef.current = (data.state && data.state.mood) || 'neutral'
+        setDraft((prev) => {
+          const next = draftFromSummary(data)
+          if (!prev) { savedSigRef.current = draftSig(next); return next }
+          if (draftSig(prev) !== savedSigRef.current) return prev
+          savedSigRef.current = draftSig(next)
+          return next
+        })
+      }, [])
+
+      React.useEffect(() => { load() }, [load])
+      useTraitsStatePoll(React, tab, load)
+      React.useEffect(() => {
+        if (tab !== 'neurons') return undefined
+        let alive = true
+        const fetchGraph = () => { api('neural-graph').then((g) => { if (alive && g && g.ok !== false) setGraph(g) }) }
+        fetchGraph()
+        const timer = setInterval(fetchGraph, 15000)
+        return () => { alive = false; clearInterval(timer) }
+      }, [tab])
+      React.useEffect(() => {
+        if (tab !== 'rhythm') return undefined
+        let alive = true
+        const fetchStatus = () => { api('proactive/status').then((s) => { if (alive && s && s.ok !== false) setProStatus(s) }) }
+        fetchStatus()
+        const timer = setInterval(fetchStatus, 15000)
+        return () => { alive = false; clearInterval(timer) }
+      }, [tab])
+      React.useEffect(() => {
+        const timer = setInterval(() => {
+          api('engine').then((eng) => { if (eng && eng.ok !== false) setEngine(eng) })
+        }, 5000)
+        return () => clearInterval(timer)
+      }, [])
+      draftRef.current = draft
+      graphRef.current = graph
+
+      React.useEffect(() => {
+        let raf = 0
+        const tick = (time) => {
+          const current = draftRef.current
+          if (canvasRef.current && current && !(current.appearance && current.appearance.customSpriteUrl)) {
+            drawAvatar(canvasRef.current, current.appearance, moodRef.current, time)
+          }
+          if (neuronRef.current) {
+            drawNeurons(neuronRef.current, graphRef.current, time)
+          }
+          raf = requestAnimationFrame(tick)
+        }
+        raf = requestAnimationFrame(tick)
+        return () => cancelAnimationFrame(raf)
+      }, [])
+
+      React.useEffect(() => {
+        if (!note) return undefined
+        const timer = setTimeout(() => setNote(''), 3600)
+        return () => clearTimeout(timer)
+      }, [note])
+
+      const patchPersona = (patch) => setDraft((d) => (d ? Object.assign({}, d, patch) : d))
+      const patchAppearance = (patch) => setDraft((d) => (d ? Object.assign({}, d, { appearance: Object.assign({}, d.appearance, patch) }) : d))
+      const patchPet = (patch) => setDraft((d) => (d ? Object.assign({}, d, { pet: Object.assign({}, d.pet, patch) }) : d))
+      const patchNotify = (patch) => setDraft((d) => (d ? Object.assign({}, d, { notify: Object.assign({}, d.notify, patch) }) : d))
+      const patchExtensions = (patch) => setDraft((d) => (d ? Object.assign({}, d, { extensions: Object.assign({}, d.extensions, patch) }) : d))
+      const patchProactive = (patch) => setDraft((d) => (d ? Object.assign({}, d, { proactive: Object.assign({}, d.proactive, patch) }) : d))
+      const setTrait = (key, value) => setDraft((d) => {
+        if (!d) return d
+        const traits = Object.assign({}, d.traits)
+        traits[key] = value
+        return Object.assign({}, d, { traits })
+      })
+      const setTraitScheme = (next) => persistTraitSchemeSwitch(next, {
+        draftRef, setDraft, setBusy, setNote, setSnap, draftSig, savedSigRef,
+      })
+      const setMbtiType = (type) => setDraft((d) => setMbtiTypeOnDraft(d, type))
+      const setMbtiAxis = (axis, value) => setDraft((d) => setMbtiAxisOnDraft(d, axis, value))
+      const choosePreset = (preset) => setDraft((d) => {
+        if (!d) return d
+        // 旧预设默认（或空）的自称/称呼跟新预设走；用户自定义值保留。
+        const oldP = presets.find((p) => p.id === d.preset)
+        const keepCall = d.callUser.trim() && !(oldP && d.callUser.trim() === oldP.defaultCallUser)
+        const keepSelf = d.selfRef.trim() && !(oldP && d.selfRef.trim() === oldP.defaultSelfRef)
+        return Object.assign({}, d, {
+          preset: preset.id,
+          callUser: keepCall ? d.callUser : (preset.defaultCallUser || d.callUser),
+          selfRef: keepSelf ? d.selfRef : (preset.defaultSelfRef || d.selfRef),
+          traits: Object.assign({}, d.traits, preset.traits || {}),
+        })
+      })
+
+      // Autosave: keep the draft on screen (no flash-reload), debounce edits, and
+      // re-queue if the user kept typing while a save was in flight.
+      async function save() {
+        const current = draftRef.current
+        if (!current || savingRef.current) return
+        const sig = draftSig(current)
+        if (sig === savedSigRef.current) return
+        savingRef.current = true
+        setBusy(true)
+        setNote('保存中…')
+        const persona = await api('persona-evolve', buildPersonaEvolvePayload(current))
+        let failure = persona && persona.ok === false ? (persona.error || '未知错误') : ''
+        let savedName = current.name.trim()
+        if (!failure) {
+          const appearance = await api('persona-evolve', {
+            mode: 'appearance',
+            appearance: {
+              formPreset: current.appearance.formPreset,
+              primaryColor: current.appearance.primaryColor,
+              accentColor: current.appearance.accentColor,
+              auraColor: current.appearance.auraColor,
+              scale: Number(current.appearance.scale),
+              accessories: current.appearance.accessories,
+              customSpriteUrl: current.appearance.customSpriteUrl,
+            },
+          })
+          if (appearance && appearance.ok === false) failure = appearance.error || '未知错误'
+          if (appearance && appearance.displayName) savedName = appearance.displayName
+          else if (persona && persona.displayName) savedName = persona.displayName
+          // Sprite layer lives outside `appearance` so the static PNG card and the
+          // desktop-pet switch never overwrite each other.
+          const petSave = await api('config', { pet: current.pet })
+          if (petSave && petSave.ok === false) failure = petSave.error || '未知错误'
+          if (current.notify) {
+            const notifySave = await api('config', { notify: { enabled: current.notify.enabled !== false } })
+            if (notifySave && notifySave.ok === false) failure = notifySave.error || '未知错误'
+          }
+          if (current.extensions) {
+            const extSave = await api('config', {
+              extensions: {
+                biliAutoSurfEnabled: !!current.extensions.biliAutoSurfEnabled,
+                biliAutoSurfEveryHours: Number(current.extensions.biliAutoSurfEveryHours) || 6,
+                biliAutoSurfMaxPick: Number(current.extensions.biliAutoSurfMaxPick) || 2,
+                biliAutoSurfDeepWatch: !!current.extensions.biliAutoSurfDeepWatch,
+                biliKeywords: (current.extensions.biliKeywords || []).map((k) => String(k).trim()).filter(Boolean),
+              },
+            })
+            if (extSave && extSave.ok === false) failure = extSave.error || '未知错误'
+          }
+          // Proactive scheduler knobs. These are executed by the node half every tick, so
+          // the switch the user flips here is the one that actually gates her voice.
+          if (current.proactive) {
+            const proSave = await api('config', {
+              proactive: {
+                enabled: current.proactive.enabled !== false,
+                dailyDiary: current.proactive.dailyDiary !== false,
+                dreamReflect: current.proactive.dreamReflect !== false,
+                preferOffPeak: current.proactive.preferOffPeak !== false,
+                maxPerDay: Number(current.proactive.maxPerDay),
+                dreamLlmEnabled: !!current.proactive.dreamLlmEnabled,
+                dreamLlmDailyCap: Number(current.proactive.dreamLlmDailyCap) || 0,
+                dreamLlmModel: String(current.proactive.dreamLlmModel || ''),
+                distillLlmEnabled: !!current.proactive.distillLlmEnabled,
+                distillLlmDailyCap: Number(current.proactive.distillLlmDailyCap) || 0,
+                distillLlmModel: String(current.proactive.distillLlmModel || ''),
+              },
+            })
+            if (proSave && proSave.ok === false) failure = proSave.error || '未知错误'
+          }
+          if (current.chatHome) {
+            const homeSave = await api('config', {
+              chatHome: {
+                autoMemory: current.chatHome.autoMemory !== false,
+                bootGreeting: current.chatHome.bootGreeting !== false,
+                handoffSeed: current.chatHome.handoffSeed !== false,
+                rotateOnPersonaChange: current.chatHome.rotateOnPersonaChange !== false,
+                maxTurns: Number(current.chatHome.maxTurns) || 100,
+                maxEstTokens: Number(current.chatHome.maxEstTokens) || 72000,
+              },
+            })
+            if (homeSave && homeSave.ok === false) failure = homeSave.error || '未知错误'
+          }
+        }
+        savingRef.current = false
+        setBusy(false)
+        if (failure) {
+          setNote('没保存成功：' + failure)
+          return
+        }
+        savedSigRef.current = sig
+        setNote('已自动保存')
+        if (typeof onSidebarLabelChange === 'function') onSidebarLabelChange(sidebarLabelOf(savedName))
+        api('state').then((data) => { if (data && data.ok !== false) setSnap(data) })
+        api('engine').then((eng) => { if (eng && eng.ok !== false) setEngine(eng) })
+        if (draftSig(draftRef.current) !== savedSigRef.current) {
+          setTimeout(() => { save() }, 120)
+        }
+      }
+
+      React.useEffect(() => {
+        if (!draft) return undefined
+        if (draftSig(draft) === savedSigRef.current) return undefined
+        const timer = setTimeout(() => { save() }, 700)
+        return () => clearTimeout(timer)
+      }, [draft])
+
+      const field = (key, label, control) => h('label', { key, className: 'sm-panel-field' }, [
+        h('span', { key: 'label' }, label),
+        control,
+      ])
+      // Token 统计: fetch once when the tab opens, and after every save.
+      // Declared up here, before the `if (!draft)` early return, on purpose: React requires
+      // hooks to run in the same order on every render. A `useCallback` below the early
+      // return meant that the very first paint (draft still null) registered one hook fewer
+      // than the next one, which desynchronises the hook list and blanks the whole settings
+      // page. Both setters are stable, so keeping the callback above costs nothing.
+      const loadUsage = React.useCallback(async () => {
+        const res = await api('usage')
+        if (res && res.ok !== false) {
+          setUsage(res)
+          setUsageDraft({
+            dailyAutoTokenCap: res.config ? res.config.dailyAutoTokenCap : 200000,
+            onCapReached: (res.config && res.config.onCapReached) || 'block',
+          })
+        }
+      }, [])
+
+      React.useEffect(() => {
+        if ((tab === 'usage' || tab === 'rhythm') && !usage) loadUsage()
+      }, [tab, usage, loadUsage])
+
+      React.useEffect(() => {
+        if (tab !== 'diary') return undefined
+        let alive = true
+        const loadShelf = () => {
+          api('bookshelf').then((res) => {
+            if (!alive || !res || res.ok === false) return
+            setShelf(res)
+          })
+        }
+        loadShelf()
+        const timer = setInterval(loadShelf, 20000)
+        return () => { alive = false; clearInterval(timer) }
+      }, [tab])
+
+      if (!draft) {
+        return h('div', { className: 'sm-panel' }, h('div', { className: 'sm-panel-wrap' }, h('div', { key: 'state', className: 'sm-panel-card' }, [
+          h('h3', { key: 'h', className: 'sm-panel-h3' }, error ? '连不上小伙伴' : '正在读取……'),
+          error ? h('p', { key: 'p', className: 'sm-panel-muted' }, error) : null,
+          error ? h('button', { key: 'retry', type: 'button', className: 'sm-panel-btn', onClick: load }, '重试') : null,
+        ])))
+      }
+
+      const stage = (snap && snap.bondStage) || {}
+      const state = (snap && snap.state) || {}
+      const presets = (snap && snap.presets && snap.presets.length ? snap.presets : PRESET_FALLBACK)
+      const effective = (engine && engine.persona && engine.persona.effectiveTraits) || (snap && snap.effectiveTraits) || {}
+      const st = (engine && engine.status) || {}
+      const rel = st.relationship || {}
+      const mem = st.memory || {}
+      const time = st.time || {}
+      const budget = st.contextBudget || {}
+      const strategy = (engine && engine.scheduling && engine.scheduling.strategy) || {}
+      const inv = (engine && engine.persona && engine.persona.invariants) || { values: [], boundaries: [] }
+      const changelog = (engine && engine.persona && engine.persona.changelog) || []
+      const pending = (engine && engine.persona && engine.persona.candidatesPending) || 0
+      const spriteUrl = draft.appearance.customSpriteUrl && String(draft.appearance.customSpriteUrl).trim()
+      const selfText = (engine && engine.persona && engine.persona.selfSummary) || ''
+      const hasSelf = Boolean(selfText) && !selfText.includes('尚未填写')
+
+      const head = h('div', { key: 'head', className: 'sm-panel-head' }, [
+        spriteUrl
+          ? h('img', { key: 'sprite', className: 'sm-sprite', src: spriteUrl, alt: '精灵贴图' })
+          : h('canvas', { key: 'avatar', ref: canvasRef, className: 'sm-panel-avatar', width: 176, height: 176 }),
+        h('div', { key: 'meta', className: 'sm-panel-id' }, [
+          h('h2', { key: 'title', className: 'sm-panel-title' }, (snap && snap.displayName ? snap.displayName : 'soulmate') + ' 的设置'),
+          h('div', { key: 'readout', className: 'sm-id-readout' }, [
+            h('span', { key: 'lv' }, ['等级', h('b', null, String(stage.level || 1))]),
+            h('span', { key: 'stage' }, ['阶段', h('b', null, stage.title || '初遇室友')]),
+            h('span', { key: 'aff' }, ['亲密度', h('b', null, String(Number(state.affinity) || 0))]),
+            h('span', { key: 'mood' }, ['心情', h('b', null, ({
+              happy: '开心', content: '满足', calm: '平静', sleepy: '困倦', hungry: '饿了',
+              sad: '有点失落', excited: '兴奋', grumpy: '别扭', neutral: '平常',
+            })[state.mood] || state.mood || '平常')]),
+          ]),
+          h('p', { key: 'hint', className: 'sm-panel-muted' }, '改完会自动保存，侧栏名字也会跟着变。'),
+        ]),
+      ])
+
+      // The three passive cards live in panel-cards.mjs; this page only hands them the
+      // slices it already derived from the engine snapshot.
+      const statusCardEl = statusCard({ rel, st, state, stage, mem, time, budget, pending })
+      const schedulingCardEl = schedulingCard(strategy)
+      const personaCardEl = personaCard({ inv, changelog, selfText, hasSelf })
+
+      const activePreset = presets.find((p) => p.id === draft.preset) || presets[0] || null
+      // Gender switch confirms then hits persona-evolve directly (blank fallback + appearance on node).
+      async function switchGender(nextGender, preset) {
+        if (nextGender !== 'male' && nextGender !== 'female') return
+        if (draft.gender === nextGender && !(preset && preset.id && preset.id !== draft.preset)) {
+          if (preset) choosePreset(preset)
+          return
+        }
+        const label = preset && (preset.name || preset.id)
+        const msg = label
+          ? '切换到该性别并选用「' + label + '」？性格目录与默认形象会跟着变（自定义立绘保留）。'
+          : '切换伙伴性别？性格目录与默认形象会跟着变（自定义立绘保留）。'
+        if (typeof window !== 'undefined' && window.confirm && !window.confirm(msg)) return
+        setBusy(true)
+        setNote('切换性别…')
+        const payload = { mode: 'user_customize', gender: nextGender }
+        if (preset && preset.id) payload.preset = preset.id
+        const res = await api('persona-evolve', payload)
+        if (res && res.ok === false) {
+          setNote('切换失败：' + (res.error || '未知错误'))
+          setBusy(false)
+          return
+        }
+        const data = await api('state')
+        if (data && data.ok !== false) {
+          setSnap(data)
+          const next = draftFromSummary(data)
+          savedSigRef.current = draftSig(next)
+          setDraft(next)
+        }
+        const eng = await api('engine')
+        if (eng && eng.ok !== false) setEngine(eng)
+        setNote('已切换性别')
+        setBusy(false)
+      }
+      // The editable forms live in panel-forms.mjs; the page only supplies state + callbacks.
+      const identity = identityCard({ draft, presets, activePreset, patchPersona, choosePreset, switchGender })
+      const gateBudget = (engine && engine.persona && engine.persona.weeklyBudget) || null
+      const gateCard = gateCardEl({
+        gateBudget, pending, traitScheme: draft.traitScheme,
+        gender: draft.gender === 'male' || draft.gender === 'female' ? draft.gender : null,
+      })
+      const traits = traitsCard(traitsCardInputs({
+        draft, effective, setTrait, setTraitScheme, setMbtiType, setMbtiAxis,
+        quizBusy, setQuizBusy, quizMsg, setQuizMsg, quizMsgKind, setQuizMsgKind, snap,
+      }))
+
+      // Companion art: the byte-level work (trim padding, POST the PNG) lives in
+      // sprite.mjs; this wrapper only owns the note the panel shows while it runs.
+      async function uploadSprite(file) {
+        if (!file) return
+        setSpriteNote('上传中…')
+        try {
+          const { url, bytes } = await uploadSpriteFile(file)
+          patchAppearance({ customSpriteUrl: url })
+          setSpriteNote('已上传 ' + Math.round(bytes / 1024) + 'KB · 即将自动保存')
+        } catch (err) {
+          setSpriteNote('上传失败：' + (err && err.message ? err.message : String(err)))
+        }
+      }
+      async function restoreDefaultSprite() {
+        setSpriteNote('恢复默认…')
+        try {
+          const url = await deleteSprite()
+          patchAppearance({ customSpriteUrl: url || DEFAULT_SPRITE_URL })
+          setSpriteNote('已恢复默认 · 小鲸.png')
+        } catch (err) {
+          setSpriteNote('恢复失败：' + (err && err.message ? err.message : String(err)))
+        }
+      }
+
+      const spriteCardEl = spriteCard({ draft, spriteNote, fileInputRef, uploadSprite, restoreDefaultSprite })
+      // Dynamic layer card: sits under the static PNG card, never replaces it.
+      const petDraft = draft.pet || { enabled: false, sizePx: 148, sleepAfterIdleSec: 300, skin: 'winterboy-chibi' }
+      const petCardEl = petCard({ draft, petDraft, patchPet, PetPreview })
+
+      // Proactive scheduler draft: the rhythm tab binds to this mirror of config.
+      const proDraft = draft.proactive || {
+        enabled: true, dailyDiary: true, dreamReflect: true, preferOffPeak: true, maxPerDay: 3, quietHours: [],
+      }
+      const homeDraft = draft.chatHome || {
+        autoMemory: true, bootGreeting: true, handoffSeed: true, maxTurns: 100, maxEstTokens: 72000, titlePrefix: '',
+      }
+      const patchChatHome = (patch) => setDraft((d) => (d ? Object.assign({}, d, { chatHome: Object.assign({}, d.chatHome, patch) }) : d))
+      const homeLive = proStatus && proStatus.chatHome
+      const homeCfg = (homeLive && homeLive.chatHome) || homeDraft
+      // Must pass biliAuthCard as component to h(), never call it as a function (hooks after early return).
+      const rhythmCard = rhythmCardEl({
+        draft, proDraft, homeDraft, patchProactive, patchChatHome, patchNotify, patchExtensions,
+        proStatus, homeCfg, homeFull: homeLive && homeLive.fullness,
+        homeMeasure: homeLive && homeLive.measure, snap, usage,
+        llmBudgetSection, biliAuthCard,
+      })
+
+      const neuronCard = h('div', { key: 'neurons', className: 'sm-eng-card' }, [
+        engHead('05', '记忆星图', '点与连线', ''),
+        h('div', { key: 'lead', className: 'sm-neuron-lead' }, [
+          h('span', { key: 'k' }, '记忆点'),
+          h('b', { key: 'v' }, String((mem.facts || 0) + (mem.wiki || 0))),
+          h('span', { key: 'k2' }, '日记'),
+          h('b', { key: 'v2' }, String((mem.episodes || 0))),
+        ]),
+        h('canvas', {
+          key: 'canvas', ref: neuronRef, className: 'sm-neuron-canvas',
+          width: 720, height: 360,
+        }),
+        h('p', { key: 'note', className: 'sm-eng-note' }, '拖动旋转，滚轮缩放；单击查看，双击飞近，双击空白回到全景。'),
+      ])
+
+      const tabs = [
+        { id: 'status', label: '状态总览' },
+        { id: 'personality', label: '性格观察与设置' },
+        { id: 'neurons', label: '记忆神经网络' },
+        { id: 'identity', label: '称呼与形象' },
+        { id: 'rhythm', label: '作息与主动' },
+        { id: 'usage', label: '用量统计' },
+        { id: 'diary', label: '日记' },
+      ]
+      const tabBar = h('div', { key: 'tabs', className: 'sm-tabs', role: 'tablist' }, tabs.map((item) => h('button', {
+        key: item.id,
+        type: 'button',
+        role: 'tab',
+        'aria-selected': tab === item.id ? 'true' : 'false',
+        className: 'sm-tab' + (tab === item.id ? ' on' : ''),
+        onClick: () => setTab(item.id),
+      }, item.label)))
+
+      async function trustAct(path, body) {
+        setBusy(true)
+        setNote('处理中…')
+        const res = await api(path, body)
+        setBusy(false)
+        setNote(res && res.ok ? '好，记下了。' : (res && res.error) || '没改成')
+        const eng = await api('engine')
+        if (eng && eng.ok !== false) setEngine(eng)
+      }
+
+      async function saveUsage() {
+        if (usageBusy) return
+        setUsageBusy(true)
+        setUsageNote('保存中…')
+        const res = await api('usage', usageDraft || {})
+        setUsageBusy(false)
+        if (res && res.ok) {
+          setUsageNote('已保存')
+          await loadUsage()
+        } else {
+          setUsageNote((res && res.error) || '没保存成功')
+        }
+      }
+
+      const panels = {
+        status: [statusCardEl, schedulingCardEl, trustCard({
+          trust: (engine && engine.trust) || { promises: [], conflicts: [] },
+          presence: (engine && engine.presence) || { text: '' },
+          trustAct,
+        })],
+        personality: [personaCardEl, traits, gateCard],
+        neurons: [neuronCard],
+        identity: [identity, spriteCardEl, petCardEl],
+        rhythm: [rhythmCard],
+        usage: [usageCard({ usage, draft: usageDraft, busy: usageBusy, note: usageNote, h, onDraft: (patch) => setUsageDraft((prev) => ({ ...(prev || {}), ...patch })), onSave: saveUsage })],
+        diary: [diaryCard({
+          shelf,
+          book: diaryBook,
+          selectedId: diaryId,
+          onBook: (next) => { setDiaryBook(next); setDiaryId(null) },
+          onSelect: setDiaryId,
+          gender: draft.gender === 'male' || draft.gender === 'female' ? draft.gender : null,
+          h,
+        })],
+      }
+
+      return h('div', { className: 'sm-panel' }, h('div', { className: 'sm-panel-wrap' }, [
+        head, tabBar, ...(panels[tab] || panels.status),
+      ]))
+    }
+
+function setLabelChangeHook(fn) { onSidebarLabelChange = typeof fn === 'function' ? fn : null }
+function notifyLabelChange(name) { if (onSidebarLabelChange) onSidebarLabelChange(name) }
+
+module.exports = { PANEL_ID, PANEL_ORDER, sidebarLabelOf, setLabelChangeHook, notifyLabelChange, SoulmatePanelIcon, SoulmatePanelPage, draftFromSummary }

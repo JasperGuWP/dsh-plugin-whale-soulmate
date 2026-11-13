@@ -1,0 +1,11 @@
+# dsh-plugin-whale-soulmate bundle patch.
+#
+# One row mounts BOTH faces of this dual-face package:
+#   - the node half (index.js) registers the Soulmate service, tools and routes;
+#   - the browser half (client.js, via the package.json `dsh.client` declaration)
+#     renders the companion widget and the 3D home in the Web Chat.
+- insert:
+    - id: soulmate
+      name: dsh-plugin-whale-soulmate
+      config:
+        enabled: true

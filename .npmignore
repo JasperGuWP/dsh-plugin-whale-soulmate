@@ -1,0 +1,18 @@
+# Never ship a previously packed bundle inside the next bundle.
+*.tgz
+npm-debug.log*
+.npm-cache/
+
+# Dev-only harness & tests
+.preview/
+server-mock/
+test/
+browser/
+docs/
+docs/specs/
+docs/plans/
+
+# Scratch / verify artifacts
+.tmp-*
+.verify*
+*.log
