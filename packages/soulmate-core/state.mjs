@@ -136,10 +136,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   },
   pet: {
     // Desktop-pet sprite layer (assets/pet/): 13 transparent frames + pet.json state machine.
-    // Off by default — the corner companion keeps showing the static sticker until the user
-    // opts in from 设置 → 称呼与形象 → 动态形象. Static PNG and sprite layer never overwrite
-    // each other; see client.js pet engine and packages/soulmate-home/pet-machine.mjs.
-    enabled: false,
+    // On by default — corner companion uses the animated sprite; user can still turn it off
+    // in 设置 → 称呼与形象 → 动态形象. Static PNG and sprite layer never overwrite each other.
+    enabled: true,
     sizePx: 180,
     sleepAfterIdleSec: 300,
     // Fallback only: how long she keeps thinking when the host has no whenIdle.
