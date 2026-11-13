@@ -5,11 +5,13 @@
 
 > **中文** · [English](#english)
 
-面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的**模块化、可插拔 AI 小伙伴（Soulmate）**：
+嗨～这里住着一只给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）用的**模块化、可插拔 AI 小伙伴（Soulmate）** 🐋
 
 人设 × 情绪 × 关系养成 × **LLM Wiki 记忆** × **五道隐私防线** × **透明视频桌宠** × 可选 AIGC 云同步。
 
-同时也是你的**办公 / 编程副驾**——不会因为陪伴而少用任何 DSH 能力。
+她也会当你的**办公 / 编程副驾**——陪你聊天的同时，DSH 本事一个都不少。
+
+> ✨ **会一直养着、一直变可爱：** 这个仓库还在持续更新与打磨——修小毛刺、加新表情、把记忆和陪伴做得更懂你。欢迎 star / issue / PR，一起把小伙伴养得更好～
 
 形态：**Bundle 组合包**（npm 包，`dsh.bundle.patch`），双半侧 —— node（`index.js`）+ browser（`client.js`）。
 
@@ -100,11 +102,13 @@ NOTICE.md                # 版权与致谢
 
 ## English
 
-A **modular, pluggable AI companion (Soulmate)** for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness):
+Hi — a **modular, pluggable AI companion (Soulmate)** for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 🐋
 
 persona × mood × relationship · **LLM Wiki memory** · **five privacy layers** · **transparent video desktop pet** · optional AIGC cloud sync.
 
-Also your **coding / office co-pilot** — companionship never strips host tools.
+Also your **coding / office co-pilot** — cuddles never strip host tools.
+
+> ✨ **Kept cozy, kept improving:** this repo is actively maintained — polish, new pet moods, smarter memory & companionship. Stars, issues, and PRs are very welcome~
 
 **Form:** dual-face **Bundle** (`dsh.bundle.patch`) — node (`index.js`) + browser (`client.js`).
 
