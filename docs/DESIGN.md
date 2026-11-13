@@ -14,7 +14,7 @@
 - 人设 × 情绪 × 关系养成
 - **LLM Wiki** 混合记忆（事实 / Wiki / 日记）
 - **五道隐私防线**（默认纯本地）
-- 右下角透明视频桌宠 + `/soulmate-home` 双模 3D 空间
+- 右下角透明视频桌宠
 - 可选 AIGC 云同步与动态云端能力
 - 同时是办公 / 编程副驾（不遮蔽 DSH 任何内置工具）
 
@@ -25,7 +25,7 @@
 | 半侧 | 入口 | 职责 |
 |---|---|---|
 | Node | `index.js` → `packages/soulmate-core` | Cordis `apply(ctx)`：工具、systemPrompt、HTTP、主动调度、`ctx.soulmate` 服务 |
-| Browser | `browser/*` → `npm run build:client` → `client.js` | 悬浮桌宠、设置面板、聊天卡片、3D 家园浮层 |
+| Browser | `browser/*` → `npm run build:client` → `client.js` | 悬浮桌宠、设置面板、聊天卡片 |
 | Patch | `cordis.patch.yml` | Bundle / `--patch` 挂载声明 |
 
 设计铁律：
@@ -41,7 +41,7 @@
 ```
 packages/
   soulmate-core/     # 记忆 / 人设 / 隐私 / 主动调度 / 云网关 / 路由 / 工具
-  soulmate-home/     # 桌宠状态机 + 3D 家园页
+  soulmate-home/     # 桌宠状态机
   soulmate-bili/     # B 站理解与风控写操作（扩展）
   soulmate-im/       # 微信 / QQ / 飞书 / 钉钉分身（扩展）
 assets/
@@ -92,7 +92,7 @@ A **modular AI companion** for [DeepSeek Harness](https://github.com/deepseek-ai
 - Persona × mood × relationship growth
 - **LLM Wiki** hybrid memory (facts / wiki / diaries)
 - **Five privacy layers** (local-first by default)
-- Transparent video desktop pet + dual-mode `/soulmate-home` 3D space
+- Transparent video desktop pet
 - Optional AIGC cloud sync & dynamic cloud capabilities
 - Full co-pilot: never masks built-in DSH tools
 

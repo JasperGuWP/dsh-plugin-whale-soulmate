@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-whale-soulmate",
-  "version": "0.2.70",
-  "description": "Modular, pluggable AI companion (Soulmate) for DeepSeek Harness: persona + LLM Wiki memory + five-layer privacy firewall + 3D home + desktop pet + AIGC cloud sync.",
+  "version": "0.2.72",
+  "description": "Modular, pluggable AI companion (Soulmate) for DeepSeek Harness: persona + LLM Wiki memory + five-layer privacy firewall + desktop pet + AIGC cloud sync.",
   "type": "module",
   "main": "index.js",
   "files": [
@@ -50,7 +50,6 @@
     "deepseek-harness",
     "soulmate",
     "memory",
-    "3d-home",
     "desktop-pet"
   ],
   "author": "JasperGuWP",
