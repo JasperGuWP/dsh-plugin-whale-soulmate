@@ -2,6 +2,9 @@
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![topic](https://img.shields.io/badge/topic-dsh--plugin-0A7EA4)](https://github.com/topics/dsh-plugin)
+[![release](https://img.shields.io/github/v/release/JasperGuWP/dsh-plugin-whale-soulmate?sort=semver)](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/releases/latest)
+[![discussions](https://img.shields.io/github/discussions/JasperGuWP/dsh-plugin-whale-soulmate)](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/discussions)
+[![CI](https://img.shields.io/github/actions/workflow/status/JasperGuWP/dsh-plugin-whale-soulmate/test.yml?branch=main)](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/actions/workflows/test.yml)
 
 > **中文** · [English](#english)
 
