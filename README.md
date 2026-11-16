@@ -17,6 +17,16 @@
 
 更完整的架构说明见 [`docs/DESIGN.md`](./docs/DESIGN.md)；版权与致谢见 [`NOTICE.md`](./NOTICE.md)。
 
+## 形象展示
+
+两套内置皮肤，在「设置 → 称呼与形象」一键切换（静图与桌宠皮肤同步）：
+
+| 汉风 · 襦裙 | Q版 · 冬装男孩 |
+|:---:|:---:|
+| ![汉风·襦裙 — 舞](docs/showcase/hanfu-dance.gif) | ![Q版·冬装男孩 — 滑雪](docs/showcase/winterboy-ski.gif) |
+
+桌宠为透明视频精灵：按住甩出去会重力弹跳、落地 Q 弹；单击轻触、双击互动、滚轮缩放。
+
 ---
 
 ## 功能一览
@@ -113,6 +123,16 @@ Also your **coding / office co-pilot** — cuddles never strip host tools.
 **Form:** dual-face **Bundle** (`dsh.bundle.patch`) — node (`index.js`) + browser (`client.js`).
 
 Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./NOTICE.md).
+
+### Pet skins
+
+Two bundled skins — switch in Settings → Identity (static avatar and pet skin stay in sync):
+
+| Hanfu · Ruqun | Chibi · Winter Boy |
+|:---:|:---:|
+| ![Hanfu skin — ribbon dance](docs/showcase/hanfu-dance.gif) | ![Winter boy skin — skiing](docs/showcase/winterboy-ski.gif) |
+
+Transparent video sprites: flick-throw with gravity bounces and a landing squash; tap to pet, double-tap to nuzzle, wheel to zoom.
 
 ### Features
 
