@@ -1,0 +1,15 @@
+{
+  "name": "pet-video-fixture",
+  "spriteHeight": 36,
+  "states": {
+    "idle": { "frames": ["pet-idle-01"], "blink": "pet-idle-blink", "blinkSec": 0.12, "dwellSec": [2, 4], "next": { "sit": 1 }, "video": "pet-idle" },
+    "sit": { "frames": ["pet-idle-01"], "dwellSec": [2, 4], "next": { "idle": 1 } },
+    "walk": { "frames": ["pet-walk-01", "pet-walk-02"], "fps": 6, "speedPxSec": 40, "dwellSec": [3, 8], "next": { "idle": 1 }, "video": { "name": "pet-walk", "once": true, "leadSec": 0.1, "tailSec": 0.1 } },
+    "wave": { "frames": ["pet-wave"], "holdSec": 0.4, "next": { "idle": 1 }, "video": "pet-wave" },
+    "happy": { "frames": ["pet-wave"], "holdSec": 0.4, "next": { "idle": 1 } },
+    "think": { "frames": ["pet-idle-01"], "fps": 2, "maxSec": 120 },
+    "eureka": { "frames": ["pet-wave"], "holdSec": 0.4, "next": { "idle": 1 } },
+    "sleep": { "frames": ["pet-idle-01"], "enterAfterIdleSec": 300 },
+    "drag": { "frames": ["pet-idle-01"] }
+  }
+}
