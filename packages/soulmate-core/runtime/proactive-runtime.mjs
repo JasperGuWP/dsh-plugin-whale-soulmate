@@ -25,6 +25,7 @@ import {
   shouldRunWeeklyGate,
 } from '../proactive.mjs';
 import { runAutonomousSurfRound } from '../../soulmate-bili/index.mjs';
+import { refreshSurfKeywords } from '../../soulmate-bili/keyword-learn.mjs';
 import { runAutoReplyPatrol } from '../../soulmate-bili/reply-patrol.mjs';
 import { resolveLlmModel } from '../llm-model-pick.mjs';
 import { clip, errMsg, str } from '../small-utils.mjs';
@@ -398,6 +399,19 @@ export function createProactiveRuntime({
     if (!decision.surf) return { ok: true, ran: false, reason: decision.reason };
     const maxPick = Math.min(5, Math.max(1, Math.floor(Number(ext.biliAutoSurfMaxPick) || 2)));
     const deepWatch = ext.biliAutoSurfDeepWatch === true;
+    let keywordsRefresh = null;
+    try {
+      keywordsRefresh = await refreshSurfKeywords(home, {
+        nowMs: at,
+        oneShotLlm,
+        listHostModels,
+      });
+    } catch (err) {
+      warn('surf keyword refresh failed', err);
+      keywordsRefresh = { ok: false, error: errMsg(err) };
+    }
+    const live = await loadConfig(home).catch(() => conf);
+    const keywords = Array.isArray(live?.extensions?.biliKeywords) ? live.extensions.biliKeywords : ext.biliKeywords;
     let res;
     try {
       res = await runAutonomousSurfRound(
@@ -405,6 +419,7 @@ export function createProactiveRuntime({
         {
           maxPick,
           deepWatch,
+          keywords,
           ...(cfg?.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
           ...(cfg?.biliBaseUrl ? { baseUrl: cfg.biliBaseUrl } : {}),
         }
@@ -422,12 +437,15 @@ export function createProactiveRuntime({
       reason: decision.reason,
       delivered: res.ok ? 'watched' : 'failed',
       picked: res.pickedCount ?? 0,
+      keywordsChanged: keywordsRefresh?.changed === true,
+      keywords: Array.isArray(keywordsRefresh?.keywords) ? keywordsRefresh.keywords.slice(0, 8) : undefined,
     }).catch((err) => warn('auto-surf ledger append failed', err));
     if (res.ok && (res.pickedCount ?? 0) > 0) {
       pushEvent('video-surf', {
         auto: true,
         deepWatch,
         pickedCount: res.pickedCount,
+        keywords: Array.isArray(keywords) ? keywords.slice(0, 8) : undefined,
         videos: (res.videos || []).filter((v) => v.ok).slice(0, 3).map((v) => (
           deepWatch
             ? { title: v.title, worthScore: v.worthScore, depth: v.coverage?.depth, howIWatched: v.howIWatched }
@@ -435,7 +453,14 @@ export function createProactiveRuntime({
         )),
       });
     }
-    return { ok: res.ok !== false, ran: true, picked: res.pickedCount ?? 0, reason: decision.reason, error: res.error };
+    return {
+      ok: res.ok !== false,
+      ran: true,
+      picked: res.pickedCount ?? 0,
+      reason: decision.reason,
+      error: res.error,
+      keywordsRefresh,
+    };
   }
 
   async function runWeeklyGateIfDue({ cfg, at }) {

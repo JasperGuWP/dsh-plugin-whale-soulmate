@@ -192,6 +192,11 @@ function draftFromSummary(snap) {
       biliAutoSurfEveryHours: clampNum(Number(config.extensions && config.extensions.biliAutoSurfEveryHours) || 6, 1, 24),
       biliAutoSurfMaxPick: clampNum(Number(config.extensions && config.extensions.biliAutoSurfMaxPick) || 2, 1, 5),
       biliAutoSurfDeepWatch: !!(config.extensions && config.extensions.biliAutoSurfDeepWatch),
+      biliKeywordsAuto: !(config.extensions && config.extensions.biliKeywordsAuto === false),
+      biliKeywordsSeed: (config.extensions && Array.isArray(config.extensions.biliKeywordsSeed))
+        ? config.extensions.biliKeywordsSeed.slice()
+        : [],
+      biliKeywordsUpdatedAt: (config.extensions && config.extensions.biliKeywordsUpdatedAt) || '',
       biliKeywords: (config.extensions && Array.isArray(config.extensions.biliKeywords) && config.extensions.biliKeywords.length)
         ? config.extensions.biliKeywords.slice()
         : ['AI', '编程', '科技'],

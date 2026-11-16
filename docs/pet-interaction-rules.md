@@ -23,7 +23,7 @@
 | happy | 高兴 | 双击 dblclick / 拖拽松手 / 睡眠唤醒 | 5.00s | once | → idle |
 | drag | 被拖拽 | pointerdown 且位移 >6px | 4.00s | loop | 松手 dragEnd → happy |
 | heart | 爱心（hanfu：脸红害羞、无爱心飞出） | idle 随机（权重 0.12） | 6.00s | once | → idle |
-| pout | 撅嘴生气（hanfu：女孩叉腰鼓颊跺脚、无生气符号） | idle 随机（权重 0.08） | 6.00s | once | → idle |
+| pout | 生气·无鼓脸（winterboy：皱眉抿嘴+扭头别脸抱胸；hanfu：皱眉眯眼+叉腰原地跺脚、无生气符号） | idle 随机（权重 0.08） | 5.00s(男)/6.00s(女) | once | → idle |
 | eat | 吃饭 | idle 随机（权重 0.08） | 5.00s | once | → idle |
 | game | 玩游戏 | idle 随机（权重 0.08） | 5.00s | once | → idle |
 | ski / dance | 滑雪（winterboy）/ 汉风舞（hanfu） | idle 随机（权重 0.05） | 5.00s | once | → idle |
@@ -55,7 +55,7 @@ idle 随机权重合计 0.73，其余 0.27 回落 idle（`pickNextState` 滚轮�
   倒放半段会造成「倒着跑 / 拖拽抖动」，故方向性动作绝不回文。
 - **原地振荡 / 呼吸类状态保留 boom**（正放 + 精确倒放）：idle/sleep/think/sit/eureka/wave/heart/pout/happy/eat/game。
   这些动作左右对称，倒放半段视觉自然，且 boom 天然首尾一致。
-  窗口：idle/sleep/think raw 第 24 帧起 48 帧 boom；sit 0/63；eureka 0/29；wave/heart/pout 0/72；happy/eat/game 0/60。
+  窗口：idle/sleep/think raw 第 24 帧起 48 帧 boom；sit 0/63；eureka 0/29；wave/heart 0/72；pout 男 0/60、女 0/72（v3 无鼓脸重生成）；happy/eat/game 0/60。
 - walk 为 0..109 正放 + 第 109 帧冻结 ×11（tail_hold），**不倒放**；末尾追加首帧满足首末一致（122 帧）。
 - **walk 朝向**：跟随位移方向（target > start → 镜像 `mirrorForRight`），覆盖状态机随机朝向；
   镜像用 CSS `scaleX(-1)`，**不倒放视频**。其余状态不镜像。
@@ -92,7 +92,7 @@ idle 随机权重合计 0.73，其余 0.27 回落 idle（`pickNextState` 滚轮�
 
 - idle dwell 2.4–4s 均匀随机；sit dwell 3–6s；到时按 `next` 权重滚轮选下一状态。
 - idle 眨眼：进入 idle 后 1.2–3.8s 触发 blink 帧 0.12s，之后 1.5–4.1s 再眨（仅 PNG 回退层；视频层自带眨眼）。
-- 无显式全局冷却；靠 dwell + once 时长天然节流（wave/happy/heart/pout 6s、eat/game/ski/run 5s）。
+- 无显式全局冷却；靠 dwell + once 时长天然节流（wave/happy/heart 6s、pout 5s(男)/6s(女)、eat/game/ski/run 5s）。
 - 睡眠进入：idle/sit 且 `t - lastAct >= sleepAfterIdleSec(300)` → sleep；任何交互重置 lastAct。
 
 ## 七、透明通道与回退链
@@ -108,7 +108,8 @@ idle 随机权重合计 0.73，其余 0.27 回落 idle（`pickNextState` 滚轮�
 - 两皮肤 `pet.json` schema 一致（15 状态、同权重、同 dwell/hold/trigger）；hanfu 以 `dance`（汉风舞）替换 `ski` 状态，资源名 pet-dance。
 - 仅资源不同：winterboy 白外套需「选择性增白」；hanfu 彩色襦裙**只做 chromakey + 去绿溢，不增白**。
 - hanfu 团扇为固定持物：单手动作用左手、双手动作团扇贴胸前/前臂、末帧回右手胸前（见 prompts-hanfu.json）。
-- hanfu 情绪表达约定（第二轮 prompts-hanfu2.json）：pout=女孩叉腰鼓颊跺脚别脸、无生气符号；heart=双颊晕红+双手交握害羞、无爱心粒子飞出；think=托腮偏头眼神点指、无气泡/问号漂浮符号。
+- hanfu 情绪表达约定（第二轮 prompts-hanfu2.json）：pout=女孩叉腰原地跺脚+皱眉眯眼、无鼓脸无生气符号；heart=双颊晕红+双手交握害羞、无爱心粒子飞出；think=托腮偏头眼神点指、无气泡/问号漂浮符号。
+- winterboy 情绪表达约定（pout v3）：pout=皱眉抿嘴+扭头别脸抱胸、无鼓脸；保留红色生气符号（凝聚→消散）。
 
 ## 九、性别联动默认形象（v0.2.85）
 
@@ -128,7 +129,8 @@ idle 随机权重合计 0.73，其余 0.27 回落 idle（`pickNextState` 滚轮�
 - fix5：为满足首==末，对近循环视频末尾追加首帧（run/drag/walk/heart/pout/wave 两皮肤 + ski/dance 先环绕淡化再追加），共 13 个。
 - fix6：半透明光晕 VP9 量化使 heart/pout/wave 首末差 0.03–0.09 → 编码前**把首帧 raw 字节覆盖到末帧** +
   `-force_key_frames <(N-1)/24>` 末帧强制关键帧 → 0.00。fix7 同样套用。
-- 最终帧数：winterboy run121/ski102/drag109/walk122/heart·pout·wave145；hanfu run114/dance97/drag109/walk122/heart·pout·wave145；其余振荡类不变。
+- 最终帧数：winterboy run121/ski102/drag109/walk122/heart·wave145/pout120；hanfu run114/dance97/drag109/walk122/heart·wave145/pout144；其余振荡类不变。
+- pout v3（2026-11-16 晚，用户「生气不要鼓脸，男扭头/女跺脚」）：i2v 重生成两皮肤 pet-pout（output/pet-pout-v3/），提示词去鼓脸；男=皱眉抿嘴+扭头别脸抱胸、女=皱眉眯眼+叉腰原地跺脚+呆毛竖。仍属原地情绪振荡类→保留 boom（正放+精确倒放，倒放半段=转回/放下手/消气，自然），男窗 0/60=120 帧、女窗 0/72=144 帧；首末字节覆盖+末帧关键帧→0.00。build 脚本 output/pet-pout-v3/build-pout.mjs。
 - 编码：`-c:v libvpx-vp9 -pix_fmt yuva420p -crf 30 -b:v 0 -auto-alt-ref 0 -deadline good -cpu-used 4 -an`；
   force_key_frames 用时间串 (N-1)/24，**勿用** expr:eq(n,..)（逗号转义报错）。
 - 脚本：`output/pet-boom-fix{4,5,6,7}.cjs`、`pet-firstlast-audit.cjs`、`pet-boom-fix/check-palin.cjs`、`pet-boom-fix/smoke-boom.mjs`；正放备份 `output/pet-boom-fix/backup/`。

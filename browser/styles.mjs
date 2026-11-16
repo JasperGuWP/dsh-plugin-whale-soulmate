@@ -453,10 +453,18 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-surf-log-list{display:flex;flex-direction:column;gap:12px}
 .sm-surf-log-card{display:grid;grid-template-columns:minmax(96px,140px) minmax(0,1fr);gap:12px;padding:10px;border:1px solid var(--sm-line,#e3e5e8);border-radius:10px;background:color-mix(in srgb,var(--sm-ink,#0f1115) 1.5%,transparent)}
 @media(max-width:560px){.sm-surf-log-card{grid-template-columns:1fr}}
-.sm-surf-log-cover{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px;background:color-mix(in srgb,var(--sm-ink,#0f1115) 6%,transparent)}
+.sm-surf-cover-btn{display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in;border-radius:8px}
+.sm-surf-log-cover{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px;background:color-mix(in srgb,var(--sm-ink,#0f1115) 6%,transparent)}
 .sm-surf-log-cover-empty{display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--sm-ink3,#8a8f99)}
 .sm-surf-log-stills{display:flex;gap:4px;margin-top:6px}
-.sm-surf-log-stills>img{width:32%;aspect-ratio:16/10;object-fit:cover;border-radius:4px}
+.sm-surf-still{flex:1 1 0;min-width:0;aspect-ratio:16/10;border:0;padding:0;border-radius:4px;cursor:zoom-in;background-color:color-mix(in srgb,var(--sm-ink,#0f1115) 6%,transparent);overflow:hidden}
+.sm-surf-still-full{display:block}
+.sm-surf-still-full>img{display:block;width:100%;height:100%;object-fit:cover;border-radius:4px}
+.sm-surf-lightbox{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(8,10,16,.72)}
+.sm-surf-lightbox-inner{position:relative;max-width:min(920px,96vw);max-height:90vh;display:flex;flex-direction:column;align-items:center;gap:12px}
+.sm-surf-lightbox-inner>img{max-width:100%;max-height:min(78vh,820px);border-radius:10px;background:#111;object-fit:contain}
+.sm-surf-lightbox-crop{border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);background-color:#111}
+.sm-surf-lightbox-close{min-width:88px}
 .sm-surf-log-title a{color:var(--sm-accent,#4d6bfe);font-weight:600;text-decoration:none}
 .sm-surf-log-title a:hover{text-decoration:underline}
 .sm-surf-log-summary{margin:6px 0;font-size:12.5px;line-height:1.55;color:var(--sm-ink2,#4e5561)}

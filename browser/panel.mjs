@@ -230,6 +230,8 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
                 biliAutoSurfEveryHours: Number(current.extensions.biliAutoSurfEveryHours) || 6,
                 biliAutoSurfMaxPick: Number(current.extensions.biliAutoSurfMaxPick) || 2,
                 biliAutoSurfDeepWatch: !!current.extensions.biliAutoSurfDeepWatch,
+                biliKeywordsAuto: current.extensions.biliKeywordsAuto !== false,
+                biliKeywordsSeed: (current.extensions.biliKeywordsSeed || []).map((k) => String(k).trim()).filter(Boolean),
                 biliKeywords: (current.extensions.biliKeywords || []).map((k) => String(k).trim()).filter(Boolean),
                 biliAutoEngageEnabled: current.extensions.biliAutoEngageEnabled !== false,
                 biliAutoReplyEnabled: current.extensions.biliAutoReplyEnabled !== false,

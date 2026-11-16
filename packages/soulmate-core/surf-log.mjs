@@ -53,7 +53,26 @@ export function normalizeSurfEntry(raw = {}, platform = 'bilibili') {
     author: str(raw.author),
     authorId: str(raw.authorId || raw.mid),
     coverUrl: str(raw.coverUrl),
-    stills: Array.isArray(raw.stills) ? raw.stills.map(str).filter(Boolean).slice(0, 6) : [],
+    stills: Array.isArray(raw.stills)
+      ? raw.stills.map((s) => {
+        if (s && typeof s === 'object') {
+          const url = str(s.url || s.imageUrl).trim();
+          if (!url) return null;
+          return {
+            url,
+            x: Math.max(0, Math.floor(Number(s.x) || 0)),
+            y: Math.max(0, Math.floor(Number(s.y) || 0)),
+            width: Math.max(1, Math.floor(Number(s.width) || 160)),
+            height: Math.max(1, Math.floor(Number(s.height) || 90)),
+            sheetWidth: Math.max(1, Math.floor(Number(s.sheetWidth) || Number(s.width) || 160)),
+            sheetHeight: Math.max(1, Math.floor(Number(s.sheetHeight) || Number(s.height) || 90)),
+            label: str(s.label),
+          };
+        }
+        const url = str(s).trim();
+        return url || null;
+      }).filter(Boolean).slice(0, 6)
+      : [],
     worthScore: Number.isFinite(Number(raw.worthScore)) ? Number(raw.worthScore) : null,
     summary: str(raw.summary),
     actions,

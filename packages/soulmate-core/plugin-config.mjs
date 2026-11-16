@@ -96,6 +96,9 @@ export const CONFIG_PATCH_KEYS = {
     biliAutoSurfMaxPick: 'number',
     biliAutoSurfDeepWatch: 'boolean',
     biliAutoSurfMaxAgeDays: 'number',
+    biliKeywordsAuto: 'boolean',
+    biliKeywordsSeed: 'string-array',
+    biliKeywordsUpdatedAt: 'string',
     biliKeywords: 'string-array',
   },
   usage: {

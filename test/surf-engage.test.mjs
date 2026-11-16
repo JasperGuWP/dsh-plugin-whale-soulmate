@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { sanitizeCommentText, decideSurfEngageHeuristic, composeSurfSummary } from '../packages/soulmate-bili/engage.mjs';
+import {
+  sanitizeCommentText,
+  decideSurfEngageHeuristic,
+  composeSurfSummary,
+  pickSurfStills,
+} from '../packages/soulmate-bili/engage.mjs';
 import { scrubTranscriptNoise, composeVideoTakeaway } from '../packages/soulmate-bili/index.mjs';
 import { appendSurfLog, listSurfLog, normalizeSurfEntry } from '../packages/soulmate-core/surf-log.mjs';
 
@@ -97,6 +102,27 @@ test('scrubTranscriptNoise drops WeChat-ad OCR loops', () => {
   const cleaned = scrubTranscriptNoise(mixed);
   assert.match(cleaned, /主板/);
   assert.doesNotMatch(cleaned, /投降|威信/);
+});
+
+test('pickSurfStills keeps crop rects so sprite cells are not identical URLs', () => {
+  const sheet = 'https://example.test/sheet.jpg';
+  const frames = [0, 1, 2, 3, 4, 5].map((i) => ({
+    imageUrl: sheet,
+    x: (i % 3) * 160,
+    y: Math.floor(i / 3) * 90,
+    width: 160,
+    height: 90,
+    sheetWidth: 480,
+    sheetHeight: 180,
+    label: '0:0' + i,
+    timeSec: i * 10,
+  }));
+  const stills = pickSurfStills(frames, 3);
+  assert.equal(stills.length, 3);
+  assert.equal(stills[0].url, sheet);
+  assert.notEqual(`${stills[0].x},${stills[0].y}`, `${stills[1].x},${stills[1].y}`);
+  assert.notEqual(`${stills[1].x},${stills[1].y}`, `${stills[2].x},${stills[2].y}`);
+  assert.equal(stills[0].sheetWidth, 480);
 });
 
 test('composeVideoTakeaway prefers cleaned content over spam subtitles', () => {

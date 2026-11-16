@@ -202,6 +202,50 @@ export async function executeSurfEngage(home, { digest, plan, options = {} } = {
   return actions;
 }
 
+/**
+ * Pick up to `count` storyboard cells spaced across the watch, keeping crop rects.
+ * Videoshot frames share one sprite-sheet URL — without crop they look identical.
+ */
+export function pickSurfStills(frames, count = 3) {
+  const list = (Array.isArray(frames) ? frames : []).filter((f) => f && str(f.imageUrl || f.url));
+  if (!list.length) return [];
+  const n = Math.max(1, Math.min(6, Math.floor(Number(count) || 3)));
+  const picks = [];
+  if (list.length <= n) {
+    for (const f of list) picks.push(f);
+  } else {
+    for (let k = 0; k < n; k += 1) {
+      picks.push(list[Math.round((k * (list.length - 1)) / Math.max(1, n - 1))]);
+    }
+  }
+  const seen = new Set();
+  const out = [];
+  for (const f of picks) {
+    const url = str(f.imageUrl || f.url);
+    const x = Math.max(0, Math.floor(num(f.x, 0)));
+    const y = Math.max(0, Math.floor(num(f.y, 0)));
+    const width = Math.max(1, Math.floor(num(f.width, 160)));
+    const height = Math.max(1, Math.floor(num(f.height, 90)));
+    const sheetWidth = Math.max(width, Math.floor(num(f.sheetWidth, width)));
+    const sheetHeight = Math.max(height, Math.floor(num(f.sheetHeight, height)));
+    const key = `${url}|${x}|${y}|${width}|${height}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      url,
+      x,
+      y,
+      width,
+      height,
+      sheetWidth,
+      sheetHeight,
+      label: str(f.label),
+      timeSec: Number.isFinite(Number(f.timeSec)) ? Number(f.timeSec) : null,
+    });
+  }
+  return out;
+}
+
 /** Build summary line for the log card（内容要点 + 观感，不贴原始字幕垃圾）. */
 export function composeSurfSummary(digest, persona) {
   const score = num(digest?.worthScore, 0);
@@ -222,10 +266,7 @@ export async function afterSurfWatch(home, { digest, persona, options = {} } = {
   const conf = await loadConfig(home);
   const ext = conf.extensions ?? {};
   const summary = composeSurfSummary(digest, persona ?? conf.persona);
-  const stills = (digest?.storyboardFrames || [])
-    .map((f) => str(f?.imageUrl || f?.url))
-    .filter(Boolean)
-    .slice(0, 3);
+  const stills = pickSurfStills(digest?.storyboardFrames || [], 3);
 
   const base = {
     platform: 'bilibili',

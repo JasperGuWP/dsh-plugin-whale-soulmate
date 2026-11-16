@@ -165,6 +165,10 @@ export const DEFAULT_CONFIG = Object.freeze({
     biliAutoSurfDeepWatch: false,
     /** Skip search hits older than this many days (default 180). */
     biliAutoSurfMaxAgeDays: 180,
+    /** Learn / refresh biliKeywords from chat + memory before each patrol. */
+    biliKeywordsAuto: true,
+    biliKeywordsSeed: [],
+    biliKeywordsUpdatedAt: '',
     lastAutoSurfAt: '',
     // Built-in IM hub (soulmate-im). Only on/off switches live here; tokens/secrets go to
     // credentials.json under the `im` key and never touch config.json.

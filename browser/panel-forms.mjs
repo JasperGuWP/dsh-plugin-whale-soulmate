@@ -475,13 +475,32 @@ function autoSurfSection({ draft, patchExtensions }) {
         }),
         h('span', { key: 't' }, '认真看完（加深字幕/分镜消化）'),
       ]),
+      h('label', {
+        key: 'autosurf-kw-auto',
+        className: 'sm-rhythm-check',
+        title: '开启后：每次定时巡片前，根据微信近聊与记忆要点自动调整下方关键词；你手改的词会当作底线保留。',
+      }, [
+        h('input', {
+          key: 'i', type: 'checkbox',
+          checked: ext.biliKeywordsAuto !== false,
+          onChange: (event) => patchExtensions({ biliKeywordsAuto: event.target.checked }),
+        }),
+        h('span', { key: 't' }, '随聊天自动调整兴趣关键词'),
+      ]),
       h(AutoSurfKeywords, {
         key: 'autosurf-kw',
         keywords: ext.biliKeywords || [],
-        onCommit: (next) => patchExtensions({ biliKeywords: next }),
+        onCommit: (next) => patchExtensions({
+          biliKeywords: next,
+          biliKeywordsSeed: next,
+        }),
       }),
+      ext.biliKeywordsUpdatedAt
+        ? h('p', { key: 'autosurf-kw-at', className: 'sm-panel-muted' },
+          '最近自动更新：' + String(ext.biliKeywordsUpdatedAt).slice(0, 19).replace('T', ' '))
+        : null,
       h('p', { key: 'autosurf-hint', className: 'sm-panel-muted' },
-        '免打扰时段不巡；看过的自动跳过；看完会弹系统通知（若开启）。鼠标悬停「认真看完」可看说明。'),
+        '免打扰时段不巡；看过的自动跳过；看完会弹系统通知（若开启）。手改关键词会记成底线，自动学习在其上加减。'),
     ]) : null,
   ]
 }

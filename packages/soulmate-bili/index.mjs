@@ -31,6 +31,7 @@ export {
   executeSurfEngage,
   sanitizeCommentText,
   composeSurfSummary,
+  pickSurfStills,
 } from './engage.mjs';
 export {
   BILI_AUTH_ACTIONS,
@@ -342,7 +343,21 @@ function buildStoryboard(data, maxFrames) {
     const slot = i % perSheet;
     const col = slot % xLen;
     const row = Math.floor(slot / xLen);
-    all.push({ index: i, timeSec, label: formatClock(timeSec), imageUrl, sheet, col, row, x: col * xSize, y: row * ySize, width: xSize, height: ySize });
+    all.push({
+      index: i,
+      timeSec,
+      label: formatClock(timeSec),
+      imageUrl,
+      sheet,
+      col,
+      row,
+      x: col * xSize,
+      y: row * ySize,
+      width: xSize,
+      height: ySize,
+      sheetWidth: xLen * xSize,
+      sheetHeight: yLen * ySize,
+    });
   });
   const limit = Math.max(1, Math.floor(num(maxFrames, 20)));
   let frames = all;
