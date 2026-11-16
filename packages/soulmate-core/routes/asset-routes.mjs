@@ -1,11 +1,10 @@
 // Companion art + desktop-pet sprite routes. Binary responses; MIME is sniffed
 // from the bytes so a stale extension never mislabels the served image.
 
-import { access, copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
-  BUNDLED_SPRITE,
-  BUNDLED_SPRITE_MALE,
+  BUNDLED_SPRITE_CHIBI,
   DEFAULT_SPRITE_URL,
   DEFAULT_SPRITE_MALE_URL,
   PET_SKINS,
@@ -18,9 +17,9 @@ import { loadConfig } from '../state.mjs';
 import { videoNameOf } from '../video-cues.mjs';
 
 export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
-  // Retired skins fold into the only shipped skin so stale saved configs keep
+  // Retired skins fold into the default shipped skin so stale saved configs keep
   // working; anything else still fails loud (traversal-proof whitelist).
-  const retired = new Set(['classic', 'underwater', 'hanfu', 'winterboy']);
+  const retired = new Set(['classic', 'underwater', 'winterboy']);
   const skinId = (id) => (skins[id] || !retired.has(id) ? id : 'winterboy-chibi');
   const skinDir = (id) => skins[skinId(id)];
   return [
@@ -51,10 +50,11 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
         }
         let buf;
         try {
+          await access(home.spriteExtPath);
           buf = await readFile(home.spritePath);
         } catch (err) {
           if (err?.code !== 'ENOENT') throw err;
-          buf = await readFile(BUNDLED_SPRITE);
+          buf = await readFile(BUNDLED_SPRITE_CHIBI);
         }
         return {
           status: 200,
@@ -70,14 +70,16 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
     {
       method: 'GET',
       paths: ['/dsh-soulmate/api/sprite'],
-      // Serve ~/.dsh/soulmate/小鲸.png; fall back to the bundled default sticker.
+      // Serve the user-uploaded sticker only when sprite.ext exists; the default
+      // look is the bundled Q版 idle frame (same art as the desktop pet).
       handler: async () => {
         let buf;
         try {
+          await access(home.spriteExtPath);
           buf = await readFile(home.spritePath);
         } catch (err) {
           if (err?.code !== 'ENOENT') throw err;
-          buf = await readFile(BUNDLED_SPRITE);
+          buf = await readFile(BUNDLED_SPRITE_CHIBI);
         }
         // Keep headers Latin-1 only: non-ASCII Content-Disposition (e.g. 小鲸.png)
         // makes some host writeHead paths fail and the browser gets an empty 400.
@@ -115,30 +117,25 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
     {
       method: 'DELETE',
       paths: ['/dsh-soulmate/api/sprite'],
-      // Restore the bundled 小鲸.png rather than leaving the corner empty.
+      // Drop the custom sticker: GET falls back to the bundled Q版 default.
       handler: async () => {
-        await mkdir(dirname(home.spritePath), { recursive: true });
-        await copyFile(BUNDLED_SPRITE, home.spritePath);
+        await rm(home.spriteExtPath, { force: true });
+        await rm(home.spritePath, { force: true });
         const url = DEFAULT_SPRITE_URL + '?v=' + Date.now();
         await evolvePersona({ mode: 'appearance', customSpriteUrl: url });
-        return jsonOut(200, { ok: true, url, restored: '小鲸.png' });
+        return jsonOut(200, { ok: true, url, restored: 'Q版默认形象' });
       },
     },
     {
       method: 'GET',
       paths: ['/dsh-soulmate/api/sprite-male'],
+      // The male default is the same bundled Q版 idle frame — no full-body JPG.
       handler: async () => {
-        let buf;
-        try {
-          buf = await readFile(home.spriteMalePath);
-        } catch (err) {
-          if (err?.code !== 'ENOENT') throw err;
-          buf = await readFile(BUNDLED_SPRITE_MALE);
-        }
+        const buf = await readFile(BUNDLED_SPRITE_CHIBI);
         return {
           status: 200,
           headers: {
-            'content-type': spriteMimeOf(buf),
+            'content-type': 'image/png',
             'cache-control': 'no-cache',
             'x-content-type-options': 'nosniff',
           },
@@ -150,11 +147,10 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
       method: 'DELETE',
       paths: ['/dsh-soulmate/api/sprite-male'],
       handler: async () => {
-        await mkdir(dirname(home.spriteMalePath), { recursive: true });
-        await copyFile(BUNDLED_SPRITE_MALE, home.spriteMalePath);
+        await rm(home.spriteMalePath, { force: true });
         const url = DEFAULT_SPRITE_MALE_URL + '?v=' + Date.now();
         await evolvePersona({ mode: 'appearance', customSpriteUrl: url });
-        return jsonOut(200, { ok: true, url, restored: '小鲸-male.jpg' });
+        return jsonOut(200, { ok: true, url, restored: 'Q版默认形象' });
       },
     },
     {

@@ -12,6 +12,7 @@ import {
   getNotebookTitles,
   loadSoulmateState,
   normalizeGender,
+  presetShortName,
   resetPersona as resetPersonaImpl,
 } from '../persona.mjs';
 import {
@@ -37,8 +38,9 @@ import { clip, errMsg, isObject } from '../small-utils.mjs';
 import { defineTool } from '../tool-kit.mjs';
 import { GENERIC_OUTPUT } from '../tool-cards.mjs';
 import { largePersonaArcReason, identityFieldsChanged } from '../persona-arcs.mjs';
+import { titleForIndex } from '../chat-home.mjs';
 
-export function createMemoryService({ home, gateway, cfg, promptEngine, pushEvent, warn, track, registerTool, ensureHomeSession }) {
+export function createMemoryService({ home, gateway, cfg, promptEngine, pushEvent, warn, track, registerTool, ensureHomeSession, sessionController }) {
   const { refreshPrompt, refreshPresence, touchPetActivity } = promptEngine;
 
   /** Enrichment must never break onboard / evolve / interact / promise happy paths. */
@@ -210,16 +212,30 @@ export function createMemoryService({ home, gateway, cfg, promptEngine, pushEven
         void refreshPresence();
       });
       // 换人设自动开新窗（可关）：旧窗保留，要点经交接记忆带进新窗，
-      // 新窗第一句用新人设腔，避免旧历史带偏。
+      // 新窗第一句用新人设腔，避免旧历史带偏。新窗标题带性格：「大海 · 冷感」。
       if (
         (before.persona?.preset ?? null) !== (next.persona?.preset ?? null)
-        && next.chatHome?.rotateOnPersonaChange !== false
         && before.onboardingCompleted === true
       ) {
-        try {
-          await ensureHomeSession({ forceRotate: true });
-        } catch (err) {
-          warn('persona-change window rotate failed', err);
+        if (next.chatHome?.rotateOnPersonaChange !== false) {
+          try {
+            await ensureHomeSession({ forceRotate: true });
+          } catch (err) {
+            warn('persona-change window rotate failed', err);
+          }
+        } else if (next.chatHome?.activeSessionId && typeof sessionController === 'function') {
+          // 不开新窗也要把当前窗标题换成新性格。
+          try {
+            const controller = sessionController();
+            if (typeof controller?.rename === 'function') {
+              const tag = presetShortName(next.persona?.preset);
+              const name = getDisplayName(next.persona).trim();
+              const index = Math.max(1, Number(next.chatHome.nextIndex || 1) - 1);
+              await controller.rename({ sessionId: next.chatHome.activeSessionId, title: titleForIndex(name, index, tag) });
+            }
+          } catch (err) {
+            warn('persona-change window rename failed', err);
+          }
         }
       }
     }

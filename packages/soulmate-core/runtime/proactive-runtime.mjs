@@ -5,21 +5,18 @@
 import { readFile } from 'node:fs/promises';
 import { appendJsonl, loadConfig, readJsonlTail, saveConfigAuto } from '../state.mjs';
 import { getDisplayName, getNotebookTitles, loadSoulmateState } from '../persona.mjs';
-import { listSessionEpisodes, listTrustItems, listWikiPages, recordEpisode as recordEpisodeImpl, reflectToWiki } from '../memory-engine.mjs';
+import { listSessionEpisodes, listTrustItems, recordEpisode as recordEpisodeImpl, reflectToWiki } from '../memory-engine.mjs';
 import { getEngineSnapshot, runSubmissionGate } from '../layers/index.mjs';
 import { estimateTokens } from '../budget.mjs';
 import {
   composeDailyDiaryLetters,
   composeDreamDigest,
   composeDreamLlmPrompt,
-  composeDistillLlmPrompt,
   deliverNudge,
   diaryMaterialForDate,
-  distillClusters,
   evaluateOpeningGate,
   localClock,
   parseDreamLlmReply,
-  parseDistillLlmReply,
   pendingDiaryDateKeys,
   postDreamTargets,
   promisePatrolTargets,
@@ -31,6 +28,7 @@ import { runAutonomousSurfRound } from '../../soulmate-bili/index.mjs';
 import { resolveLlmModel } from '../llm-model-pick.mjs';
 import { clip, errMsg, str } from '../small-utils.mjs';
 import { priceInfo } from './chat-home-runtime.mjs';
+import { createProactiveDistill } from './proactive-distill.mjs';
 
 export function createProactiveRuntime({
   home,
@@ -43,6 +41,9 @@ export function createProactiveRuntime({
 }) {
   const { meteredCall, listHostModels, oneShotLlm, kindBudget } = usage;
   const { hostDeliverer, maybeCaptureSessionStars, chatHomeStatus, notePetSay } = chatHome;
+
+  // Distillation pass + budget auto-off live in their own module.
+  const { runDistillationCheck, maybeAutoOffLlm } = createProactiveDistill({ home, warn, pushEvent, usage, loadFactsForDream });
 
   // Bookkeeping (`proactive.jsonl`) is the dedupe ledger: restarts must not re-greet, and a
   // silent gate must be explainable after the fact.
@@ -79,24 +80,6 @@ export function createProactiveRuntime({
       clock: await logClock(at),
     }).catch((err) => warn('proactive ledger append failed', err));
   };
-
-  async function maybeAutoOffLlm(feature, remaining, at) {
-    if (remaining > 0) return;
-    const patch =
-      feature === 'dream'
-        ? {
-            dreamLlmEnabled: false,
-            dreamLlmAutoOffReason: 'budget-exhausted',
-            dreamLlmAutoOffAt: new Date(at).toISOString(),
-          }
-        : {
-            distillLlmEnabled: false,
-            distillLlmAutoOffReason: 'budget-exhausted',
-            distillLlmAutoOffAt: new Date(at).toISOString(),
-          };
-    await saveConfigAuto(home, { proactive: patch });
-    pushEvent('llm-budget-exhausted', { feature, at: patch.dreamLlmAutoOffAt || patch.distillLlmAutoOffAt });
-  }
 
   /** After day rollover: remind once if a feature stayed off due to yesterday's budget. */
   async function maybePetRemindLlmBudget({ conf, tz, at }) {
@@ -401,86 +384,6 @@ export function createProactiveRuntime({
   }
 
   // v3 (§7 T2): weekly clustering of undistilled facts → submission-gate candidates.
-  async function runDistillationCheck({ cfg: pCfg, at }) {
-    if ((pCfg.distillCheck ?? true) === false) return { ok: true, ran: false, reason: 'disabled' };
-    const [facts, wiki] = await Promise.all([
-      loadFactsForDream().catch(() => []),
-      listWikiPages(home).catch(() => []),
-    ]);
-    const clusters = distillClusters({
-      facts,
-      wikiPages: wiki,
-      minCluster: Number(pCfg.distillMinCluster) || 5,
-    });
-    if (!clusters.length) return { ok: true, ran: true, clusters: 0 };
-
-    const llmOn = pCfg.distillLlmEnabled === true;
-    let models = [];
-    let picked = { id: '' };
-    let budget = { allow: false, remaining: 0 };
-    if (llmOn) {
-      const cap = Number(pCfg.distillLlmDailyCap) || 0;
-      budget = await kindBudget('distill-llm', cap, at);
-      models = await listHostModels();
-      picked = resolveLlmModel({ models, preferredId: pCfg.distillLlmModel || '' });
-      if (!budget.allow) await maybeAutoOffLlm('distill', 0, at);
-    }
-
-    let polished = 0;
-    for (const c of clusters) {
-      let title = c.title;
-      let summary = '';
-      let via = 'cluster';
-      if (llmOn && budget.allow && picked.id) {
-        const draft = composeDistillLlmPrompt({ cluster: c });
-        const need = estimateTokens(draft.prompt) + 200;
-        if (budget.remaining >= need) {
-          try {
-            const metered = await meteredCall({
-              kind: 'distill-llm',
-              trigger: 'auto',
-              prompt: draft.prompt,
-              call: () => oneShotLlm({ prompt: draft.prompt, modelId: picked.id, kind: 'distill-llm' }),
-            });
-            if (metered.ok && !metered.blocked) {
-              const text = typeof metered.out === 'string' ? metered.out : str(metered.out?.text);
-              const parsed = parseDistillLlmReply(text, { fallbackTitle: c.title });
-              if (parsed?.title) {
-                title = parsed.title;
-                summary = parsed.summary || '';
-                via = 'llm';
-                polished += 1;
-                const spent = Number(metered.usage?.totalTokens) || estimateTokens(draft.prompt) + estimateTokens(text);
-                budget = {
-                  ...budget,
-                  remaining: Math.max(0, budget.remaining - spent),
-                  allow: budget.remaining - spent > 0,
-                };
-                await maybeAutoOffLlm('distill', budget.remaining, at);
-              }
-            } else if (metered.blocked) {
-              await maybeAutoOffLlm('distill', 0, at);
-              budget = { ...budget, allow: false, remaining: 0 };
-            }
-          } catch (err) {
-            warn('distill llm polish skipped', err);
-          }
-        }
-      }
-      await appendJsonl(home.candidatesPath, {
-        at: new Date(at).toISOString(),
-        kind: 'distill',
-        category: c.category,
-        title,
-        summary,
-        sourceFactIds: c.sourceFactIds,
-        via,
-      }).catch((err) => warn('distill candidate append failed', err));
-    }
-    pushEvent('distill-candidates', { count: clusters.length, polished });
-    return { ok: true, ran: true, clusters: clusters.length, polished };
-  }
-
   // Scheduled Bilibili patrol: read-only surf round on the auto-surf interval.
   // Watching writes local notes + seen ledger only; sharing / writes stay opt-in elsewhere.
   async function runAutoSurfIfDue({ conf, tz, at }) {

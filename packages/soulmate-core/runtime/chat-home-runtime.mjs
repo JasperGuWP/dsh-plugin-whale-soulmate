@@ -2,11 +2,10 @@
 // wake delivery via sessionController.prompt, the persona quiz opener and the
 // once-per-process boot greeting. Session stars live in session-star-runtime.
 
-import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { appendJsonl, loadConfig, saveConfigAuto } from '../state.mjs';
 import { PRESETS, getDisplayName } from '../persona.mjs';
-import { recordEpisode as recordEpisodeImpl, retainFact as retainFactImpl } from '../memory-engine.mjs';
+import { createChatHomeWorkspace } from './chat-home-workspace.mjs';
+
 import { companionSpokenText, extractLatestAssistantUsage, isToastWorthyReply, waitForSessionUsage } from '../usage.mjs';
 import { priceWindow } from '../proactive.mjs';
 import {
@@ -38,68 +37,12 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
     return promptEngine.notePetSay(text, kind, pushEvent, opts);
   };
 
-  /** Sidebar group title follows the persona name set in the panel, e.g.「小海消息」. */
-  const chatHomeWorkspaceTitle = async () => {
-    try {
-      const conf = await loadConfig(home);
-      const name = getDisplayName(conf.persona).trim() || 'soulmate';
-      return `${name}消息`;
-    } catch {
-      return '鱼消息';
-    }
-  };
-
-  /**
-   * Attach the dedicated session under a「{人设名}消息」workspace so the sidebar is not「未分组」.
-   * Reuses the soulmate data-dir workspace (and renames legacy「插件消息」). Falls back to the
-   * first/default workspace. Never invents a message source — only session.create(workspaceId).
-   */
-  const resolveChatHomeCreateRequest = async () => {
-    try {
-      const reg = ctx.get?.('workspaceRegistry') ?? ctx.workspaceRegistry;
-      if (!reg) return {};
-      const list = typeof reg.list === 'function' ? reg.list() : [];
-      const workspaces = Array.isArray(list) ? list : [];
-      const wantTitle = await chatHomeWorkspaceTitle();
-      const pluginDir = home?.rootDir ? join(home.rootDir, 'plugin-sessions') : '';
-
-      const byPath = pluginDir
-        ? workspaces.find((w) => {
-            const p = String(w?.path || '').replace(/[/\\]+$/, '');
-            const q = pluginDir.replace(/[/\\]+$/, '');
-            return p && q && p.toLowerCase() === q.toLowerCase();
-          })
-        : null;
-      const byTitle = workspaces.find((w) => {
-        const t = String(w?.title || '').trim();
-        return t === wantTitle || t === '插件消息' || /消息$/.test(t) && String(w?.path || '').includes('plugin-sessions');
-      });
-      const found = byPath || byTitle;
-      if (found?.id) {
-        if (String(found.title || '').trim() !== wantTitle && typeof found.setTitle === 'function') {
-          try { await found.setTitle(wantTitle); } catch { /* best-effort rename */ }
-        }
-        return { workspaceId: String(found.id) };
-      }
-
-      if (typeof reg.create === 'function' && pluginDir) {
-        await mkdir(pluginDir, { recursive: true });
-        const created = await reg.create(pluginDir, wantTitle);
-        const id = created?.id || created?.workspaceId;
-        if (id) return { workspaceId: String(id) };
-      }
-
-      const preferred = reg.defaultWorkspaceId
-        ? workspaces.find((w) => String(w.id) === String(reg.defaultWorkspaceId))
-        : null;
-      const first = preferred || workspaces[0];
-      const workspaceId = first?.id || first?.workspaceId || reg.defaultWorkspaceId || reg.activeWorkspaceId;
-      if (workspaceId) return { workspaceId: String(workspaceId) };
-    } catch {
-      // optional — missing registry still allows an ungrouped session
-    }
-    return {};
-  };
+  // Workspace attach + handoff distillation live in their own module.
+  const {
+    resolveChatHomeCreateRequest,
+    attachSessionsToChatHome,
+    runHandoffDistill,
+  } = createChatHomeWorkspace({ home, ctx, pushEvent, warn });
 
   /** Persist chatHome patch after ensure/rotate. */
   const saveChatHome = async (chatHome) => {
@@ -111,44 +54,6 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
   // Discovery / fingerprint dedupe / debounced upserts live in their own runtime.
   const { maybeCaptureSessionStars, noteChatHomeSession, scheduleSessionStarCapture } =
     createSessionStarRuntime({ home, ctx, sessionController, warn });
-
-  /**
-   * Handoff distillation when the dedicated window is full: diary + high-weight fact.
-   * Shared memory (not the old transcript) keeps the next window familiar.
-   */
-  const runHandoffDistill = async (summary, meta = {}) => {
-    const content = String(summary || '').trim();
-    if (!content) return { ok: false, reason: 'empty' };
-    const episode = await recordEpisodeImpl(home, {
-      kind: 'to-you',
-      title: '专属窗交接',
-      content: content.slice(0, 4000),
-      source: 'handoff',
-      sessionId: meta.fromSessionId || null,
-    }).catch((err) => ({ ok: false, error: errMsg(err) }));
-    const fact = await retainFactImpl(home, {
-      topic: '专属窗交接',
-      content: content.slice(0, 800),
-      importance: 4,
-      source: 'handoff',
-      sessionId: meta.fromSessionId || null,
-    }).catch((err) => ({ ok: false, error: errMsg(err) }));
-    pushEvent('chat-home-handoff', {
-      from: meta.fromSessionId || '',
-      reason: meta.reason || '',
-      episodeOk: episode?.ok === true,
-      factOk: fact?.ok === true,
-    });
-    await appendJsonl(home.proactiveLogPath, {
-      at: new Date().toISOString(),
-      kind: 'handoff',
-      speak: false,
-      reason: meta.reason || 'rotate',
-      fromSessionId: meta.fromSessionId || '',
-      delivered: 'memory',
-    }).catch(() => {});
-    return { ok: episode?.ok === true || fact?.ok === true, episode, fact };
-  };
 
   /** Ensure dedicated companion session; rotate + distill when full. */
   async function ensureHomeSession(options = {}) {
@@ -171,6 +76,13 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
       const withKnown = registerKnownSession(result.chatHome, result.sessionId);
       const saved = await saveChatHome(withKnown);
       result = { ...result, chatHome: saved };
+      // Re-home active + known dedicated sessions under「{人设名}消息」.
+      // Rename-only boot paths used to leave them in「未分组」forever.
+      try {
+        await attachSessionsToChatHome(sessionIdsToWatch(saved));
+      } catch (err) {
+        warn('chat-home workspace attach failed', err);
+      }
     }
     if (result.rotated) {
       pushEvent('chat-home-rotate', {
@@ -252,11 +164,11 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
         call: async () => {
           // Do not enqueue a separate handoff-seed: this wake is the first turn in the
           // (possibly new) window. Memory handoff already ran inside ensure on rotate.
-          // Boot always rotates: the dedicated window often accumulates English wake-meta
-          // ("Eighth time…") that steers the model to keep answering in English.
+          // Reuse the active dedicated window on boot — only rotate when full / missing /
+          // corrupt / persona-change. (Earlier forceRotate-on-boot spilled「大海 · N」.)
           const ensured = await ensureHomeSession({
             seedAfterRotate: false,
-            forceRotate: deliveryKind === 'boot',
+            forceRotate: false,
           });
           if (!ensured.ok || !ensured.sessionId) {
             return { ok: false, reason: ensured.error || 'no-chat-home' };
@@ -629,17 +541,4 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
 
   return {
     ensureHomeSession,
-    startPersonaQuiz,
-    hostDeliverer,
-    runBootGreeting,
-    runBootGreetingWithRetry,
-    chatHomeStatus,
-    maybeCaptureSessionStars,
-    noteChatHomeSession,
-    scheduleSessionStarCapture,
-    notePetSay,
-    startReplyToastWatch,
-    /** Test hook: allow a second boot greeting in-process. */
-    resetBootGreetingFlag() { bootGreetingDone = false; },
-  };
-}
+ 

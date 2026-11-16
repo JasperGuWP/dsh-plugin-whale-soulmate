@@ -145,7 +145,7 @@ export const DEFAULT_CONFIG = Object.freeze({
     // With whenIdle, thinking clears the moment the answer lands (then eureka).
     // Keep this short so PNG/video eureka is not stuck behind a long quiet window.
     thinkQuietSec: 1.5,
-    // Bundled sprite skin: only 'winterboy-chibi' ships; retired ids alias to it.
+    // Bundled sprite skin: 'winterboy-chibi' (default) + 'hanfu' ship; retired ids alias to the default.
     skin: 'winterboy-chibi',
   },
   extensions: {

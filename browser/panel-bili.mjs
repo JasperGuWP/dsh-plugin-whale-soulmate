@@ -168,7 +168,7 @@ function biliAuthCard() {
         h('p', { key: 's', className: 'sm-panel-muted' }, line),
       ]),
     ]),
-    h('div', { key: 'actions', className: 'sm-row', style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 } }, [
+    h('div', { key: 'actions', className: 'sm-row sm-bili-actions', style: { display: 'flex', flexWrap: 'wrap', gap: 8 } }, [
       h('button', {
         key: 'qr',
         type: 'button',

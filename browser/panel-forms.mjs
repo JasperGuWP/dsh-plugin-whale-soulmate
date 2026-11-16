@@ -321,7 +321,7 @@ function spriteCard({ draft, spriteNote, fileInputRef, uploadSprite, restoreDefa
           onChange: (event) => uploadSprite(event.target.files && event.target.files[0]),
         }),
         h('p', { key: 'tip', className: 'sm-panel-muted' },
-          spriteNote || '支持 PNG / JPG / WEBP，透明底最好，不超过 4MB。'),
+          spriteNote || '默认为 Q版透明 PNG，与桌面小伙伴同一形象。支持上传 PNG / JPG / WEBP，透明底最好，不超过 4MB。'),
       ]),
     ]),
   ])
@@ -332,7 +332,7 @@ function petCard({ draft, petDraft, patchPet, PetPreview }) {
     h('h3', { key: 'h', className: 'sm-panel-h3' }, '桌面小伙伴'),
     h('div', { key: 'row', className: 'sm-sprite-row' }, [
       h(PetPreview, { key: 'preview', skin: petDraft.skin || 'winterboy-chibi', fallback: draft.appearance.customSpriteUrl || DEFAULT_SPRITE_URL }),
-      h('div', { key: 'ops', className: 'sm-sprite-ops' }, [
+      h('div', { key: 'ops', className: 'sm-sprite-ops sm-pet-ops' }, [
         h('label', { key: 'on' }, [
           h('input', {
             key: 'i', type: 'checkbox', checked: !!petDraft.enabled,
@@ -351,9 +351,10 @@ function petCard({ draft, petDraft, patchPet, PetPreview }) {
           onChange: (event) => patchPet({ skin: event.target.value }),
         }, [
           h('option', { key: 'winterboy-chibi', value: 'winterboy-chibi' }, 'Q版 · 冬装男孩'),
+          h('option', { key: 'hanfu', value: 'hanfu' }, '汉风 · 襦裙'),
         ])),
         h('p', { key: 'tip', className: 'sm-panel-muted' },
-          '开启后右下角会动：可拖动、滚轮缩放。关闭则用上面的静态图。皮肤目录放入透明视频资产后自动升级为视频动画。'),
+          '左侧预览优先播皮肤 idle 透明视频；没有视频才轮播 PNG。开启后右下角会动：可拖动、滚轮缩放。关闭则用形象区静态图。'),
       ]),
     ]),
   ])
@@ -424,7 +425,7 @@ function autoSurfSection({ draft, patchExtensions }) {
       }),
       h('span', { key: 't' }, '定时自动刷 B 站（按兴趣自己看片、记小本本，不会发评论/私信）'),
     ]),
-    ext.biliAutoSurfEnabled ? h('div', { key: 'autosurf-knobs', style: { marginLeft: 22 } }, [
+    ext.biliAutoSurfEnabled ? h('div', { key: 'autosurf-knobs', className: 'sm-autosurf-knobs' }, [
       field('autosurf-every', '每 ' + (ext.biliAutoSurfEveryHours || 6) + ' 小时巡一圈', h('input', {
         key: 'control', type: 'range', min: 1, max: 24, step: 1,
         value: ext.biliAutoSurfEveryHours || 6,
@@ -534,15 +535,15 @@ function rhythmCard(view) {
         h('span', { key: 't' }, '整理记忆尽量选错峰（更省）'),
       ]),
       ...llmBudget({ h, proDraft, usage, patchProactive }),
+      h('p', { key: 'quiet', className: 'sm-panel-muted' },
+        '免打扰：' + ((proDraft.quietHours && proDraft.quietHours.join('、')) || '无')
+          + ' · 专属窗大约 ' + (homeDraft.maxTurns || 100) + ' 回合后换新窗'),
+      h(BiliAuth, { key: 'bili-auth' }),
       field('maxperday', '每天最多主动 ' + proDraft.maxPerDay + ' 次', h('input', {
         key: 'control', type: 'range', min: 0, max: 8, step: 1,
         value: proDraft.maxPerDay,
         onChange: (event) => patchProactive({ maxPerDay: Number(event.target.value) }),
       })),
-      h('p', { key: 'quiet', className: 'sm-panel-muted' },
-        '免打扰：' + ((proDraft.quietHours && proDraft.quietHours.join('、')) || '无')
-          + ' · 专属窗大约 ' + (homeDraft.maxTurns || 100) + ' 回合后换新窗'),
-      h(BiliAuth, { key: 'bili-auth' }),
       ...autoSurfSection({ draft, patchExtensions }),
     ]),
   ])

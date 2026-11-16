@@ -2,7 +2,11 @@
 // (chat.deepDiving / chat.deepDivingFor, baked into the host bundle with no user
 // override layer). The companion owns that voice: swap the brand string for
 //「<name>思考中」in place, keeping the duration suffix the host renders.
-// Pure text-node rewrite — no host internals, reversible via the disposer.
+//
+// Host TextShimmer also mirrors the label into data-shimmer-text for a decorative
+// ::after overlay. Rewriting only the text node leaves the attr on the host brand
+// → two strings stack (ghost overlap). Keep both in sync.
+// Pure text/attr rewrite — no host internals, reversible via the disposer.
 const { api } = require('./util.mjs')
 
 const LEGACY = '深度求索'
@@ -13,28 +17,64 @@ function labelFor(name) {
   return n + '思考中'
 }
 
-/** Idempotent rewrite — safe under MutationObserver + host 1s timer ticks. */
-function rewriteTextNode(node) {
-  const raw = String(node && node.nodeValue != null ? node.nodeValue : '')
-  if (!raw) return
+/** Shared brand→companion transform — used for text nodes and shimmer attrs. */
+function rewriteBrand(raw) {
+  const text = String(raw != null ? raw : '')
+  if (!text || text.indexOf(LEGACY) < 0) return text
   const voice = labelFor(companionName)
-  // Already companion voice and no host brand left — do nothing (avoids ghosting).
-  if (raw.indexOf(LEGACY) < 0) return
-  let next = raw.split(LEGACY + '中').join(voice)
-  // Leftover brand without 中 (e.g. mid-edit ticks).
+  let next = text.split(LEGACY + '中').join(voice)
   if (next.indexOf(LEGACY) >= 0) {
     next = next.split(LEGACY).join(companionName + '思考')
   }
-  // Collapse accidental doubles from racing observers / mid-string edits.
   next = next.replace(/思考思考/g, '思考')
   while (next.indexOf(voice + voice) >= 0) next = next.split(voice + voice).join(voice)
+  return next
+}
+
+/** Idempotent rewrite — safe under MutationObserver + host 1s timer ticks. */
+function rewriteTextNode(node) {
+  const raw = String(node && node.nodeValue != null ? node.nodeValue : '')
+  if (!raw || raw.indexOf(LEGACY) < 0) return
+  const next = rewriteBrand(raw)
   if (next !== raw) node.nodeValue = next
+  // Host TextShimmer keeps a parallel data-shimmer-text for ::after — sync it now.
+  syncShimmerNear(node)
+}
+/** Keep TextShimmer decorative ::after (attr(data-shimmer-text)) on companion voice. */
+function rewriteShimmerAttr(el) {
+  if (!el || typeof el.getAttribute !== 'function') return
+  const raw = el.getAttribute('data-shimmer-text')
+  if (raw == null || raw.indexOf(LEGACY) < 0) return
+  const next = rewriteBrand(raw)
+  if (next !== raw && typeof el.setAttribute === 'function') {
+    el.setAttribute('data-shimmer-text', next)
+  }
+}
+
+function syncShimmerNear(node) {
+  let el = node && node.parentElement
+  while (el) {
+    if (typeof el.hasAttribute === 'function' && el.hasAttribute('data-shimmer')) {
+      const nodes = typeof el.querySelectorAll === 'function'
+        ? el.querySelectorAll('[data-shimmer-text]')
+        : []
+      for (const target of nodes) rewriteShimmerAttr(target)
+      return
+    }
+    el = el.parentElement
+  }
 }
 
 function scan(root) {
   if (!root || typeof document === 'undefined') return
   if (root.nodeType === 3) { rewriteTextNode(root); return }
   if (root.nodeType !== 1 && root.nodeType !== 9 && root.nodeType !== 11) return
+  if (typeof root.getAttribute === 'function' && root.getAttribute('data-shimmer-text') != null) {
+    rewriteShimmerAttr(root)
+  }
+  if (typeof root.querySelectorAll === 'function') {
+    for (const el of root.querySelectorAll('[data-shimmer-text]')) rewriteShimmerAttr(el)
+  }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   let node = walker.nextNode()
   while (node) {
@@ -67,6 +107,10 @@ function installThinkingLabel() {
   }
   const mo = new MutationObserver((records) => {
     for (const rec of records) {
+      if (rec.type === 'attributes' && rec.target && rec.attributeName === 'data-shimmer-text') {
+        rewriteShimmerAttr(rec.target)
+        continue
+      }
       if (rec.type === 'characterData' && rec.target && rec.target.nodeType === 3) {
         rewriteTextNode(rec.target)
         continue
@@ -74,7 +118,13 @@ function installThinkingLabel() {
       for (const added of rec.addedNodes || []) scheduleScan(added)
     }
   })
-  mo.observe(document.body, { subtree: true, childList: true, characterData: true })
+  mo.observe(document.body, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['data-shimmer-text'],
+  })
 
   let alive = true
   const refreshName = () => {
@@ -99,4 +149,11 @@ function installThinkingLabel() {
   }
 }
 
-module.exports = { installThinkingLabel, labelFor, LEGACY, rewriteTextNode }
+module.exports = {
+  installThinkingLabel,
+  labelFor,
+  LEGACY,
+  rewriteTextNode,
+  rewriteShimmerAttr,
+  rewriteBrand,
+}

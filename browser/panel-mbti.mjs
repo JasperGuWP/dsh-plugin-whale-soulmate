@@ -56,7 +56,9 @@ async function startPersonaQuizRequest() {
 /** Wired from entry.mjs via ctx.uiWorkspace.openSession — real host navigation. */
 let hostOpenSession = null
 function setHostOpenSession(fn) {
-  hostOpenSession = typeof fn === 'function' ? fn : null
+  // Soft unbind (null) from Cordis child teardown must NOT wipe the binder —
+  // toast/quiz clicks still need openSession after a transient inject recycle.
+  if (typeof fn === 'function') hostOpenSession = fn
 }
 
 /**

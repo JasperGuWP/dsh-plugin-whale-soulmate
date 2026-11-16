@@ -247,17 +247,36 @@ const { CSS_KEY } = require('./util.mjs')
 .sm-panel-actions .sm-panel-note:not(.bad){color:var(--dsw-alias-state-success-primary,#1a9f5a)}
 /* Companion art upload */
 .sm-sprite-row{display:flex;gap:14px;align-items:flex-start;margin-bottom:12px}
-.sm-sprite-preview{width:96px;height:96px;flex:none;object-fit:contain;border-radius:var(--dsw-radius-md,10px);border:1px solid var(--dsw-alias-border-l2,#e3e5e8);background:var(--dsw-alias-bg-layer-2,#f9fafb)}
+.sm-sprite-preview{width:220px;height:220px;flex:none;object-fit:contain;object-position:center center;border-radius:var(--dsw-radius-md,10px);border:1px solid var(--dsw-alias-border-l2,#e3e5e8);background:var(--dsw-alias-bg-layer-2,#f9fafb);display:block}
+video.sm-sprite-preview{background:transparent;object-fit:cover;object-position:center center;transform:scale(1.15)}
+.sm-cap-mask{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;background:color-mix(in srgb,#0f1115 42%,transparent);backdrop-filter:blur(2px)}
+.sm-cap-dialog{width:min(380px,100%);padding:18px 18px 14px;border-radius:14px;border:1px solid var(--dsw-alias-border-l2,#e3e5e8);background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:var(--dsw-elevation-panel,0 12px 40px #00000022);color:var(--dsw-alias-label-primary,#0f1115)}
+.sm-cap-dialog h3{margin:0 0 8px;font-size:15px;font-weight:650}
+.sm-cap-dialog p{margin:0 0 14px;font-size:13px;line-height:1.55;color:var(--dsw-alias-label-secondary,#5c6370)}
+.sm-cap-actions{display:flex;justify-content:flex-end;gap:8px}
+.sm-cap-actions .sm-btn{min-width:72px}
+.sm-cap-actions .sm-btn.primary{background:var(--dsw-alias-button-primary-fill,#4d6bfe);border-color:transparent;color:var(--dsw-alias-button-primary-label,#fff)}
 .sm-sprite-preview.empty{display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--dsw-alias-label-tertiary,#8a8f99);background:repeating-linear-gradient(45deg,transparent,transparent 5px,color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 3%,transparent) 5px,color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 3%,transparent) 10px)}
 .sm-sprite-ops{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0;flex:1}
 .sm-sprite-ops .sm-panel-muted{flex-basis:100%;margin:2px 0 0}
 .sm-sprite-ops label{display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px}
 .sm-sprite-ops input[type=range]{width:150px}
+/* 桌面小伙伴右侧控件竖排：横向 flex-wrap 会把「尺寸/皮肤」标签和滑杆挤到互相遮挡 */
+.sm-pet-ops{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:10px}
+.sm-pet-ops>label{flex:none;width:100%}
+.sm-pet-ops .sm-panel-field{flex:none;width:100%;min-width:0;max-width:420px;margin:0}
+.sm-pet-ops .sm-panel-field>span{white-space:normal;line-height:1.4}
+.sm-pet-ops input[type=range]{width:100%;max-width:420px}
+.sm-pet-ops .sm-panel-input{max-width:260px}
+.sm-pet-ops .sm-panel-muted{flex-basis:auto;margin:2px 0 0;line-height:1.55}
 /* 作息与主动：竖排表单，勿复用横向 sm-sprite-ops（会把 LLM 块和滑杆挤成乱漂） */
 .sm-rhythm-body{display:flex;flex-direction:column;gap:10px;align-items:stretch;min-width:0}
 .sm-rhythm-check{display:flex;align-items:center;gap:8px;margin:0;font-size:12.5px;line-height:1.4}
-.sm-rhythm-body .sm-panel-field{margin:2px 0}
+.sm-rhythm-body .sm-panel-field{margin:2px 0;flex:none;width:100%;max-width:420px}
 .sm-rhythm-body .sm-panel-field input[type=range]{width:100%;max-width:420px}
+.sm-rhythm-body .sm-bili-auth{margin-top:4px;margin-bottom:2px}
+.sm-autosurf-knobs{display:flex;flex-direction:column;gap:8px;margin:4px 0 0 22px;min-width:0}
+.sm-autosurf-knobs .sm-panel-field{flex:none;margin:0}
 /* Tab bar: hairline underline that slides, no pills, no fills.
    Opaque sticky mask (incl. ::before) so scrolled cards cannot peek above the bar. */
 .sm-tabs{display:flex;gap:2px;flex-wrap:wrap;position:sticky;top:0;z-index:6;padding:4px 0 0;background:var(--dsw-alias-bg-base,#fff);border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 8%,transparent);isolation:isolate}
@@ -287,6 +306,8 @@ const { CSS_KEY } = require('./util.mjs')
 .sm-eng-card{position:relative;overflow:hidden;border:1px solid var(--sm-line,#e3e5e8);border-radius:var(--dsw-radius-lg,14px);background-color:var(--sm-surface,#fafbfc);background-image:radial-gradient(130% 100% at 100% 0,color-mix(in srgb,var(--sm-accent,#4d6bfe) 6%,transparent),transparent 62%),linear-gradient(var(--sm-faint,#0000000a) 1px,transparent 1px),linear-gradient(90deg,var(--sm-faint,#0000000a) 1px,transparent 1px);background-size:auto,24px 24px,24px 24px;padding:15px 17px 17px}
 /* B 站鉴权卡复用 eng-card 气质；num/field 补齐 panel-bili 引用 */
 .sm-bili-auth{margin-top:12px}
+.sm-bili-auth .sm-eng-head{margin-bottom:6px;align-items:flex-start}
+.sm-bili-auth .sm-bili-actions{margin-top:4px}
 .sm-bili-manual{margin-top:14px;padding:12px 14px;border:1px dashed var(--sm-line,#e3e5e8);border-radius:12px;background:color-mix(in srgb,var(--sm-accent,#4d6bfe) 3%,transparent)}
 .sm-bili-manual-lead{margin:0 0 4px;font-size:12px;line-height:1.6}
 .sm-bili-cred{margin-top:10px}

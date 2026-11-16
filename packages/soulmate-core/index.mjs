@@ -96,6 +96,7 @@ export function apply(ctx, config = {}) {
     home, gateway, cfg, promptEngine, pushEvent, warn, track,
     registerTool: (tool) => ctx.tools.register(tool),
     ensureHomeSession,
+    sessionController,
   });
 
   const usage = createUsageRuntime({ home, cfg, warn, pushEvent, sessionController, getLlm });

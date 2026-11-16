@@ -641,6 +641,20 @@ export async function retainFact(home, input = {}) {
           if (old.conflictWith) continue;
           const sim = similarityOf(tokens, keywordScore(tokens, old.text));
           if (sim < 0.6 || !polarityOpposite(fact.text, old.text)) continue;
+          // Handoff / system-noise pairs: keep the incoming row, retire the old —
+          // never park a conflict that would ask the user to click 保留新/旧.
+          if (shouldAutoResolveConflict(fact, old)) {
+            old.invalidatedAt = iso;
+            old.invalidatedBy = id;
+            old.conflictWith = null;
+            old.conflictOpenedAt = null;
+            old.conflictOpenedConfidence = undefined;
+            old.updatedAt = iso;
+            dirty.add(path);
+            await appendPrivacyAudit(home, { action: 'conflict_auto_resolved', id, dropped: old.id, reason: 'noise' });
+            opened = true;
+            break;
+          }
           old.conflictWith = id;
           old.conflictOpenedAt = iso;
           old.conflictOpenedConfidence = old.confidence;
@@ -1230,6 +1244,99 @@ export function polarityOpposite(a, b) {
   return false;
 }
 
+/** System / host scaffolding that should never ask the user to pick a side. */
+export function isSystemNoiseText(text) {
+  const t = str(text);
+  if (!t) return false;
+  if (/<system-reminder>|soulmate-wake|Current working directory|plugin-sessions|agent-reach/i.test(t)) return true;
+  if (/The following information describes your current session/i.test(t)) return true;
+  if (/专属窗交接/.test(t) && /近聊摘录|专属对话窗写满/.test(t)) return true;
+  return false;
+}
+
+/** Conflicts we can settle without a human: handoff rolls or pure system noise. */
+export function shouldAutoResolveConflict(a, b) {
+  const ta = str(a?.topic).trim();
+  const tb = str(b?.topic).trim();
+  if (ta === '专属窗交接' && tb === '专属窗交接') return true;
+  if (isSystemNoiseText(a?.text) && isSystemNoiseText(b?.text)) return true;
+  return false;
+}
+
+function factTimeMs(f) {
+  const raw = f?.t || f?.updatedAt || f?.createdAt || '';
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Auto-keep the newer side of noise/handoff conflicts so the panel stays clean.
+ * Also collapses duplicate active「专属窗交接」rows down to the newest one.
+ * Silent by default (no「改口」diary spam).
+ */
+export async function autoResolveNoiseConflicts(home, options = {}) {
+  const silent = options.silent !== false;
+  const reason = str(options.reason).trim() || '自动处理：交接/系统噪音';
+  const nowMs = resolveNow(options.nowMs);
+  const iso = new Date(nowMs).toISOString();
+  const { pub, priv } = await loadFacts(home);
+  const active = [...pub, ...priv].filter(isActive);
+  const seen = new Set();
+  const pairs = [];
+  for (const f of active.filter((x) => x.conflictWith)) {
+    const key = [f.id, f.conflictWith].sort().join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const other = active.find((x) => x.id === f.conflictWith);
+    if (!other) continue;
+    if (!shouldAutoResolveConflict(f, other)) continue;
+    const newer = factTimeMs(f) >= factTimeMs(other) ? f : other;
+    const older = newer.id === f.id ? other : f;
+    pairs.push({ keepId: newer.id, dropId: older.id });
+  }
+  const resolved = [];
+  for (const pair of pairs) {
+    const res = await resolveConflict(home, {
+      keepId: pair.keepId,
+      dropId: pair.dropId,
+      reason,
+      silent,
+      nowMs,
+    });
+    if (res?.ok) resolved.push(pair);
+  }
+
+  // Collapse leftover rolling handoff facts (same topic, no parked conflict).
+  const { pub: pub2, priv: priv2 } = await loadFacts(home);
+  let pruned = 0;
+  for (const [list, path] of [
+    [pub2, home.factsPath],
+    [priv2, privateFactsPath(home)],
+  ]) {
+    const handoffs = list
+      .filter((f) => isActive(f) && str(f.topic).trim() === '专属窗交接')
+      .sort((a, b) => factTimeMs(b) - factTimeMs(a));
+    if (handoffs.length <= 1) continue;
+    const keep = handoffs[0];
+    let dirty = false;
+    for (const old of handoffs.slice(1)) {
+      old.invalidatedAt = iso;
+      old.invalidatedBy = keep.id;
+      old.conflictWith = null;
+      old.conflictOpenedAt = null;
+      old.conflictOpenedConfidence = undefined;
+      old.updatedAt = iso;
+      dirty = true;
+      pruned += 1;
+    }
+    if (dirty) await writeJsonl(path, list);
+  }
+  if (pruned) {
+    await appendPrivacyAudit(home, { action: 'handoff_pruned', pruned, at: iso }).catch(() => {});
+  }
+  return { ok: true, resolved: resolved.length, pairs: resolved, pruned };
+}
+
 const PROMISE_ACTIONS = Object.freeze({ keep: 'kept', break: 'broken', release: 'released' });
 
 /**
@@ -1330,7 +1437,7 @@ export async function resolveConflict(home, input = {}) {
     await appendSyncOp(home, { kind: 'resolve', keepId, dropId, at: iso, reason: reason || null });
     return { ok: true, keepId, dropId, diary: `我记岔了：保留「${keeper.text}」，作废「${dropper.text}」${reason ? `（${reason}）` : ''}` };
   }).then(async (res) => {
-    if (res.ok) {
+    if (res.ok && !input.silent) {
       await recordEpisode(home, { kind: 'inner', visibility: 'private', title: '改口', content: res.diary, nowMs: resolveNow(input.nowMs) });
     }
     const { diary, ...rest } = res;

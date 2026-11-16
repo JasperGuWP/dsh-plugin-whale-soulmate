@@ -666,7 +666,7 @@ function openBookshelf(startTab) {
       var tabs = h('div', { class: 'tabs' }); [['wiki', '📚 LLM Wiki (' + r.wiki.length + ')'], ['toYou', '📘 ' + nb.publicTitle + ' (' + r.toYou.length + ')'], ['inner', '📕 ' + nb.innerTitle + ' (' + r.inner.length + ')' + (r.canReadInnerDiary ? '' : ' 🔒')]].forEach(function (t) { tabs.appendChild(h('button', { class: tab === t[0] ? 'on' : '', onclick: function () { tab = t[0]; sel = null; render(); }, text: t[1] })); });
       box.appendChild(tabs);
       var items = tab === 'wiki' ? r.wiki : tab === 'toYou' ? r.toYou : r.inner;
-      if (!items.length) { var pp = sheHe(); box.appendChild(h('div', { style: 'color:#7fa4b8;padding:18px 4px', text: tab === 'wiki' ? '书架还空着。让' + pp + '多聊聊、再用 soulmate_memory_reflect 蒸馏成 Wiki 书页，书就会变厚。' : tab === 'toYou' ? '今天还没有写给你的信。' : (r.canReadInnerDiary ? pp + '还没写私密小本本。' : '🔒 亲密度达到 Lv.3「默契副驾」才能偷看' + pp + '的小本本。')})); return; }
+      if (!items.length) { var pp = sheHe(); box.appendChild(h('div', { style: 'color:#7fa4b8;padding:18px 4px', text: tab === 'wiki' ? '书架还空着。让' + pp + '多聊聊、再用 soulmate_memory_reflect 蒸馏成 Wiki 书页，书就会变厚。' : tab === 'toYou' ? '今天还没有写给你的信。' : pp + '还没写私密小本本。'})); return; }
       if (!sel || items.indexOf(sel) < 0) sel = items[0];
       var list = h('div', { class: 'list' }); items.forEach(function (it) { list.appendChild(h('div', { class: it === sel ? 'on' : '', onclick: function () { sel = it; render(); }, text: (it.title || it.label || it.id) + (it.private ? ' 🛡️' : '') })); });
       var paper = h('div', { class: 'paper' }); fillPaper(paper, sel.content || sel.summary || '', tab === 'wiki', function (slug) { var f = r.wiki.filter(function (w) { return w.slug === slug; })[0]; if (f) { sel = f; tab = 'wiki'; render(); } });

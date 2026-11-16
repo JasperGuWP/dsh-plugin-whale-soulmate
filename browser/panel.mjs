@@ -26,6 +26,8 @@ const {
 const { setMbtiTypeOnDraft, setMbtiAxisOnDraft, persistTraitSchemeSwitch, buildPersonaEvolvePayload, traitsCardInputs, useTraitsStatePoll } = require('./panel-mbti.mjs')
 const { llmBudgetSection } = require('./panel-llm-budget.mjs')
 const { biliAuthCard } = require('./panel-bili.mjs')
+const { OPEN_TAB_EVENT, consumePendingTab } = require('./panel-nav.mjs')
+const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
 
     // Sidebar panel — 「小鱼」persona workshop (slot `main` + panellist row).
     const PANEL_ID = 'soulmate'
@@ -38,56 +40,7 @@ const { biliAuthCard } = require('./panel-bili.mjs')
       return trimmed || 'soulmate'
     }
 
-/** The sidebar glyph: a tiny whale in `currentColor`, so it follows the host theme. */
-    function SoulmatePanelIcon(props) {
-      const size = Number(props && props.size) || 18
-      return h('svg', {
-        width: size,
-        height: size,
-        viewBox: '0 0 24 24',
-        fill: 'none',
-        stroke: 'currentColor',
-        strokeWidth: 1.5,
-        strokeLinecap: 'round',
-        strokeLinejoin: 'round',
-        'aria-hidden': 'true',
-      }, [
-        h('path', {
-          key: 'body',
-          d: 'M3.6 12.3c0-3.6 3.5-6.5 8.1-6.5 3.7 0 6.8 2 7.7 4.7l2.1-.8c.5-.2.95.4.7.85l-1.6 2.5c-.15.25-.45.35-.72.25l-1.4-.5c-.9 2.5-3.6 4.2-6.8 4.2-4.5 0-8.1-2.1-8.1-4.7Z',
-        }),
-        h('circle', { key: 'eye', cx: 8.6, cy: 11.1, r: 1.05, fill: 'currentColor', stroke: 'none' }),
-        h('path', { key: 'spout', d: 'M11.6 5.9c-.3-1.1.3-2 1.3-2.4' }),
-      ])
-    }
-
-    /** Project `/api/state` onto the editable draft the page binds to. */
-    /** Live cycling preview of the bundled sprite pack (settings → identity tab). */
-    function PetPreview(props) {
-      const [url, setUrl] = React.useState('')
-      // The preview must show the pack the widget will actually play, so it follows the
-      // draft's skin instead of always fetching the server default.
-      const skin = props.skin || 'winterboy-chibi'
-      React.useEffect(() => {
-        let alive = true
-        let timer = 0
-        let idx = -1
-        let frames = []
-        setUrl('')
-        api('pet/manifest?skin=' + encodeURIComponent(skin)).then((m) => {
-          if (!alive || !m || m.ok === false) return
-          frames = Object.keys(m.frameUrls || {}).sort().map((id) => m.frameUrls[id])
-          if (!frames.length) return
-          idx = 0
-          setUrl(frames[0])
-          timer = setInterval(() => { idx = (idx + 1) % frames.length; setUrl(frames[idx]) }, 850)
-        })
-        return () => { alive = false; clearInterval(timer) }
-      }, [skin])
-      return h('img', { className: 'sm-sprite-preview', src: url || props.fallback || '', alt: '桌面宠物预览' })
-    }
-
-    /** The settings page: identity / traits / memory, split into tabs. */
+/** The settings page: identity / traits / memory, split into tabs. */
     function SoulmatePanelPage() {
       const [snap, setSnap] = React.useState(null)
       const [engine, setEngine] = React.useState(null)
@@ -95,8 +48,18 @@ const { biliAuthCard } = require('./panel-bili.mjs')
       const [error, setError] = React.useState('')
       const [busy, setBusy] = React.useState(false)
       const [note, setNote] = React.useState('')
-      const [tab, setTab] = React.useState('status')
+      const [tab, setTab] = React.useState(() => consumePendingTab() || 'status')
       const [graph, setGraph] = React.useState(null)
+      React.useEffect(() => {
+        const onOpen = (ev) => {
+          const next = String((ev && ev.detail && ev.detail.tab) || '').trim()
+          if (next) setTab(next)
+        }
+        window.addEventListener(OPEN_TAB_EVENT, onOpen)
+        const pending = consumePendingTab()
+        if (pending) setTab(pending)
+        return () => window.removeEventListener(OPEN_TAB_EVENT, onOpen)
+      }, [])
       const canvasRef = React.useRef(null)
       const neuronRef = React.useRef(null)
       const draftRef = React.useRef(null)
@@ -481,7 +444,7 @@ const { biliAuthCard } = require('./panel-bili.mjs')
         try {
           const url = await deleteSprite()
           patchAppearance({ customSpriteUrl: url || DEFAULT_SPRITE_URL })
-          setSpriteNote('已恢复默认 · 小鲸.png')
+          setSpriteNote('已恢复默认 · Q版形象')
         } catch (err) {
           setSpriteNote('恢复失败：' + (err && err.message ? err.message : String(err)))
         }

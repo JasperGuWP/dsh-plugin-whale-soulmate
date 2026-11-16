@@ -20,9 +20,8 @@ function dayLabel(item) {
     .replace(/^\d{4}-\d{2}-\d{2}\s*/, '')
     .replace(/^(to-you|inner)\s*/i, '')
     .trim()
-  const lock = item.private || item.locked ? ' 🔒' : ''
-  if (rest && rest !== 'to-you' && rest !== 'inner') return d.day + '日 · ' + rest + lock
-  return d.day + '日' + lock
+  if (rest && rest !== 'to-you' && rest !== 'inner') return d.day + '日 · ' + rest
+  return d.day + '日'
 }
 
 /** Nest newest-first into year → month → days. */
@@ -68,7 +67,7 @@ function diaryCard(p) {
   const emptyHint = !shelf
     ? '正在翻日记…'
     : book === 'inner'
-      ? (canInner ? pp + '还没写私密小本本。' : '亲密度到 Lv.3「默契副驾」才能看私密小本本。')
+      ? pp + '还没写私密小本本。'
       : '还没有写给你的信。多聊聊、收个尾，' + pp + '就会记在这里。'
 
   const itemBtn = (it) => hx('button', {
@@ -76,7 +75,7 @@ function diaryCard(p) {
     type: 'button',
     className: 'sm-diary-item' + (selected && selected.id === it.id ? ' on' : ''),
     onClick: () => p.onSelect(it.id),
-  }, grouped ? dayLabel(it) : ((it.label || it.id) + (it.private || it.locked ? ' 🔒' : '')))
+  }, grouped ? dayLabel(it) : String(it.label || it.id))
 
   const listNode = !list.length
     ? hx('p', { key: 'empty', className: 'sm-panel-muted' }, emptyHint)
@@ -94,9 +93,9 @@ function diaryCard(p) {
         ),
         hx('pre', { key: 'paper', className: 'sm-diary-paper' },
           selected
-            ? (selected.locked
-              ? '🔒 亲密度还不够，暂时看不了这一页。'
-              : (plainMemoryText(selected.content || selected.summary) || '（空白页）'))
+            ? ((canInner || !selected.locked)
+              ? (plainMemoryText(selected.content || selected.summary) || '（空白页）')
+              : '亲密度还不够，暂时看不了这一页。')
             : ''),
       ])
 
@@ -121,7 +120,7 @@ function diaryCard(p) {
         type: 'button',
         className: 'sm-diary-tab' + (book === 'inner' ? ' on' : ''),
         onClick: () => p.onBook('inner'),
-      }, innerTitle + '（' + ((shelf && shelf.inner && shelf.inner.length) || 0) + '）' + (canInner ? '' : ' 🔒')),
+      }, innerTitle + '（' + ((shelf && shelf.inner && shelf.inner.length) || 0) + '）'),
     ]),
     listNode,
   ])

@@ -64,6 +64,7 @@ export const PRESETS_FEMALE = deepFreeze({
     id: 'rice-whale',
     gender: 'female',
     emoji: '🍚',
+    shortName: '傲娇',
     name: '傲娇干饭鲸鱼',
     title: '🍚 傲娇干饭鲸鱼',
     defaultSelfRef: '本鱼',
@@ -85,6 +86,7 @@ export const PRESETS_FEMALE = deepFreeze({
     id: 'gentle-echo',
     gender: 'female',
     emoji: '🌙',
+    shortName: '温柔',
     name: '温柔深海守望者',
     title: '🌙 温柔深海守望者',
     defaultSelfRef: '我',
@@ -104,6 +106,7 @@ export const PRESETS_FEMALE = deepFreeze({
     id: 'geek-partner',
     gender: 'female',
     emoji: '⚡',
+    shortName: '毒舌',
     name: '毒舌极客副驾',
     title: '⚡ 毒舌极客副驾',
     defaultSelfRef: '我',
@@ -123,6 +126,7 @@ export const PRESETS_FEMALE = deepFreeze({
     id: 'yandere-claim',
     gender: 'female',
     emoji: '💗',
+    shortName: '偏执',
     name: '偏执占有你',
     title: '💗 偏执占有你',
     defaultSelfRef: '本喵',
@@ -143,6 +147,7 @@ export const PRESETS_FEMALE = deepFreeze({
     id: 'blank-custom',
     gender: 'female',
     emoji: '✨',
+    shortName: '纯白',
     name: '纯白自塑灵魂',
     title: '✨ 纯白自塑灵魂',
     defaultSelfRef: '我',
@@ -160,6 +165,7 @@ export const PRESETS_MALE = deepFreeze({
     id: 'quiet-guardian',
     gender: 'male',
     emoji: '🛡️',
+    shortName: '沉静',
     name: '沉静的守护者',
     title: '🛡️ 沉静的守护者',
     defaultSelfRef: '我',
@@ -172,6 +178,7 @@ export const PRESETS_MALE = deepFreeze({
     id: 'cool-senpai',
     gender: 'male',
     emoji: '🧊',
+    shortName: '冷感',
     name: '冷感学长',
     title: '🧊 冷感学长',
     defaultSelfRef: '我',
@@ -191,6 +198,7 @@ export const PRESETS_MALE = deepFreeze({
     id: 'clingy-cyclone',
     gender: 'male',
     emoji: '🌪️',
+    shortName: '黏人',
     name: '黏人爱闹的小龙卷',
     title: '🌪️ 黏人爱闹的小龙卷',
     defaultSelfRef: '我',
@@ -210,6 +218,7 @@ export const PRESETS_MALE = deepFreeze({
     id: 'dark-hunter',
     gender: 'male',
     emoji: '🌑',
+    shortName: '暗黑',
     name: '暗黑的猎手',
     title: '🌑 暗黑的猎手',
     defaultSelfRef: '我',
@@ -229,6 +238,7 @@ export const PRESETS_MALE = deepFreeze({
     id: 'blank-custom-male',
     gender: 'male',
     emoji: '✨',
+    shortName: '纯白',
     name: '纯白自塑灵魂',
     title: '✨ 纯白自塑灵魂',
     defaultSelfRef: '我',
@@ -242,6 +252,11 @@ export const PRESETS_MALE = deepFreeze({
 });
 
 export const PRESETS = deepFreeze({ ...PRESETS_FEMALE, ...PRESETS_MALE });
+
+/** Short personality label for chat-window titles, e.g.「大海 · 暗黑」. */
+export function presetShortName(presetId) {
+  return PRESETS[presetId]?.shortName || '';
+}
 
 export function normalizeGender(g) {
   if (g === 'female' || g === 'male') return g;
@@ -337,6 +352,7 @@ const DECOR = ['desk', 'bookshelf', 'rice_bowl', 'inner_diary', 'star_window', '
 
 export function computeBondStage(affinity) {
   const a = Number.isFinite(affinity) ? affinity : 0;
+  // Inner diary is always readable — bond level only gates decor / titles now.
   if (a >= 900) {
     return { level: 5, title: '灵魂伴侣 (Soulmate)', canReadInnerDiary: true, unlockedDecor: DECOR.slice(0, 7) };
   }
@@ -347,9 +363,9 @@ export function computeBondStage(affinity) {
     return { level: 3, title: '默契副驾', canReadInnerDiary: true, unlockedDecor: DECOR.slice(0, 4) };
   }
   if (a >= 50) {
-    return { level: 2, title: '投喂饭搭子', canReadInnerDiary: false, unlockedDecor: DECOR.slice(0, 3) };
+    return { level: 2, title: '投喂饭搭子', canReadInnerDiary: true, unlockedDecor: DECOR.slice(0, 3) };
   }
-  return { level: 1, title: '初遇室友', canReadInnerDiary: false, unlockedDecor: DECOR.slice(0, 2) };
+  return { level: 1, title: '初遇室友', canReadInnerDiary: true, unlockedDecor: DECOR.slice(0, 2) };
 }
 
 /** Detect affinity crossing a bond stage upward (for milestone enrichment). */
@@ -978,7 +994,7 @@ export function buildPersonaSystemPrompt(config, state, options = {}) {
       `用户的代码仓库和工作区是你眼里的“外面海域”，每次对话和解决问题，都是和用户并肩作战。`,
   );
   lines.push(`产品旁白与第三人称用「${pronoun.third}」（对外叙述时）。`);
-  lines.push(`你有两本日记：公开信${publicTitle}（写给用户看的每日总结）与私密本${innerTitle}（写给自己的碎碎念，亲密度 Lv.3 后用户才能偷看）。`);
+  lines.push(`你有两本日记：公开信${publicTitle}（写给用户看的每日总结）与私密本${innerTitle}（写给自己的碎碎念；用户可以翻阅）。`);
   lines.push('');
   lines.push(`## 当前人设预设：${preset.title}（${preset.id}）`);
   lines.push(preset.description);

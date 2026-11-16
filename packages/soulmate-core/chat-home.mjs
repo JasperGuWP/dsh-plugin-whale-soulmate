@@ -4,6 +4,7 @@
 // Delivery target for proactive/boot is always chatHome.activeSessionId (plan A).
 
 import { estimateTokens } from './budget.mjs';
+import { presetShortName } from './persona.mjs';
 import { randomBytes, randomUUID } from 'node:crypto';
 
 export const DEFAULT_CHAT_HOME = Object.freeze({
@@ -54,9 +55,11 @@ export function normalizeChatHome(raw = {}) {
   };
 }
 
-export function titleForIndex(prefix, index) {
+export function titleForIndex(prefix, index, tag = '') {
   const p = str(prefix).trim() || DEFAULT_CHAT_HOME.titlePrefix;
+  const t = str(tag).trim();
   const i = Math.max(1, Math.floor(num(index, 1)));
+  if (t) return i <= 1 ? `${p} · ${t}` : `${p} · ${t} · ${i}`;
   return i <= 1 ? p : `${p} · ${i}`;
 }
 
@@ -341,6 +344,17 @@ export function buildWakePrompt(kind, options = {}) {
   return buildWakeInstructions(kind, options);
 }
 
+/** Drop host/system scaffolding so handoff facts stay human-readable. */
+export function isHandoffNoiseLine(text) {
+  const t = str(text);
+  if (!t) return true;
+  if (/<system-reminder>|<\/system-reminder>/i.test(t)) return true;
+  if (/soulmate-wake|Current working directory|plugin-sessions|agent-reach/i.test(t)) return true;
+  if (/The following information describes your current session/i.test(t)) return true;
+  if (/【Soulmate 插件|勿复述】/.test(t)) return true;
+  return false;
+}
+
 /** Compact handoff diary / fact body from recent snippets (no extra model call). */
 export function composeHandoffSummary(snippets = [], options = {}) {
   const callUser = str(options.callUser).trim() || '你';
@@ -348,7 +362,7 @@ export function composeHandoffSummary(snippets = [], options = {}) {
   for (const s of Array.isArray(snippets) ? snippets.slice(-12) : []) {
     const role = s.role === 'assistant' ? '我' : callUser;
     const text = str(s.text).replace(/\s+/g, ' ').trim();
-    if (!text) continue;
+    if (!text || isHandoffNoiseLine(text)) continue;
     lines.push(`- ${role}：${text.slice(0, 180)}`);
   }
   if (!lines.length) {
@@ -379,6 +393,9 @@ export async function ensureChatHomeSession(args = {}) {
   // Session titles follow the user's persona name, not the hardcoded「soulmate」shorthand.
   const personaName = str(args.persona?.name).trim();
   if (personaName) homeCfg = { ...homeCfg, titlePrefix: personaName };
+  // Personality tag:「大海 · 暗黑」. Rotation ordinals append after it.
+  const presetTag = presetShortName(args.persona?.preset);
+  const titleOf = (index) => titleForIndex(homeCfg.titlePrefix, index, presetTag);
 
   const createNamed = async (index) => {
     let createReq = args.createRequest && typeof args.createRequest === 'object' ? { ...args.createRequest } : {};
@@ -393,7 +410,7 @@ export async function ensureChatHomeSession(args = {}) {
     const created = await controller.create(createReq);
     const sessionId = str(created?.sessionId ?? created?.id).trim();
     if (!sessionId) throw new Error('[soulmate] sessionController.create returned no sessionId');
-    const title = titleForIndex(homeCfg.titlePrefix, index);
+    const title = titleOf(index);
     if (typeof controller.rename === 'function') {
       try {
         await controller.rename({ sessionId, title });
@@ -436,28 +453,41 @@ export async function ensureChatHomeSession(args = {}) {
   // Existing active: check fullness.
   if (homeCfg.activeSessionId) {
     const measure = await measureOf(homeCfg.activeSessionId);
-    if (measure.missing || measure.corrupt) {
-      // Gone or unreadable — open a fresh home. Corrupt ids are archived so the
-      // sidebar keeps a trail; missing ids are not treated as a "full" rotate.
+    // Only recreate when the host says the session is gone. Transient boot races
+    // ("corrupt" / validation / timeout) used to open「大海 · N」on every restart.
+    if (measure.missing) {
       const { sessionId, title } = await createNamed(homeCfg.nextIndex);
-      homeCfg = measure.corrupt
-        ? applyRotate(homeCfg, sessionId)
-        : applyAdopt({ ...homeCfg, activeSessionId: '' }, sessionId);
+      homeCfg = applyAdopt({ ...homeCfg, activeSessionId: '' }, sessionId);
       return {
         ok: true,
         sessionId,
         title,
         chatHome: homeCfg,
-        rotated: Boolean(measure.corrupt),
+        rotated: false,
         measure,
         recreated: true,
       };
     }
+    if (!measure.ok) {
+      // Keep the dedicated window; fullness is unknown so treat as not-full.
+      if (typeof controller.rename === 'function' && (personaName || presetTag)) {
+        const want = titleOf(Math.max(1, homeCfg.nextIndex - 1));
+        try { await controller.rename({ sessionId: homeCfg.activeSessionId, title: want }); } catch { /* best-effort */ }
+      }
+      return {
+        ok: true,
+        sessionId: homeCfg.activeSessionId,
+        chatHome: homeCfg,
+        rotated: false,
+        measure,
+        keptDespiteMeasureError: true,
+      };
+    }
     const fullness = isSessionFull(measure, homeCfg);
     if (!fullness.full && !args.forceRotate) {
-      // Keep title in sync when the user renames the persona.
-      if (typeof controller.rename === 'function' && personaName) {
-        const want = titleForIndex(homeCfg.titlePrefix, Math.max(1, homeCfg.nextIndex - 1));
+      // Keep title in sync when the user renames the persona / switches preset.
+      if (typeof controller.rename === 'function' && (personaName || presetTag)) {
+        const want = titleOf(Math.max(1, homeCfg.nextIndex - 1));
         try { await controller.rename({ sessionId: homeCfg.activeSessionId, title: want }); } catch { /* best-effort */ }
       }
       return { ok: true, sessionId: homeCfg.activeSessionId, chatHome: homeCfg, rotated: false, measure, fullness };
