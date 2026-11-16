@@ -1,7 +1,9 @@
 // Learn / refresh Bilibili surf interest keywords from recent chat + memory.
 import { loadConfig, saveConfigAuto } from '../soulmate-core/state.mjs';
-import { loadFacts } from '../soulmate-core/memory-engine.mjs';
+import { loadFacts, listSessionEpisodes } from '../soulmate-core/memory-engine.mjs';
 import { listImChat } from '../soulmate-core/im-chat.mjs';
+import { measureFromRecords, normalizeChatHome } from '../soulmate-core/chat-home.mjs';
+import { sessionIdsToWatch } from '../soulmate-core/session-star.mjs';
 import { resolveLlmModel } from '../soulmate-core/llm-model-pick.mjs';
 
 const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
@@ -52,6 +54,7 @@ export function extractKeywordsFromText(text) {
 export function proposeSurfKeywords({
   current = [],
   seed = [],
+  chatTexts = [],
   imTexts = [],
   factSnippets = [],
   max = 6,
@@ -66,7 +69,12 @@ export function proposeSurfKeywords({
   for (const k of normalizeKeywordList(seed, 12)) bump(k, 6);
   for (const k of normalizeKeywordList(current, 12)) bump(k, 2.5);
 
-  for (const text of Array.isArray(imTexts) ? imTexts : []) {
+  // All conversational sources: DSH 专属窗 / 普通会话 / 全平台 IM
+  const chats = [
+    ...(Array.isArray(chatTexts) ? chatTexts : []),
+    ...(Array.isArray(imTexts) ? imTexts : []),
+  ];
+  for (const text of chats) {
     const t = str(text);
     if (!t.trim()) continue;
     const w = INTEREST_CUE.test(t) ? 5 : 1.2;
@@ -109,8 +117,45 @@ function sameList(a, b) {
   return x.every((k, i) => k.toLowerCase() === y[i].toLowerCase());
 }
 
+/** Pull user lines from session-star episode bodies (`- 你：…`). */
+function userLinesFromEpisodeBody(body) {
+  const out = [];
+  for (const line of str(body).split(/\n+/)) {
+    const m = line.match(/^[-\s]*(?:你|搭档|用户|User)\s*[：:]\s*(.+)$/i);
+    if (m && m[1].trim()) out.push(m[1].trim());
+  }
+  if (!out.length && str(body).trim()) out.push(str(body).slice(0, 240));
+  return out;
+}
+
+async function collectDshSessionUserTexts(home, conf, controller) {
+  const texts = [];
+  if (!controller || typeof controller.events !== 'function') return texts;
+  const chatHome = normalizeChatHome(conf.chatHome);
+  const ids = sessionIdsToWatch(chatHome).slice(0, 6);
+  for (const sessionId of ids) {
+    try {
+      const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(12_000)
+        : new AbortController().signal;
+      const page = await controller.events({
+        address: { kind: 'session', sessionId },
+        maxMessages: 60,
+      }, signal);
+      const measure = measureFromRecords(page);
+      for (const s of measure.snippets || []) {
+        if (s.role === 'user' && str(s.text).trim()) texts.push(str(s.text).trim());
+      }
+    } catch {
+      // session gone / host busy — skip
+    }
+  }
+  return texts;
+}
+
 /**
- * Refresh config.extensions.biliKeywords from recent IM + facts (optional LLM polish).
+ * Refresh config.extensions.biliKeywords from ALL recent chats + facts (optional LLM polish).
+ * Sources: 全平台 IM、DSH 专属/已知会话、窗星星图 episode、记忆 facts。
  */
 export async function refreshSurfKeywords(home, options = {}) {
   const conf = await loadConfig(home);
@@ -119,12 +164,35 @@ export async function refreshSurfKeywords(home, options = {}) {
     return { ok: true, skipped: true, reason: 'disabled', keywords: normalizeKeywordList(ext.biliKeywords, 8) };
   }
 
-  const imRows = await listImChat(home, { platform: 'weixin', limit: 50 }).catch(() => []);
-  const imTexts = (Array.isArray(imRows) ? imRows : [])
-    .filter((r) => r && r.role === 'user')
-    .map((r) => str(r.text))
-    .filter(Boolean)
-    .slice(0, 40);
+  const chatTexts = [];
+
+  // 1) All IM platforms (not only WeChat)
+  const imRows = await listImChat(home, { platform: '', limit: 80 }).catch(() => []);
+  for (const r of Array.isArray(imRows) ? imRows : []) {
+    if (r && r.role === 'user' && str(r.text).trim()) chatTexts.push(str(r.text).trim());
+  }
+
+  // 2) DSH chat windows (专属窗 + known sessions)
+  const controller = typeof options.sessionController === 'function'
+    ? options.sessionController()
+    : options.sessionController;
+  const homeTexts = await collectDshSessionUserTexts(home, conf, controller).catch(() => []);
+  chatTexts.push(...homeTexts);
+
+  // 3) Session-star episode excerpts (covers windows we already distilled)
+  try {
+    const episodes = await listSessionEpisodes(home, { includePrivate: false });
+    const recent = (Array.isArray(episodes) ? episodes : [])
+      .slice()
+      .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+      .slice(0, 8);
+    for (const ep of recent) {
+      chatTexts.push(...userLinesFromEpisodeBody(ep.body));
+      if (str(ep.title).trim()) chatTexts.push(str(ep.title).trim());
+    }
+  } catch {
+    // optional
+  }
 
   let factSnippets = [];
   try {
@@ -140,10 +208,11 @@ export async function refreshSurfKeywords(home, options = {}) {
   const seed = Array.isArray(ext.biliKeywordsSeed) && ext.biliKeywordsSeed.length
     ? ext.biliKeywordsSeed
     : (ext.biliKeywords || []);
+  const chatSample = chatTexts.filter(Boolean).slice(0, 60);
   let proposed = proposeSurfKeywords({
     current: ext.biliKeywords || [],
     seed,
-    imTexts,
+    chatTexts: chatSample,
     factSnippets,
     max: Math.min(8, Math.max(3, Math.floor(Number(options.max) || 6))),
   });
@@ -154,10 +223,10 @@ export async function refreshSurfKeywords(home, options = {}) {
       const picked = resolveLlmModel({ models, preferredId: str(options.modelId) });
       if (picked?.id) {
         const prompt = [
-          '根据搭档近聊与记忆要点，提炼 3～6 个适合 B 站搜索的兴趣关键词。',
+          '根据搭档在各处近聊（DSH 对话窗、各 IM 平台）与记忆要点，提炼 3～6 个适合 B 站搜索的兴趣关键词。',
           '要求：短词/短语，适合搜索；不要句子；不要解释；只输出 JSON 字符串数组。',
           `当前关键词：${JSON.stringify(normalizeKeywordList(ext.biliKeywords, 8))}`,
-          `近聊摘录：\n${imTexts.slice(0, 12).map((t) => `- ${t.slice(0, 80)}`).join('\n') || '（暂无）'}`,
+          `近聊摘录：\n${chatSample.slice(0, 16).map((t) => `- ${t.slice(0, 80)}`).join('\n') || '（暂无）'}`,
           `记忆摘录：\n${factSnippets.slice(0, 8).map((t) => `- ${t.slice(0, 80)}`).join('\n') || '（暂无）'}`,
         ].join('\n');
         const out = await options.oneShotLlm({ prompt, modelId: picked.id, kind: 'surf-keywords' });
@@ -166,7 +235,7 @@ export async function refreshSurfKeywords(home, options = {}) {
           proposed = proposeSurfKeywords({
             current: parsed,
             seed,
-            imTexts: [],
+            chatTexts: [],
             factSnippets: [],
             max: 6,
           });

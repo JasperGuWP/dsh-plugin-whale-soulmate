@@ -553,6 +553,8 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
     scheduleSessionStarCapture,
     notePetSay,
     startReplyToastWatch,
+    /** Live host sessionController (for surf-keyword learning across all windows). */
+    getSessionController: () => sessionController(),
     /** Test hook: allow a second boot greeting in-process. */
     resetBootGreetingFlag() { bootGreetingDone = false; },
   };

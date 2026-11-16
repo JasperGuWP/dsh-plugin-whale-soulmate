@@ -266,7 +266,8 @@ export async function afterSurfWatch(home, { digest, persona, options = {} } = {
   const conf = await loadConfig(home);
   const ext = conf.extensions ?? {};
   const summary = composeSurfSummary(digest, persona ?? conf.persona);
-  const stills = pickSurfStills(digest?.storyboardFrames || [], 3);
+  // Keep a denser storyboard strip for the surf-log gallery (not only 3 thumbs).
+  const stills = pickSurfStills(digest?.storyboardFrames || [], 18);
 
   const base = {
     platform: 'bilibili',

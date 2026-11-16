@@ -478,7 +478,7 @@ function autoSurfSection({ draft, patchExtensions }) {
       h('label', {
         key: 'autosurf-kw-auto',
         className: 'sm-rhythm-check',
-        title: '开启后：每次定时巡片前，根据微信近聊与记忆要点自动调整下方关键词；你手改的词会当作底线保留。',
+        title: '开启后：每次定时巡片前，根据 DSH 各对话窗、全平台 IM 近聊与记忆要点自动调整下方关键词；你手改的词会当作底线保留。',
       }, [
         h('input', {
           key: 'i', type: 'checkbox',

@@ -405,6 +405,9 @@ export function createProactiveRuntime({
         nowMs: at,
         oneShotLlm,
         listHostModels,
+        sessionController: typeof chatHome.getSessionController === 'function'
+          ? chatHome.getSessionController
+          : undefined,
       });
     } catch (err) {
       warn('surf keyword refresh failed', err);

@@ -56,12 +56,13 @@ export async function recentImBotSend(home, { platform = 'weixin', peerId = '', 
 export async function listImChat(home, { platform = 'weixin', peerId = '', limit = 50, before = '' } = {}) {
   const cap = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
   const rows = await readJsonlTail(imChatPath(home), Math.max(cap * 8, 400));
-  const plat = str(platform).trim() || 'weixin';
+  // Empty platform → all IM channels (weixin/qq/feishu/dingtalk).
+  const plat = str(platform).trim();
   const peer = str(peerId).trim();
   const beforeMs = before ? Date.parse(before) : NaN;
   let list = rows
     .map((r) => normalizeImChatEntry(r))
-    .filter((r) => r.platform === plat && (!peer || r.peerId === peer));
+    .filter((r) => (!plat || r.platform === plat) && (!peer || r.peerId === peer));
   if (Number.isFinite(beforeMs)) {
     list = list.filter((r) => {
       const t = Date.parse(r.at);

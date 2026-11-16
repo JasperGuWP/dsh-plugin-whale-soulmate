@@ -71,7 +71,7 @@ export function normalizeSurfEntry(raw = {}, platform = 'bilibili') {
         }
         const url = str(s).trim();
         return url || null;
-      }).filter(Boolean).slice(0, 6)
+      }).filter(Boolean).slice(0, 24)
       : [],
     worthScore: Number.isFinite(Number(raw.worthScore)) ? Number(raw.worthScore) : null,
     summary: str(raw.summary),

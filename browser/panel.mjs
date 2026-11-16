@@ -50,7 +50,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       const [error, setError] = React.useState('')
       const [busy, setBusy] = React.useState(false)
       const [note, setNote] = React.useState('')
-      const [tab, setTab] = React.useState(() => consumePendingTab() || 'status')
+      const [tab, setTab] = React.useState(() => consumePendingTab() || 'surf')
       const [graph, setGraph] = React.useState(null)
       React.useEffect(() => {
         const onOpen = (ev) => {
