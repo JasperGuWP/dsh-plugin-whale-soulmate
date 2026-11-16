@@ -20,14 +20,16 @@ const {
 const {
   TRAIT_LABELS,
   DEFAULT_SPRITE_URL,
+  DEFAULT_SPRITE_MALE_URL,
   draftFromSummary,
   draftSignature,
 } = require('./panel-draft.mjs')
 const { setMbtiTypeOnDraft, setMbtiAxisOnDraft, persistTraitSchemeSwitch, buildPersonaEvolvePayload, traitsCardInputs, useTraitsStatePoll } = require('./panel-mbti.mjs')
 const { llmBudgetSection } = require('./panel-llm-budget.mjs')
-const { biliAuthCard } = require('./panel-bili.mjs')
 const { OPEN_TAB_EVENT, consumePendingTab } = require('./panel-nav.mjs')
 const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
+const { surfCard: surfCardEl } = require('./panel-surf.mjs')
+const { DsBotCard } = require('./panel-dsbot.mjs')
 
     // Sidebar panel — 「小鱼」persona workshop (slot `main` + panellist row).
     const PANEL_ID = 'soulmate'
@@ -229,6 +231,10 @@ const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
                 biliAutoSurfMaxPick: Number(current.extensions.biliAutoSurfMaxPick) || 2,
                 biliAutoSurfDeepWatch: !!current.extensions.biliAutoSurfDeepWatch,
                 biliKeywords: (current.extensions.biliKeywords || []).map((k) => String(k).trim()).filter(Boolean),
+                biliAutoEngageEnabled: current.extensions.biliAutoEngageEnabled !== false,
+                biliAutoReplyEnabled: current.extensions.biliAutoReplyEnabled !== false,
+                biliAutoReplyMaxRounds: Number(current.extensions.biliAutoReplyMaxRounds) || 3,
+                biliFollowDedupDays: Number(current.extensions.biliFollowDedupDays) || 7,
               },
             })
             if (extSave && extSave.ok === false) failure = extSave.error || '未知错误'
@@ -260,7 +266,7 @@ const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
                 bootGreeting: current.chatHome.bootGreeting !== false,
                 handoffSeed: current.chatHome.handoffSeed !== false,
                 rotateOnPersonaChange: current.chatHome.rotateOnPersonaChange !== false,
-                maxTurns: Number(current.chatHome.maxTurns) || 100,
+                maxTurns: Number(current.chatHome.maxTurns) || 500,
                 maxEstTokens: Number(current.chatHome.maxEstTokens) || 72000,
               },
             })
@@ -442,17 +448,38 @@ const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
       async function restoreDefaultSprite() {
         setSpriteNote('恢复默认…')
         try {
-          const url = await deleteSprite()
-          patchAppearance({ customSpriteUrl: url || DEFAULT_SPRITE_URL })
+          const url = await deleteSprite(draft.gender)
+          const fallback = draft.gender === 'male' ? DEFAULT_SPRITE_MALE_URL : DEFAULT_SPRITE_URL
+          patchAppearance({ customSpriteUrl: url || fallback })
           setSpriteNote('已恢复默认 · Q版形象')
         } catch (err) {
           setSpriteNote('恢复失败：' + (err && err.message ? err.message : String(err)))
         }
       }
 
-      const spriteCardEl = spriteCard({ draft, spriteNote, fileInputRef, uploadSprite, restoreDefaultSprite })
+      async function selectBundledLook(look) {
+        if (!look || !look.id) return
+        setSpriteNote('切换形象…')
+        try {
+          // Drop uploaded sticker so the bundled frame shows through.
+          try { await deleteSprite(draft.gender) } catch (_) { /* ignore */ }
+          const url = String(look.preview || '') + (String(look.preview || '').includes('?') ? '&' : '?') + 'v=' + Date.now()
+          patchAppearance({ customSpriteUrl: url })
+          patchPet({ skin: look.id, skinAuto: false })
+          setSpriteNote('已切换：' + (look.label || look.id) + '（桌宠皮肤已同步）')
+        } catch (err) {
+          setSpriteNote('切换失败：' + (err && err.message ? err.message : String(err)))
+        }
+      }
+
       // Dynamic layer card: sits under the static PNG card, never replaces it.
-      const petDraft = draft.pet || { enabled: false, sizePx: 148, sleepAfterIdleSec: 300, skin: 'winterboy-chibi' }
+      const petDraft = draft.pet || { enabled: false, sizePx: 148, sleepAfterIdleSec: 300, skin: 'winterboy-chibi', skinAuto: true }
+      const spriteCardEl = spriteCard({
+        draft, spriteNote, fileInputRef, uploadSprite, restoreDefaultSprite,
+        selectBundledLook,
+        petSkin: petDraft.skin,
+        defaultSpriteUrl: draft.gender === 'male' ? DEFAULT_SPRITE_MALE_URL : DEFAULT_SPRITE_URL,
+      })
       const petCardEl = petCard({ draft, petDraft, patchPet, PetPreview })
 
       // Proactive scheduler draft: the rhythm tab binds to this mirror of config.
@@ -460,18 +487,20 @@ const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
         enabled: true, dailyDiary: true, dreamReflect: true, preferOffPeak: true, maxPerDay: 3, quietHours: [],
       }
       const homeDraft = draft.chatHome || {
-        autoMemory: true, bootGreeting: true, handoffSeed: true, maxTurns: 100, maxEstTokens: 72000, titlePrefix: '',
+        autoMemory: true, bootGreeting: true, handoffSeed: true, maxTurns: 500, maxEstTokens: 72000, titlePrefix: '',
       }
       const patchChatHome = (patch) => setDraft((d) => (d ? Object.assign({}, d, { chatHome: Object.assign({}, d.chatHome, patch) }) : d))
       const homeLive = proStatus && proStatus.chatHome
       const homeCfg = (homeLive && homeLive.chatHome) || homeDraft
-      // Must pass biliAuthCard as component to h(), never call it as a function (hooks after early return).
       const rhythmCard = rhythmCardEl({
-        draft, proDraft, homeDraft, patchProactive, patchChatHome, patchNotify, patchExtensions,
+        draft, proDraft, homeDraft, patchProactive, patchChatHome, patchNotify,
         proStatus, homeCfg, homeFull: homeLive && homeLive.fullness,
         homeMeasure: homeLive && homeLive.measure, snap, usage,
-        llmBudgetSection, biliAuthCard,
+        llmBudgetSection,
       })
+      // Must pass as component to h() — surfCard uses useState/useEffect. Calling it as a
+      // plain function after the empty-draft early return changes hook order and blanks the panel.
+      const surfPage = h(surfCardEl, { key: 'surf-page', draft, patchExtensions })
 
       const neuronCard = h('div', { key: 'neurons', className: 'sm-eng-card' }, [
         engHead('05', '记忆星图', '点与连线', ''),
@@ -489,6 +518,8 @@ const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
       ])
 
       const tabs = [
+        { id: 'surf', label: '冲浪', feature: true },
+        { id: 'dsbot', label: 'DsBot', feature: true },
         { id: 'status', label: '状态总览' },
         { id: 'personality', label: '性格观察与设置' },
         { id: 'neurons', label: '记忆神经网络' },
@@ -502,7 +533,9 @@ const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
         type: 'button',
         role: 'tab',
         'aria-selected': tab === item.id ? 'true' : 'false',
-        className: 'sm-tab' + (tab === item.id ? ' on' : ''),
+        className: 'sm-tab'
+          + (item.feature ? ' sm-tab-feature' : '')
+          + (tab === item.id ? ' on' : ''),
         onClick: () => setTab(item.id),
       }, item.label)))
 
@@ -540,6 +573,7 @@ const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
         neurons: [neuronCard],
         identity: [identity, spriteCardEl, petCardEl],
         rhythm: [rhythmCard],
+        surf: [surfPage],
         usage: [usageCard({ usage, draft: usageDraft, busy: usageBusy, note: usageNote, h, onDraft: (patch) => setUsageDraft((prev) => ({ ...(prev || {}), ...patch })), onSave: saveUsage })],
         diary: [diaryCard({
           shelf,
@@ -550,6 +584,7 @@ const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
           gender: draft.gender === 'male' || draft.gender === 'female' ? draft.gender : null,
           h,
         })],
+        dsbot: [h(DsBotCard, { key: 'dsbot' })],
       }
 
       return h('div', { className: 'sm-panel' }, h('div', { className: 'sm-panel-wrap' }, [

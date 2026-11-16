@@ -82,7 +82,7 @@ function parseRange(text) {
   return [Number(m[1]) * 60 + Number(m[2]), Number(m[3]) * 60 + Number(m[4])];
 }
 
-function inRanges(minutes, ranges) {
+export function inRanges(minutes, ranges) {
   for (const range of Array.isArray(ranges) ? ranges : []) {
     const parsed = parseRange(range);
     if (!parsed) continue;

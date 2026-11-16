@@ -9,6 +9,8 @@ import { extensionRoutes } from './extension-routes.mjs';
 import { cloudRoutes } from './cloud-routes.mjs';
 import { usageRoutes } from './usage-routes.mjs';
 import { eventRoutes } from './event-routes.mjs';
+import { surfRoutes } from './surf-routes.mjs';
+import { imChatRoutes } from './im-chat-routes.mjs';
 
 export function buildRoutes(deps) {
   return [
@@ -20,5 +22,7 @@ export function buildRoutes(deps) {
     ...extensionRoutes(deps),
     ...cloudRoutes(deps),
     ...eventRoutes(deps),
+    ...surfRoutes(deps),
+    ...imChatRoutes(deps),
   ];
 }

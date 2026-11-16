@@ -25,6 +25,7 @@ import {
   shouldRunWeeklyGate,
 } from '../proactive.mjs';
 import { runAutonomousSurfRound } from '../../soulmate-bili/index.mjs';
+import { runAutoReplyPatrol } from '../../soulmate-bili/reply-patrol.mjs';
 import { resolveLlmModel } from '../llm-model-pick.mjs';
 import { clip, errMsg, str } from '../small-utils.mjs';
 import { priceInfo } from './chat-home-runtime.mjs';
@@ -495,6 +496,16 @@ export function createProactiveRuntime({
     // v3 (§5/§7): the promise patrol and the weekly distillation check ride this tick.
     const patrol = await runPromisePatrolIfDue({ conf, cfg, tz, at, plan });
     const autoSurf = await runAutoSurfIfDue({ conf, tz, at });
+    let autoReply = { ok: true, ran: false, reason: 'skipped' };
+    try {
+      autoReply = await runAutoReplyPatrol(home, {
+        nowMs: at,
+        ...(cfg?.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
+      });
+    } catch (err) {
+      autoReply = { ok: false, error: errMsg(err) };
+      warn('auto-reply patrol failed', err);
+    }
     const distill = gate.ran ? await runDistillationCheck({ cfg, at }) : { ok: true, ran: false, reason: 'weekly-gate-not-due' };
     // Session stars: poll watch list (+ discover) at the same tick level as dream.
     const sessionStars = await maybeCaptureSessionStars({ at }).catch((err) => {
@@ -502,7 +513,7 @@ export function createProactiveRuntime({
       return { ok: false, error: errMsg(err) };
     });
 
-    return { ok: true, at: new Date(at).toISOString(), plan, delivery, dream, diary, gate, patrol, autoSurf, distill, sessionStars, ...priceInfo(at) };
+    return { ok: true, at: new Date(at).toISOString(), plan, delivery, dream, diary, gate, patrol, autoSurf, autoReply, distill, sessionStars, ...priceInfo(at) };
   }
 
   return { runProactiveTick, proactiveRecent, priceInfo };

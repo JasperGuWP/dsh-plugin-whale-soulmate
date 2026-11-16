@@ -14,9 +14,11 @@
 //     (`inspectAndScrub`): a message holding a high-risk secret never enters memory.
 //   * Network is injectable (`options.fetchImpl`) so everything is testable offline.
 import { createHash, createHmac, createPrivateKey, randomBytes, sign as edSign, timingSafeEqual } from 'node:crypto';
+import QRCode from 'qrcode';
 import { atomicWriteJson, loadConfig, loadCredentials, maskKey, saveConfigAuto } from '../soulmate-core/state.mjs';
 import { appendPrivacyAudit, inspectAndScrub } from '../soulmate-core/privacy-firewall.mjs';
 import { getDisplayName } from '../soulmate-core/persona.mjs';
+import { appendImChat, recentImBotSend } from '../soulmate-core/im-chat.mjs';
 
 export const IM_EXTENSION_ID = 'soulmate-im';
 export const IM_PLATFORMS = Object.freeze(['weixin', 'qq', 'feishu', 'dingtalk']);
@@ -288,15 +290,44 @@ export async function startWeixinQrLogin(home, options = {}) {
     const res = await httpJson(options, `${base}/ilink/bot/get_bot_qrcode?bot_type=3`, { headers: weixinHeaders('') });
     if (!res.ok) return httpFail('weixin get_bot_qrcode', res);
     if (!res.data.qrcode) return { ok: false, error: 'weixin get_bot_qrcode returned no qrcode' };
+    const qrcode = str(res.data.qrcode);
+    const qrcodeImgContent = str(res.data.qrcode_img_content);
+    const encodeText = qrcodeImgContent || qrcode;
+    let qrDataUrl = '';
+    try {
+      const width = Number(options.qrWidth) > 0 ? Number(options.qrWidth) : 200;
+      qrDataUrl = await QRCode.toDataURL(encodeText, {
+        margin: 2,
+        width,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#111111', light: '#ffffff' },
+      });
+    } catch {
+      qrDataUrl = '';
+    }
     return {
       ok: true,
-      qrcode: str(res.data.qrcode),
-      qrcodeImgContent: str(res.data.qrcode_img_content),
+      qrcode,
+      qrcodeImgContent,
+      qrDataUrl,
       pollIntervalSec: 1,
     };
   } catch (err) {
     return { ok: false, error: errMsg(err) };
   }
+}
+
+/** Clear WeChat iLink credentials and disable the platform (official logout). */
+export async function logoutWeixin(home) {
+  await withCredLock(home.credentialsPath, async () => {
+    const current = await loadCredentials(home);
+    const im = isObject(current.im) ? { ...current.im } : {};
+    im.weixin = {};
+    await atomicWriteJson(home.credentialsPath, { ...current, im }, { mode: 0o600 });
+  });
+  await setPlatformEnabled(home, 'weixin', false);
+  await appendPrivacyAudit(home, { action: 'im_logout', platform: 'weixin' });
+  return getImStatus(home);
 }
 
 export async function pollWeixinQrStatus(home, qrcode, options = {}) {
@@ -399,6 +430,16 @@ export async function sendWeixinMessage(home, { toUserId, text, contextToken } =
   if (!str(text).trim()) return { ok: false, error: 'text is required' };
   const base = trimSlash(options.baseUrl ?? creds.baseUrl) || WEIXIN_DEFAULT_BASE_URL;
   const savedToken = isObject(creds.contextTokens) ? creds.contextTokens[to] : '';
+  const token = str(contextToken || savedToken);
+  // iLink requires a fresh context_token from an inbound user message; cold proactive
+  // sends without one always come back ret=-2 "prepare failed".
+  if (!token) {
+    return {
+      ok: false,
+      error: '微信官方 Bot 不能冷启动私聊：请先用手机微信给 Bot 发一条，拿到会话票（context_token）后再回/试发。',
+      needInbound: true,
+    };
+  }
   const clientId = randomBytes(16).toString('hex');
   try {
     const res = await httpJson(options, `${base}/ilink/bot/sendmessage`, {
@@ -412,14 +453,24 @@ export async function sendWeixinMessage(home, { toUserId, text, contextToken } =
           client_id: clientId,
           message_type: 2,
           message_state: 2,
-          context_token: str(contextToken || savedToken),
+          context_token: token,
           item_list: [{ type: 1, text_item: { text: clip(str(text), 2000) } }],
         },
       },
     });
     if (!res.ok) return httpFail('weixin sendmessage', res);
     const fail = weixinRetFail(res.data);
-    if (fail) return { ok: false, error: `weixin sendmessage error ret=${fail.ret} errcode=${fail.errcode} ${clip(fail.message, 120)}`.trim() };
+    if (fail) {
+      const hint =
+        fail.ret === -2 && /prepare failed/i.test(fail.message || '')
+          ? '（会话票失效或缺失：请让对方再发一条微信，然后尽快回复；官方通道不支持无票主动私聊）'
+          : '';
+      return {
+        ok: false,
+        error: `weixin sendmessage error ret=${fail.ret} errcode=${fail.errcode} ${clip(fail.message, 120)}${hint}`.trim(),
+        needInbound: fail.ret === -2,
+      };
+    }
     return { ok: true, platform: 'weixin', clientId };
   } catch (err) {
     return { ok: false, error: errMsg(err) };
@@ -892,21 +943,25 @@ export async function sendImMessage(home, platform, params = {}, options = {}) {
   }
   const text = checked.scrubbedText;
   const to = str(params.to).trim();
+  let res;
   switch (p) {
     case 'weixin':
-      return sendWeixinMessage(home, { toUserId: to, text, contextToken: params.contextToken }, options);
+      res = await sendWeixinMessage(home, { toUserId: to, text, contextToken: params.contextToken }, options);
+      break;
     case 'qq':
-      return sendQqMessage(home, { userId: to, groupId: params.groupId, text, msgId: params.msgId }, options);
+      res = await sendQqMessage(home, { userId: to, groupId: params.groupId, text, msgId: params.msgId }, options);
+      break;
     case 'feishu':
-      return sendFeishuMessage(
+      res = await sendFeishuMessage(
         home,
         { receiveId: to, receiveIdType: params.receiveIdType || 'open_id', text, replyToMessageId: params.replyToMessageId },
         options
       );
+      break;
     case 'dingtalk': {
       const creds = await loadPlatformCreds(home, 'dingtalk');
       const target = to || creds.ownerId;
-      return sendDingtalkMessage(
+      res = await sendDingtalkMessage(
         home,
         {
           sessionWebhook: params.sessionWebhook,
@@ -917,33 +972,52 @@ export async function sendImMessage(home, platform, params = {}, options = {}) {
         },
         options
       );
+      break;
     }
     default:
       return { ok: false, error: 'unsupported platform' };
   }
+  if (res?.ok && options.skipChatLog !== true) {
+    const peerId = to
+      || (p === 'weixin' ? str((await loadPlatformCreds(home, 'weixin')).userId) : '')
+      || (p === 'dingtalk' ? str((await loadPlatformCreds(home, 'dingtalk')).ownerId) : '')
+      || str(params.groupId);
+    if (peerId) {
+      await appendImChat(home, {
+        platform: p,
+        peerId,
+        peerLabel: peerId,
+        role: 'bot',
+        text,
+      }).catch(() => {});
+    }
+  }
+  return res;
 }
 
 async function dispatchReply(home, event, text, options) {
   const p = event.platform;
   const creds = await loadPlatformCreds(home, p);
+  // Timeline already records the bot line in handleInboundImMessage.
+  const opts = { ...options, skipChatLog: true };
   switch (p) {
     case 'weixin':
       if (!creds.token) return { ok: false, skipped: 'no_credentials' };
-      return sendImMessage(home, 'weixin', { text, to: event.senderId, contextToken: event.contextToken }, options);
+      return sendImMessage(home, 'weixin', { text, to: event.senderId, contextToken: event.contextToken }, opts);
     case 'qq':
       if (!isImConfigured('qq', creds)) return { ok: false, skipped: 'no_credentials' };
-      return sendImMessage(home, 'qq', { text, to: event.senderId, groupId: event.groupId, msgId: event.messageId }, options);
+      return sendImMessage(home, 'qq', { text, to: event.senderId, groupId: event.groupId, msgId: event.messageId }, opts);
     case 'feishu':
       if (!isImConfigured('feishu', creds)) return { ok: false, skipped: 'no_credentials' };
-      return sendImMessage(home, 'feishu', event.messageId ? { text, replyToMessageId: event.messageId } : { text, to: event.senderId }, options);
+      return sendImMessage(home, 'feishu', event.messageId ? { text, replyToMessageId: event.messageId } : { text, to: event.senderId }, opts);
     case 'dingtalk': {
-      const usable = event.sessionWebhook && isSafeDingtalkWebhook(event.sessionWebhook, options);
+      const usable = event.sessionWebhook && isSafeDingtalkWebhook(event.sessionWebhook, opts);
       if (!usable && !(creds.clientId && creds.clientSecret && creds.robotCode)) return { ok: false, skipped: 'no_credentials' };
       return sendImMessage(
         home,
         'dingtalk',
         usable ? { text, sessionWebhook: event.sessionWebhook } : { text, to: event.senderId },
-        options
+        opts
       );
     }
     default:
@@ -996,8 +1070,10 @@ async function generateReply(ctx, options) {
   if (generator) {
     try {
       const out = await generator(ctx);
-      const text = typeof out === 'string' ? out : str(out?.text);
-      if (text.trim()) return text;
+      const text = typeof out === 'string'
+        ? out
+        : str(out?.text || out?.reply || out?.content);
+      if (text.trim()) return text.trim();
     } catch {
       // fall back to the template: a broken generator must never silence the companion
     }
@@ -1039,6 +1115,9 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
     const persona = conf.persona ?? {};
     const reply = `${str(persona.callUser) || '你'}，刚才那条看起来包含密钥/密码类敏感信息（${checked.blockedReason}），${str(persona.selfRef) || '我'}没有记下来。建议撤回并尽快更换。`;
     const dispatched = dispatchEnabled ? await dispatchReply(home, ev, reply, options) : null;
+    const labelBlocked = clip(str(ev.senderName).trim() || senderId, 24);
+    await appendImChat(home, { platform, peerId: senderId, peerLabel: labelBlocked, role: 'user', text: '[已拦截敏感内容]', messageId: str(ev.messageId) }).catch(() => {});
+    if (reply) await appendImChat(home, { platform, peerId: senderId, peerLabel: labelBlocked, role: 'bot', text: reply }).catch(() => {});
     return { ok: true, blocked: true, blockedReason: checked.blockedReason, recorded: false, platform, senderId, reply, dispatched };
   }
 
@@ -1068,13 +1147,44 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
     visibility: options.memoryVisibility === 'private' ? 'private' : 'syncable',
   });
 
-  // 5. in-character reply
+  // 5. timeline: log the user line FIRST so the bubble order stays 你→我
+  //    even if generateReply takes seconds or a tool side-sends early.
+  const userLogged = await appendImChat(home, {
+    platform,
+    peerId: senderId,
+    peerLabel: label,
+    role: 'user',
+    text: checked.scrubbedText,
+    messageId: str(ev.messageId),
+  }).catch(() => null);
+  const userAtMs = Date.parse(userLogged?.entry?.at || '') || Date.now();
+
+  // 6. in-character reply
   const persona = { ...(conf.persona ?? {}), name: getDisplayName(conf.persona) };
   const reply = clip(
     await generateReply({ event: ev, text, persona, state, mood: state.mood, memories, trusted, platform }, options),
     1800
   );
-  const dispatched = dispatchEnabled ? await dispatchReply(home, ev, reply, options) : null;
+
+  // If the home-session model already called soulmate_im_send during generateReply,
+  // a bot line appears AFTER our user line — skip second dispatch/log (avoids 你夹在两段回复中间).
+  const alreadySent = await recentImBotSend(home, { platform, peerId: senderId, withinMs: 20_000 }).catch(() => null);
+  const sentDuringThisTurn = alreadySent && Date.parse(alreadySent.at) >= userAtMs;
+  let dispatched = null;
+  if (sentDuringThisTurn) {
+    dispatched = { ok: true, skipped: 'already_sent_via_tool', messageId: alreadySent.id };
+  } else {
+    dispatched = dispatchEnabled ? await dispatchReply(home, ev, reply, options) : null;
+    if (reply) {
+      await appendImChat(home, {
+        platform,
+        peerId: senderId,
+        peerLabel: label,
+        role: 'bot',
+        text: reply,
+      }).catch(() => {});
+    }
+  }
 
   return {
     ok: true,
@@ -1093,7 +1203,15 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
 // Management actions shared by the model tool and the HTTP route
 // ---------------------------------------------------------------------------
 
-export const IM_MANAGE_ACTIONS = Object.freeze(['status', 'configure', 'weixin_qr_start', 'weixin_qr_poll', 'weixin_poll', 'stream_ticket']);
+export const IM_MANAGE_ACTIONS = Object.freeze([
+  'status',
+  'configure',
+  'weixin_qr_start',
+  'weixin_qr_poll',
+  'weixin_logout',
+  'weixin_poll',
+  'stream_ticket',
+]);
 
 /** args: { action, platform, credentials, enabled, mode, whitelist, qrcode, timeoutMs } */
 export async function manageIm(soulmateService, args = {}, options = {}) {
@@ -1123,6 +1241,8 @@ export async function manageIm(soulmateService, args = {}, options = {}) {
       return startWeixinQrLogin(home, options);
     case 'weixin_qr_poll':
       return pollWeixinQrStatus(home, str(args.qrcode), options);
+    case 'weixin_logout':
+      return logoutWeixin(home);
     case 'weixin_poll': {
       const timeoutMs = Number.isFinite(args.timeoutMs) ? Math.min(45_000, Math.max(1000, args.timeoutMs)) : options.timeoutMs;
       return pollWeixinUpdatesOnce(soulmateService, { ...options, ...(timeoutMs ? { timeoutMs } : {}) });

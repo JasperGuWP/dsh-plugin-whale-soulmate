@@ -48,12 +48,19 @@ idle 随机权重合计 0.73，其余 0.27 回落 idle（`pickNextState` 滚轮�
 
 ## 三、无缝循环与镜像
 
-- loop 段采用 **boom 结构**（正放 + 精确倒放）保证首尾帧一致、无缝循环；
-  idle/sleep/think/drag 取 raw 第 24 帧起 48 帧 boom；sit 0/63；eureka 0/29；wave/heart/pout 0/72；happy/eat/game/run 与 ski(winterboy)/dance(hanfu) 0/60。
-- walk 为 0..109 正放 + 第 109 帧冻结 ×11（tail _hold），**不倒放**。
+- **硬约束：所有视频（loop 与 once）首帧 == 末帧**（详见第十节）。
+- **方向性 / 位移状态禁止倒放**：run（两皮肤）/ ski(winterboy) / dance(hanfu) / drag（两皮肤）用**纯正向循环**——
+  run 取步态窗硬拼或环绕淡化（winterboy raw[28,58)×4=120+1；hanfu 周期弱，取环绕窗 [34,59)×5 份、份间 3 帧 alpha 感知交叉淡化=113+1）；
+  ski/dance 取运动窗 + 2–3 帧环绕交叉淡化；drag 取 3 帧环绕淡化无缝循环 ×2（109 帧）。
+  倒放半段会造成「倒着跑 / 拖拽抖动」，故方向性动作绝不回文。
+- **原地振荡 / 呼吸类状态保留 boom**（正放 + 精确倒放）：idle/sleep/think/sit/eureka/wave/heart/pout/happy/eat/game。
+  这些动作左右对称，倒放半段视觉自然，且 boom 天然首尾一致。
+  窗口：idle/sleep/think raw 第 24 帧起 48 帧 boom；sit 0/63；eureka 0/29；wave/heart/pout 0/72；happy/eat/game 0/60。
+- walk 为 0..109 正放 + 第 109 帧冻结 ×11（tail_hold），**不倒放**；末尾追加首帧满足首末一致（122 帧）。
 - **walk 朝向**：跟随位移方向（target > start → 镜像 `mirrorForRight`），覆盖状态机随机朝向；
   镜像用 CSS `scaleX(-1)`，**不倒放视频**。其余状态不镜像。
-- 校验：loop 状态首尾帧 seamDiff≈0（verify.mjs）；once 状态首尾差异属正常（不倒放）。
+- 校验：`output/pet-firstlast-audit.cjs` 逐视频解码首/末帧算不透明像素平均 RGB 差，30 个全部 ≤0.09（重建者多为 0.00）；
+  方向性状态另用 palinPSNR<30 确认无倒放半段（`output/pet-boom-fix/check-palin.cjs`）。
 
 ## 四、点击 / 双击 / 拖拽（必须播视频，不用 PNG 交互）
 
@@ -102,3 +109,28 @@ idle 随机权重合计 0.73，其余 0.27 回落 idle（`pickNextState` 滚轮�
 - 仅资源不同：winterboy 白外套需「选择性增白」；hanfu 彩色襦裙**只做 chromakey + 去绿溢，不增白**。
 - hanfu 团扇为固定持物：单手动作用左手、双手动作团扇贴胸前/前臂、末帧回右手胸前（见 prompts-hanfu.json）。
 - hanfu 情绪表达约定（第二轮 prompts-hanfu2.json）：pout=女孩叉腰鼓颊跺脚别脸、无生气符号；heart=双颊晕红+双手交握害羞、无爱心粒子飞出；think=托腮偏头眼神点指、无气泡/问号漂浮符号。
+
+## 九、性别联动默认形象（v0.2.85）
+
+- 选定性别后的默认立绘：女 = `assets/pet-hanfu/pet-drag.png`（GET /api/sprite）、男 = `assets/pet-winterboy-chibi/pet-drag.png`（GET /api/sprite-male），均为拖拽姿势透明 PNG。
+- 桌面小伙伴皮肤自动跟随性别（`GENDER_PET_SKIN`：female=hanfu、male=winterboy-chibi）。`pet.skinAuto` 默认 true；onboard / 面板切换性别立即换皮肤。
+- 面板手动选皮肤会写入 `skinAuto:false`，此后固定不跟随；再次切换性别会重新建立联动（skinAuto:true）。
+- 启动时 bootstrap 自动修正历史错配：skinAuto≠false 时把皮肤对齐到性别，并把与性别不符的默认立绘 URL 重置（自定义上传不受影响）。
+- config POST 兜底：patch.pet.skin 存在且 skinAuto≠false 时强制对齐当前性别，防旧草稿回写错误皮肤。
+
+## 十、首末帧一致硬约束（2026-11-16）
+
+- **规则：不管做什么动作，视频第一帧与最后一帧必须一致**（用户硬约束）。30 个 webm（2 皮肤 ×15 状态）审计全部 ≤0.09；
+  fix4/5/6/7 重建的 14 个中 12 个达像素级 0.00（ski/dance 为环绕淡化 ≤0.09）。
+- 背景：原 boom 回文（正放+倒放拼接）使方向性动作的倒放半段「倒着跑 / 拖拽抖动」。
+  fix4 把 winterboy run/ski、hanfu dance、两皮肤 drag 改纯正向循环（从 backup 正放 raw 解码、Node 精确拼帧，保留 alpha 与白外套，**不重新 chromakey**）。
+  fix7 补 hanfu run（原遗漏，palinPSNR 44→18.6）：环绕窗 [34,59)×5、3 帧交叉淡化、114 帧。
+- fix5：为满足首==末，对近循环视频末尾追加首帧（run/drag/walk/heart/pout/wave 两皮肤 + ski/dance 先环绕淡化再追加），共 13 个。
+- fix6：半透明光晕 VP9 量化使 heart/pout/wave 首末差 0.03–0.09 → 编码前**把首帧 raw 字节覆盖到末帧** +
+  `-force_key_frames <(N-1)/24>` 末帧强制关键帧 → 0.00。fix7 同样套用。
+- 最终帧数：winterboy run121/ski102/drag109/walk122/heart·pout·wave145；hanfu run114/dance97/drag109/walk122/heart·pout·wave145；其余振荡类不变。
+- 编码：`-c:v libvpx-vp9 -pix_fmt yuva420p -crf 30 -b:v 0 -auto-alt-ref 0 -deadline good -cpu-used 4 -an`；
+  force_key_frames 用时间串 (N-1)/24，**勿用** expr:eq(n,..)（逗号转义报错）。
+- 脚本：`output/pet-boom-fix{4,5,6,7}.cjs`、`pet-firstlast-audit.cjs`、`pet-boom-fix/check-palin.cjs`、`pet-boom-fix/smoke-boom.mjs`；正放备份 `output/pet-boom-fix/backup/`。
+- 资产-only 改动：无需 client 重建、无需重启 dsh；manifest cache-bust(mtime+size) 自动失效，刷新页面即生效。
+- 冒烟 94/94：30 webm 仓库↔installed 哈希一致、manifest videoUrls 覆盖 15 状态、cache-bust 与安装文件 mtime+size 匹配、/pet/video 200 字节相等。

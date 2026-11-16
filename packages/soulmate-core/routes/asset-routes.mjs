@@ -5,6 +5,7 @@ import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   BUNDLED_SPRITE_CHIBI,
+  BUNDLED_SPRITE_HANFU,
   DEFAULT_SPRITE_URL,
   DEFAULT_SPRITE_MALE_URL,
   PET_SKINS,
@@ -30,7 +31,7 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
       handler: async () => {
         const conf = await loadConfig(home).catch(() => null);
         const petOn = conf?.pet?.enabled !== false;
-        const skin = String(conf?.pet?.skin || 'winterboy-chibi');
+        const skin = String(conf?.pet?.skin || (conf?.persona?.gender === 'male' ? 'winterboy-chibi' : 'hanfu'));
         const dir = skinDir(skin);
         if (petOn && dir) {
           try {
@@ -54,7 +55,7 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
           buf = await readFile(home.spritePath);
         } catch (err) {
           if (err?.code !== 'ENOENT') throw err;
-          buf = await readFile(BUNDLED_SPRITE_CHIBI);
+          buf = await readFile(conf?.persona?.gender === 'male' ? BUNDLED_SPRITE_CHIBI : BUNDLED_SPRITE_HANFU);
         }
         return {
           status: 200,
@@ -71,7 +72,7 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
       method: 'GET',
       paths: ['/dsh-soulmate/api/sprite'],
       // Serve the user-uploaded sticker only when sprite.ext exists; the default
-      // look is the bundled Q版 idle frame (same art as the desktop pet).
+      // look is the bundled hanfu girl drag pose (female / unspecified gender).
       handler: async () => {
         let buf;
         try {
@@ -79,7 +80,7 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
           buf = await readFile(home.spritePath);
         } catch (err) {
           if (err?.code !== 'ENOENT') throw err;
-          buf = await readFile(BUNDLED_SPRITE_CHIBI);
+          buf = await readFile(BUNDLED_SPRITE_HANFU);
         }
         // Keep headers Latin-1 only: non-ASCII Content-Disposition (e.g. 小鲸.png)
         // makes some host writeHead paths fail and the browser gets an empty 400.
@@ -129,7 +130,7 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
     {
       method: 'GET',
       paths: ['/dsh-soulmate/api/sprite-male'],
-      // The male default is the same bundled Q版 idle frame — no full-body JPG.
+      // The male default is the bundled Q版 winter-boy drag pose — no full-body JPG.
       handler: async () => {
         const buf = await readFile(BUNDLED_SPRITE_CHIBI);
         return {

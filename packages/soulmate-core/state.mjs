@@ -78,7 +78,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   chatHome: {
     activeSessionId: '',
     archiveSessionIds: [],
-    maxTurns: 100,
+    maxTurns: 500,
     maxEstTokens: 72_000,
     titlePrefix: 'soulmate',
     bootGreeting: true,
@@ -145,8 +145,14 @@ export const DEFAULT_CONFIG = Object.freeze({
     // With whenIdle, thinking clears the moment the answer lands (then eureka).
     // Keep this short so PNG/video eureka is not stuck behind a long quiet window.
     thinkQuietSec: 1.5,
-    // Bundled sprite skin: 'winterboy-chibi' (default) + 'hanfu' ship; retired ids alias to the default.
+    // Bundled sprite skin: 'winterboy-chibi' + 'hanfu' ship; retired ids alias to the default.
+    // skinAuto=true → skin follows persona.gender (female=hanfu, male=winterboy-chibi);
+    // picking a skin by hand in the panel sets skinAuto=false so the choice sticks.
     skin: 'winterboy-chibi',
+    skinAuto: true,
+    // Flick-throw feel (dsh-pet 同款默认): gravity px/s² (0 = floaty, legal),
+    // wall/floor restitution 0~1, ground friction /s, overall throw gain (>0).
+    physics: { gravity: 1400, restitution: 0.78, groundFriction: 2.5, throwPower: 1 },
   },
   extensions: {
     biliEnabled: true,
@@ -157,6 +163,8 @@ export const DEFAULT_CONFIG = Object.freeze({
     biliAutoSurfMaxPick: 2,
     /** When true, timed patrol digests more storyboard/transcript and reports coverage depth. */
     biliAutoSurfDeepWatch: false,
+    /** Skip search hits older than this many days (default 180). */
+    biliAutoSurfMaxAgeDays: 180,
     lastAutoSurfAt: '',
     // Built-in IM hub (soulmate-im). Only on/off switches live here; tokens/secrets go to
     // credentials.json under the `im` key and never touch config.json.
@@ -178,6 +186,12 @@ export const DEFAULT_CONFIG = Object.freeze({
     // 写操作（私信/评论/弹幕/点赞/投币/收藏/关注/改资料/开播/投稿）总开关，默认关。
     biliWriteEnabled: false,
     biliMaxDailyWrites: 20,
+    // After timed surf: persona-weighted like / favorite / comment / follow (needs write on).
+    biliAutoEngageEnabled: true,
+    // Reply when others answer her comments (max rounds below).
+    biliAutoReplyEnabled: true,
+    biliAutoReplyMaxRounds: 3,
+    biliFollowDedupDays: 7,
   },
 });
 

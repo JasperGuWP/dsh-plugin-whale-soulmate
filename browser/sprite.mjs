@@ -77,8 +77,9 @@ async function uploadSpriteFile(file) {
 }
 
 /** Drop the custom sticker server-side; resolves the fallback URL. */
-async function deleteSprite() {
-  const res = await fetch(API + 'sprite', { method: 'DELETE' })
+async function deleteSprite(gender) {
+  const route = gender === 'male' ? 'sprite-male' : 'sprite'
+  const res = await fetch(API + route, { method: 'DELETE' })
   const data = await res.json().catch(() => null)
   if (!res.ok || !data || data.ok === false) throw new Error((data && data.error) || ('HTTP ' + res.status))
   return data.url || ''

@@ -52,10 +52,17 @@ function createMockCtx(dir) {
 const body = (out) => JSON.parse(out.body);
 
 test('pet: config defaults ship enabled and deep-merge keeps untouched fields', () => {
-  assert.deepEqual(DEFAULT_CONFIG.pet, { enabled: true, sizePx: 180, sleepAfterIdleSec: 300, thinkQuietSec: 1.5, skin: 'winterboy-chibi' });
+  assert.deepEqual(DEFAULT_CONFIG.pet, {
+    enabled: true, sizePx: 180, sleepAfterIdleSec: 300, thinkQuietSec: 1.5, skin: 'winterboy-chibi', skinAuto: true,
+    physics: { gravity: 1400, restitution: 0.78, groundFriction: 2.5, throwPower: 1 },
+  });
   const merged = deepMerge(DEFAULT_CONFIG, { pet: { enabled: false } });
   assert.equal(merged.pet.enabled, false);
   assert.equal(merged.pet.sizePx, 180);
+  assert.equal(merged.pet.physics.gravity, 1400, 'nested physics defaults survive an unrelated pet patch');
+  const tuned = deepMerge(DEFAULT_CONFIG, { pet: { physics: { throwPower: 1.5 } } });
+  assert.equal(tuned.pet.physics.throwPower, 1.5);
+  assert.equal(tuned.pet.physics.gravity, 1400, 'partial physics patch keeps the other knobs');
   assert.equal(merged.appearance.customSpriteUrl, '/dsh-soulmate/api/sprite');
 });
 

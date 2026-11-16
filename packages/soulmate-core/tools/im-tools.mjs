@@ -3,9 +3,16 @@
 // the person on the other end is waiting. The wrapper exists purely for accounting.
 
 import { IM_MANAGE_ACTIONS, IM_PLATFORMS, manageIm, sendImMessage, startWeixinPollLoop } from '../../soulmate-im/index.mjs';
+import { deliverViaPrompt } from '../chat-home.mjs';
+import { composeImPersonaPrompt, extractImReplyText } from '../im-reply.mjs';
+import { resolveLlmModel } from '../llm-model-pick.mjs';
 import { str } from '../small-utils.mjs';
+import { extractLatestAssistantUsage, waitForSessionUsage } from '../usage.mjs';
 
-export function imTools({ makeTool, service, home, cfg, ctx, pushEvent, warn, track, meteredCall }) {
+export function imTools({
+  makeTool, service, home, cfg, ctx, pushEvent, warn, track, meteredCall,
+  oneShotLlm, listHostModels, chatHome, promptEngine,
+}) {
   const meteredImGenerator = (inner) => async (payload) => {
     const res = await meteredCall({
       kind: 'im',
@@ -16,11 +23,142 @@ export function imTools({ makeTool, service, home, cfg, ctx, pushEvent, warn, tr
     return res.ok ? res.out : undefined;
   };
 
+  /**
+   * In-character IM reply. Host desktop often has `prompt` but empty model catalog /
+   * no `generateReply` — that used to fall straight to the template ("你，我在认真听").
+   * Order: generateReply (optional model) → home-session prompt+wait → oneShotLlm.
+   */
+  async function builtInPersonaReply(payload) {
+    const prompt = composeImPersonaPrompt(payload);
+    const controller = typeof ctx.get === 'function' ? ctx.get('sessionController') : ctx.sessionController;
+
+    // A) Fast path: host generateReply (model id optional)
+    if (typeof controller?.generateReply === 'function') {
+      try {
+        if (typeof controller.initializeDefaultModel === 'function') {
+          try { await controller.initializeDefaultModel(); } catch { /* best-effort */ }
+        }
+        let modelId = str(cfg.imLlmModel);
+        if (!modelId && typeof listHostModels === 'function') {
+          try {
+            const models = await listHostModels();
+            modelId = resolveLlmModel({ models, preferredId: '' }).id || '';
+          } catch { /* ignore */ }
+        }
+        const args = { text: prompt, purpose: 'im' };
+        if (modelId) args.model = modelId;
+        const out = await controller.generateReply(args);
+        const text = extractImReplyText(out);
+        if (text) return { text, usage: out?.usage || out?.tokenUsage || null, via: 'generateReply' };
+        warn('im persona: generateReply returned empty text');
+      } catch (err) {
+        warn('im persona: generateReply failed', err);
+      }
+    }
+
+    // B) Proven path on this host: dedicated window prompt + wait (same as boot)
+    if (chatHome && typeof chatHome.ensureHomeSession === 'function' && typeof controller?.prompt === 'function') {
+      try {
+        // Never rotate for IM drafts — WeChat traffic used to burn maxTurns and spill「大海 · N」.
+        const ensured = await chatHome.ensureHomeSession({
+          seedAfterRotate: false,
+          forceRotate: false,
+          rotateIfFull: false,
+        });
+        if (!ensured?.ok || !ensured.sessionId) {
+          warn('im persona: no chat-home session', ensured?.error || 'missing');
+        } else {
+          const sessionId = ensured.sessionId;
+          const userLine = str(payload?.text).trim() || '（空消息）';
+          const visible = `【微信】${userLine}`;
+          const instructions = [
+            prompt,
+            '场景：微信私聊回复草稿。',
+            '硬性禁止：调用任何工具（尤其 soulmate_im_send / 微信发送类工具）；不要真的去发微信。',
+            '只输出一段给对方看的口语正文（一两句，不要空行、不要分点、不要旁白如「微信回过了」）。',
+          ].join('\n');
+          if (promptEngine && typeof promptEngine.setWakeInstructions === 'function') {
+            promptEngine.setWakeInstructions(instructions);
+          }
+
+          let beforeMessageId = '';
+          let beforeAssistantCount = 0;
+          if (typeof controller.events === 'function') {
+            try {
+              const page = await controller.events({
+                address: { kind: 'session', sessionId },
+                maxMessages: 40,
+              }, typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+                ? AbortSignal.timeout(12_000)
+                : new AbortController().signal);
+              const snap = extractLatestAssistantUsage(page);
+              beforeMessageId = snap.messageId || '';
+              beforeAssistantCount = snap.assistantCount || 0;
+            } catch { /* baseline best-effort */ }
+          }
+
+          const delivered = await deliverViaPrompt(controller, {
+            sessionId,
+            kind: 'im',
+            visibleText: visible,
+          });
+          if (!delivered.ok) {
+            if (promptEngine?.setWakeInstructions) promptEngine.setWakeInstructions('');
+            warn('im persona: prompt deliver failed', delivered.reason || 'prompt-failed');
+          } else {
+            const waited = await waitForSessionUsage(controller, {
+              sessionId,
+              beforeMessageId,
+              beforeAssistantCount,
+              timeoutMs: 55_000,
+              rejectTexts: [visible, userLine, instructions.slice(0, 80)],
+            });
+            if (promptEngine?.setWakeInstructions) promptEngine.setWakeInstructions('');
+            const text = str(waited?.text).trim();
+            if (waited?.ok && text) {
+              return {
+                text,
+                usage: waited.rawUsage || (waited.usage?.real ? {
+                  inputTokens: waited.usage.promptTokens,
+                  outputTokens: waited.usage.completionTokens,
+                  totalTokens: waited.usage.totalTokens,
+                } : null),
+                via: 'home-session',
+              };
+            }
+            warn('im persona: home-session wait empty', waited?.reason || waited?.rejectedText || 'empty');
+          }
+        }
+      } catch (err) {
+        if (promptEngine?.setWakeInstructions) promptEngine.setWakeInstructions('');
+        warn('im persona: home-session path failed', err);
+      }
+    }
+
+    // C) Last resort one-shot with catalog model
+    if (typeof oneShotLlm === 'function' && typeof listHostModels === 'function') {
+      try {
+        const models = await listHostModels();
+        const picked = resolveLlmModel({ models, preferredId: str(cfg.imLlmModel) });
+        if (picked?.id) {
+          const out = await oneShotLlm({ prompt, modelId: picked.id, kind: 'im' });
+          const text = extractImReplyText(out);
+          if (text) return { text, usage: out?.usage || null, via: 'oneShot' };
+        } else {
+          warn('im persona: no host models for oneShot');
+        }
+      } catch (err) {
+        warn('im persona: oneShot failed', err);
+      }
+    }
+
+    return undefined;
+  }
+
   const imNet = () => ({
     ...(cfg.imFetch ? { fetchImpl: cfg.imFetch } : {}),
-    ...(cfg.imReplyGenerator ? { replyGenerator: meteredImGenerator(cfg.imReplyGenerator) } : {}),
+    replyGenerator: meteredImGenerator(cfg.imReplyGenerator || builtInPersonaReply),
     ...(cfg.imMemoryVisibility ? { memoryVisibility: cfg.imMemoryVisibility } : {}),
-    // an optional host session controller can author the replies (falls back to the persona template)
     sessionController: imSessionController(),
   });
 
@@ -77,8 +215,8 @@ export function imTools({ makeTool, service, home, cfg, ctx, pushEvent, warn, tr
       description:
         'Check status, start WeChat QR login, poll updates, or configure built-in IM channels (weixin / qq / feishu / dingtalk). ' +
         'status = masked overview; configure = save credentials (stored only in credentials.json, never echoed) + enable/disable + whitelist; ' +
-        'weixin_qr_start / weixin_qr_poll = personal WeChat QR login; weixin_poll = pull new WeChat messages once and answer them; ' +
-        'stream_ticket = open a DingTalk Stream gateway ticket.',
+        'weixin_qr_start / weixin_qr_poll = official WeChat iLink QR login; weixin_logout = clear WeChat credentials; ' +
+        'weixin_poll = pull new WeChat messages once and answer them; stream_ticket = open a DingTalk Stream gateway ticket.',
       parameters: {
         action: { type: 'string', enum: [...IM_MANAGE_ACTIONS], description: `${IM_MANAGE_ACTIONS.join(' | ')} (default status).` },
         platform: { type: 'string', enum: [...IM_PLATFORMS], description: 'configure: which platform.' },
@@ -99,8 +237,6 @@ export function imTools({ makeTool, service, home, cfg, ctx, pushEvent, warn, tr
 
   /** Register the IM extension card + optional auto-poll loop (both reversible via track). */
   function mountIm({ extensionId }) {
-    // The card must mirror the switch the user actually flipped (config.extensions.*),
-    // otherwise the panel claims "active" for a feature that is already refusing calls.
     track(() =>
       service.registerExtension({
         id: extensionId,

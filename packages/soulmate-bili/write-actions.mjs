@@ -253,12 +253,24 @@ export async function biliWriteAction(home, input = {}, options = {}) {
       const scrub = await scrubOutbound(home, action, input.message ?? input.text, 900);
       if (scrub.blocked) return hold('privacy_blocked', `评论被隐私防火墙拦截：${scrub.reason}`);
       if (!scrub.text) return hold('empty_message', '评论内容不能为空。');
-      if (input.dryRun === true || options.dryRun === true) return { ok: true, dryRun: true, action, bvid: str(input.bvid) || parseBvid(input.target), message: scrub.text, writtenToday: todayCount, maxDailyWrites: maxDaily };
+      const parent = str(input.parent || input.root || '').trim();
+      const root = str(input.root || input.parent || '').trim();
+      if (input.dryRun === true || options.dryRun === true) {
+        return {
+          ok: true, dryRun: true, action, bvid: str(input.bvid) || parseBvid(input.target),
+          message: scrub.text, parent: parent || undefined, root: root || undefined,
+          writtenToday: todayCount, maxDailyWrites: maxDaily,
+        };
+      }
       const v = await resolveVideo();
       if (v.error) return hold('no_target', v.error);
-      const data = await client.form(`${API_BASE}/x/v2/reply/add`, { type: '1', oid: String(v.aid), message: scrub.text, plat: '1', csrf: jct });
-      result = { ok: true, action, bvid: v.bvid, rpid: num(data?.rpid) };
-      meta = { bvid: v.bvid };
+      const fields = { type: '1', oid: String(v.aid), message: scrub.text, plat: '1', csrf: jct };
+      // Threaded reply: Bilibili expects parent (and often root) as rpid strings.
+      if (/^\d+$/.test(parent)) fields.parent = parent;
+      if (/^\d+$/.test(root)) fields.root = root;
+      const data = await client.form(`${API_BASE}/x/v2/reply/add`, fields);
+      result = { ok: true, action, bvid: v.bvid, rpid: num(data?.rpid), parent: fields.parent, root: fields.root };
+      meta = { bvid: v.bvid, parent: fields.parent, root: fields.root };
     } else if (action === 'danmaku') {
       const scrub = await scrubOutbound(home, action, input.message ?? input.text, 100);
       if (scrub.blocked) return hold('privacy_blocked', `弹幕被隐私防火墙拦截：${scrub.reason}`);

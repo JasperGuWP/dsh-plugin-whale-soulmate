@@ -219,7 +219,14 @@ export function apply(ctx, config = {}) {
 
   // ------------------------------------------------------------------ model tools
   const makeTool = makeToolFactory({ cardKind: CARD_KIND, ready: readyPromise });
-  const toolDeps = { makeTool, service, memory, home, cfg, ctx, pushEvent, warn, track, getSummary, meteredCall: usage.meteredCall };
+  const toolDeps = {
+    makeTool, service, memory, home, cfg, ctx, pushEvent, warn, track, getSummary,
+    meteredCall: usage.meteredCall,
+    oneShotLlm: usage.oneShotLlm,
+    listHostModels: usage.listHostModels,
+    get chatHome() { return chatHome; },
+    promptEngine,
+  };
   const toolSet = buildTools(toolDeps);
   for (const tool of toolSet.tools) {
     track(() => ctx.tools.register(Object.assign({}, tool, {

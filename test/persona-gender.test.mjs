@@ -13,6 +13,7 @@ import {
   DEFAULT_CONFIG, DEFAULT_INVARIANTS, resolveSoulmateHome, loadConfig, dumpSimpleYaml, saveConfigAuto,
 } from '../packages/soulmate-core/state.mjs';
 import { ensurePersonaFiles, loadInvariants } from '../packages/soulmate-core/layers/persona-layer.mjs';
+import { ensureDefaultSprite } from '../packages/soulmate-core/runtime/bootstrap.mjs';
 
 async function withHome(fn) {
   const dir = await mkdtemp(join(tmpdir(), 'soulmate-gender-'));
@@ -254,4 +255,72 @@ test('persona-evolve API: switch gender from female preset → blank-custom-male
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('default stickers: /api/sprite = hanfu drag PNG, /api/sprite-male = winter-boy drag PNG', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'soulmate-gender-sprite-'));
+  try {
+    const { mockCtx, routes, dispose } = createMockCtx(dir);
+    apply(mockCtx, {});
+    await mockCtx.soulmate.ready;
+    const hanfu = await readFile(new URL('../assets/pet-hanfu/pet-drag.png', import.meta.url));
+    const winter = await readFile(new URL('../assets/pet-winterboy-chibi/pet-drag.png', import.meta.url));
+    const female = await GET(routes, '/dsh-soulmate/api/sprite');
+    assert.equal(female.status, 200);
+    assert.deepEqual(Buffer.from(female.body), hanfu);
+    const male = await GET(routes, '/dsh-soulmate/api/sprite-male');
+    assert.equal(male.status, 200);
+    assert.deepEqual(Buffer.from(male.body), winter);
+    dispose();
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('evolvePersona: gender switch re-links pet skin (male=winterboy-chibi, female=hanfu)', async () => {
+  await withHome(async (home) => {
+    await saveConfigAuto(home, { onboardingCompleted: true, persona: { gender: 'female', preset: 'gentle-echo' } });
+    const male = await evolvePersona(home, { mode: 'user_customize', gender: 'male' });
+    assert.equal(male.pet.skin, 'winterboy-chibi');
+    assert.equal(male.pet.skinAuto, true);
+    const female = await evolvePersona(home, { mode: 'user_customize', gender: 'female' });
+    assert.equal(female.pet.skin, 'hanfu');
+    assert.equal(female.pet.skinAuto, true);
+    assert.match(female.appearance.customSpriteUrl, /\/dsh-soulmate\/api\/sprite$/);
+  });
+});
+
+test('bootstrap: skin aligns to gender unless skinAuto=false; default sprite URL follows gender', async () => {
+  await withHome(async (home) => {
+    await saveConfigAuto(home, { persona: { gender: 'male' }, pet: { skin: 'hanfu' }, appearance: { customSpriteUrl: '/dsh-soulmate/api/sprite?v=1' } });
+    await ensureDefaultSprite(home);
+    const conf = await loadConfig(home);
+    assert.equal(conf.pet.skin, 'winterboy-chibi');
+    assert.equal(conf.appearance.customSpriteUrl, '/dsh-soulmate/api/sprite-male');
+  });
+  await withHome(async (home) => {
+    await saveConfigAuto(home, { persona: { gender: 'male' }, pet: { skin: 'hanfu', skinAuto: false } });
+    await ensureDefaultSprite(home);
+    const conf = await loadConfig(home);
+    assert.equal(conf.pet.skin, 'hanfu', 'manual skin choice must stick');
+  });
+  await withHome(async (home) => {
+    await ensureDefaultSprite(home);
+    const conf = await loadConfig(home);
+    assert.equal(conf.pet.skin, 'hanfu', 'fresh home defaults to female → hanfu');
+    assert.equal(conf.appearance.customSpriteUrl, '/dsh-soulmate/api/sprite');
+  });
+});
+
+test('config POST: pet skin re-aligns to gender when skinAuto not false; manual override sticks', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'soulmate-gender-cfg-'));
+  try {
+    const { mockCtx, routes, dispose } = createMockCtx(dir);
+    apply(mockCtx, {});
+    await mockCtx.soulmate.ready;
+    await POST(routes, '/dsh-soulmate/api/onboard', { gender: 'male', preset: 'quiet-guardian' });
+    const auto = body(await POST(routes, '/dsh-soulmate/api/config', { pet: { skin: 'hanfu', skinAuto: true } }));
+    assert.equal(auto.config.pet.skin, 'winterboy-chibi');
+    const manual = body(await POST(routes, '/dsh-soulmate/api/config', { pet: { skin: 'hanfu', skinAuto: false } }));
+    assert.equal(manual.config.pet.skin, 'hanfu');
+    dispose();
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

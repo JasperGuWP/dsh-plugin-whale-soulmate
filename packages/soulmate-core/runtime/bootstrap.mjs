@@ -5,7 +5,7 @@
 import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { loadConfig, saveConfigAuto } from '../state.mjs';
-import { BUNDLED_SPRITE, BUNDLED_SPRITE_MALE, DEFAULT_SPRITE_URL } from '../assets.mjs';
+import { BUNDLED_SPRITE, BUNDLED_SPRITE_MALE, DEFAULT_SPRITE_URL, DEFAULT_SPRITE_MALE_URL, GENDER_PET_SKIN } from '../assets.mjs';
 import {
   autoResolveNoiseConflicts,
   backfillEventsIndex,
@@ -16,7 +16,7 @@ import { ensurePersonaFiles } from '../layers/index.mjs';
 
 export async function ensureDefaultSprite(home) {
   await mkdir(dirname(home.spritePath), { recursive: true });
-  // 默认形象 = 随包 Q版 idle PNG（GET /api/sprite 直读包内文件）。
+  // 默认形象 = 随包 Q版 拖拽姿势 PNG（女=汉服、男=冬装；GET 直读包内文件）。
   // sprite.ext 只在用户上传图片时存在，是「有自定义图」的唯一标记。
   let hasCustom = false;
   try {
@@ -52,9 +52,19 @@ export async function ensureDefaultSprite(home) {
     } catch { /* keep whatever is on disk */ }
   }
   const conf = await loadConfig(home);
+  // 性别决定默认立绘路由与桌宠皮肤：女=汉服 drag、男=冬装 drag。
+  const male = conf.persona?.gender === 'male';
+  const genderSpriteUrl = male ? DEFAULT_SPRITE_MALE_URL : DEFAULT_SPRITE_URL;
+  const genderSkin = male ? GENDER_PET_SKIN.male : GENDER_PET_SKIN.female;
   const url = conf.appearance?.customSpriteUrl;
-  if (!url || url.includes('sprite.img') || url === '') {
-    await saveConfigAuto(home, { appearance: { customSpriteUrl: DEFAULT_SPRITE_URL } });
+  const base = typeof url === 'string' ? url.trim().split('?')[0] : '';
+  const staleDefault = !hasCustom && (base === DEFAULT_SPRITE_URL || base === DEFAULT_SPRITE_MALE_URL) && base !== genderSpriteUrl;
+  if (!url || url.includes('sprite.img') || url === '' || staleDefault) {
+    await saveConfigAuto(home, { appearance: { customSpriteUrl: genderSpriteUrl } });
+  }
+  // skinAuto 未显式关闭 → 启动即把皮肤对齐到性别（修复旧配置遗留的错配）。
+  if (conf.pet?.skinAuto !== false && conf.pet?.skin !== genderSkin) {
+    await saveConfigAuto(home, { pet: { skin: genderSkin } });
   }
   return hasCustom;
 }

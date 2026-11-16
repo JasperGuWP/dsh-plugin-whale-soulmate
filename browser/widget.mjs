@@ -7,6 +7,7 @@ const { createPetRig } = require('./pet-rig.mjs')
 const { createPetStage } = require('./pet-stage.mjs')
 const { gestureSayPool } = require('./pet-says.mjs')
 const { wirePetDrag } = require('./pet-drag.mjs')
+const { createPetThrow } = require('./pet-throw.mjs')
 
     // ------------------------------------------------------------------
     // Floating widget
@@ -120,6 +121,7 @@ const { wirePetDrag } = require('./pet-drag.mjs')
       let petStarting = false
       let petLayer = null
       let petMotion = null
+      let petThrow = null
       let wantMov = false
       try { wantMov = prefersMov(navigator.userAgent, navigator.platform, navigator.maxTouchPoints) } catch (_) { /* no navigator in tests */ }
       const reducedMotion = () => {
@@ -183,7 +185,7 @@ const { wirePetDrag } = require('./pet-drag.mjs')
         if (m.state === 'idle') m.blinkAt = t + 1200 + Math.random() * 2600
         petVideoEnter(m.state, t)
       }
-      function petEvent(name, t) {
+      function petEvent(name, t, vel) {
         if (!pet) return
         const m = pet.m
         m.lastAct = t
@@ -191,7 +193,18 @@ const { wirePetDrag } = require('./pet-drag.mjs')
         if (name === 'think') { petEnter(m, 'think', t); return }
         if (name === 'eureka') { petEnter(m, 'eureka', t); return }
         if (name === 'dragStart') { m.dragging = true; if (petMotion) petMotion.stop(); petEnter(m, 'drag', t); return }
-        if (name === 'dragEnd') { m.dragging = false; if (petMotion) petMotion.stop(); petEnter(m, 'happy', t); return }
+        if (name === 'dragEnd') {
+          m.dragging = false
+          if (petMotion) petMotion.stop()
+          // A fast release becomes a flick-throw: keep the dangle pose in flight
+          // (m.dragging suppresses dwell switches); onRest lands her into happy.
+          if (petThrow && vel) {
+            const rect = widget.getBoundingClientRect()
+            if (petThrow.start(rect.left, rect.top, vel.vx, vel.vy)) { m.dragging = true; return }
+          }
+          petEnter(m, 'happy', t)
+          return
+        }
         if (name === 'turn') { m.facing = -m.facing; return }
         if (m.state === 'sleep') { petEnter(m, 'happy', t); return }
         if (name === 'click') petEnter(m, 'wave', t)
@@ -203,8 +216,16 @@ const { wirePetDrag } = require('./pet-drag.mjs')
         spriteImg,
         getPet: () => pet,
         getPetLayer: () => petLayer,
+        // Catch a flying pet: freeze it where it is, then let the normal
+        // click/drag flow take over (a real drag re-enters via dragStart).
+        onGrab: () => {
+          if (petThrow && petThrow.active()) {
+            petThrow.stop()
+            if (pet) { pet.m.dragging = false; petEnter(pet.m, 'happy', performance.now()) }
+          }
+        },
         onDragStart: (t) => petEvent('dragStart', t),
-        onDragEnd: (t) => petEvent('dragEnd', t),
+        onDragEnd: (t, vel) => petEvent('dragEnd', t, vel),
         setSwallow: (v) => { swallowClick = !!v },
       })
       function petFrameAt(t) {
@@ -315,12 +336,31 @@ const { wirePetDrag } = require('./pet-drag.mjs')
           // Keep hit above video buffers for stacking (pointer-events still on hit only).
           if (hitEl.parentNode === petStage.videoMount) petStage.videoMount.appendChild(hitEl)
         }
+        if (!petThrow) {
+          petThrow = createPetThrow({
+            root: () => widget,
+            stage: () => stageEl,
+            viewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
+            size: () => ({ width: petStage.width(), height: petStage.height() }),
+            physics: () => (pet ? pet.cfg.physics : null),
+            reducedMotion,
+            onRest: (t) => { if (pet) { pet.m.dragging = false; petEnter(pet.m, 'happy', t) } },
+          })
+        }
         petLayer.setPaused(document.hidden)
         petEnter(m, 'idle', t)
         syncSpriteFaces()
       }
+      /** Freeze a flight mid-air and leave the dangle pose (minimize / tab hide). */
+      function abortThrow() {
+        if (petThrow && petThrow.active()) {
+          petThrow.stop()
+          if (pet) { pet.m.dragging = false; petEnter(pet.m, 'idle', performance.now()) }
+        }
+      }
       function stopPet() {
         if (petMotion) petMotion.stop()
+        if (petThrow) petThrow.stop()
         if (petLayer) petLayer.clear()
         pet = null
         spriteImg.style.transform = ''
@@ -365,6 +405,7 @@ const { wirePetDrag } = require('./pet-drag.mjs')
       function setMinimized(value) {
         minimized = value
         if (value) {
+          abortThrow()
           if (petMotion) petMotion.stop()
           if (petLayer) petLayer.setPaused(true)
           if (widget.parentNode) root.removeChild(widget)
@@ -406,6 +447,7 @@ const { wirePetDrag } = require('./pet-drag.mjs')
 
       function frame(time) {
         if (destroyed) return
+        if (petThrow) petThrow.step(time)
         if (petMotion) petMotion.step(time)
         if (pet) petApplyFaces(time)
         if (!pet && !spriteUrlOf(snapshot)) {
@@ -513,6 +555,7 @@ const { wirePetDrag } = require('./pet-drag.mjs')
           // video resumes on return while the position stayed frozen (审核 #21).
           if (petMotion && petMotion.active()) petMotion.commit()
           if (petMotion) petMotion.stop()
+          abortThrow()
           if (petLayer) petLayer.setPaused(true)
         } else {
           if (petLayer) petLayer.setPaused(minimized)
@@ -538,6 +581,7 @@ const { wirePetDrag } = require('./pet-drag.mjs')
         document.removeEventListener('visibilitychange', onVisibility)
         window.removeEventListener('resize', onResize)
         if (petMotion) petMotion.stop()
+        if (petThrow) petThrow.stop()
         if (petLayer) petLayer.dispose()
         if (root.parentNode) root.parentNode.removeChild(root)
       }

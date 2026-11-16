@@ -69,6 +69,8 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
       onHandoff: runHandoffDistill,
       seedAfterRotate: options.seedAfterRotate !== false && conf.chatHome?.handoffSeed !== false,
       forceRotate: options.forceRotate === true,
+      // Default true (boot / proactive may rotate). IM drafts pass false.
+      rotateIfFull: options.rotateIfFull !== false,
     });
     if (result.ok && result.chatHome) {
       // Persist the persona-synced titlePrefix so panel status matches the sidebar,

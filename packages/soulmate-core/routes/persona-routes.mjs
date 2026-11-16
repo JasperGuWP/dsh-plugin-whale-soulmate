@@ -4,6 +4,7 @@ import { loadConfig, saveConfigAuto } from '../state.mjs';
 import { PRESETS, normalizeGender } from '../persona.mjs';
 import { upsertIdentityAnchors } from '../memory-enrichment.mjs';
 import { CONFIG_PATCH_KEYS, pickPatch } from '../plugin-config.mjs';
+import { GENDER_PET_SKIN } from '../assets.mjs';
 import { jsonOut, statusOf } from '../http-plumbing.mjs';
 import { errMsg } from '../small-utils.mjs';
 
@@ -26,6 +27,12 @@ export function personaRoutes({ home, service, memory, getSummary, evolveOrReset
         }
         if (patch.proactive && patch.proactive.distillLlmEnabled === true) {
           patch.proactive.distillLlmAutoOffReason = '';
+        }
+        // 皮肤自动联动：skinAuto 未显式关闭时，皮肤必须跟随当前性别（防旧草稿回写错配）。
+        if (patch.pet && patch.pet.skin !== undefined && patch.pet.skinAuto !== false) {
+          const conf = await loadConfig(home);
+          const linked = conf.persona?.gender === 'male' ? GENDER_PET_SKIN.male : GENDER_PET_SKIN.female;
+          if (patch.pet.skin !== linked) patch.pet.skin = linked;
         }
         await saveConfigAuto(home, patch);
         return jsonOut(200, await getSummary());

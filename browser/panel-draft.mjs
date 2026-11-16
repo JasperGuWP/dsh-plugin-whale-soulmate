@@ -12,6 +12,7 @@ const TRAIT_LABELS = {
 }
 const TRAIT_FALLBACK = { tsundere: 75, clinginess: 60, sassiness: 55, curiosity: 70, brevity: 65 }
 const DEFAULT_SPRITE_URL = '/dsh-soulmate/api/sprite'
+const DEFAULT_SPRITE_MALE_URL = '/dsh-soulmate/api/sprite-male'
 
 const MBTI_TYPES = Object.freeze([
   'INTJ', 'INTP', 'ENTJ', 'ENTP',
@@ -179,7 +180,10 @@ function draftFromSummary(snap) {
       enabled: !!(config.pet && config.pet.enabled),
       sizePx: clampNum(Number(config.pet && config.pet.sizePx) || 148, 96, 320),
       sleepAfterIdleSec: clampNum(Number(config.pet && config.pet.sleepAfterIdleSec) || 300, 30, 3600),
-      skin: (config.pet && typeof config.pet.skin === 'string' && config.pet.skin.trim()) ? config.pet.skin.trim() : 'winterboy-chibi',
+      skin: (config.pet && typeof config.pet.skin === 'string' && config.pet.skin.trim())
+        ? config.pet.skin.trim()
+        : ((config.persona && config.persona.gender === 'male') ? 'winterboy-chibi' : 'hanfu'),
+      skinAuto: !(config.pet && config.pet.skinAuto === false),
     },
     notify: { enabled: !(config.notify && config.notify.enabled === false) },
     extensions: {
@@ -191,6 +195,10 @@ function draftFromSummary(snap) {
       biliKeywords: (config.extensions && Array.isArray(config.extensions.biliKeywords) && config.extensions.biliKeywords.length)
         ? config.extensions.biliKeywords.slice()
         : ['AI', '编程', '科技'],
+      biliAutoEngageEnabled: !(config.extensions && config.extensions.biliAutoEngageEnabled === false),
+      biliAutoReplyEnabled: !(config.extensions && config.extensions.biliAutoReplyEnabled === false),
+      biliAutoReplyMaxRounds: clampNum(Number(config.extensions && config.extensions.biliAutoReplyMaxRounds) || 3, 2, 3),
+      biliFollowDedupDays: clampNum(Number(config.extensions && config.extensions.biliFollowDedupDays) || 7, 1, 30),
     },
     // Proactive scheduler: mirrored straight from config so the switches show what the
     // node half is actually running with, not a separate front-end-only copy.
@@ -213,7 +221,7 @@ function draftFromSummary(snap) {
       bootGreeting: !(config.chatHome && config.chatHome.bootGreeting === false),
       handoffSeed: !(config.chatHome && config.chatHome.handoffSeed === false),
       rotateOnPersonaChange: !(config.chatHome && config.chatHome.rotateOnPersonaChange === false),
-      maxTurns: clampNum(Number(config.chatHome && config.chatHome.maxTurns) || 100, 10, 500),
+      maxTurns: clampNum(Number(config.chatHome && config.chatHome.maxTurns) || 500, 10, 500),
       maxEstTokens: clampNum(Number(config.chatHome && config.chatHome.maxEstTokens) || 72000, 5000, 500000),
       titlePrefix: (config.chatHome && typeof config.chatHome.titlePrefix === 'string' && config.chatHome.titlePrefix.trim())
         ? config.chatHome.titlePrefix.trim()
@@ -250,6 +258,7 @@ module.exports = {
   TRAIT_LABELS,
   TRAIT_FALLBACK,
   DEFAULT_SPRITE_URL,
+  DEFAULT_SPRITE_MALE_URL,
   MBTI_TYPES,
   MBTI_AXES,
   MBTI_AXIS_LABELS,

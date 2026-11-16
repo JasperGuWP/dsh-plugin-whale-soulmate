@@ -9,3 +9,5 @@
       name: dsh-plugin-whale-soulmate
       config:
         enabled: true
+        # 微信 iLink 靠长轮询收消息；不开则只能登录不能回。
+        imAutoPoll: true

@@ -25,7 +25,7 @@ import {
 
 test('chatHome: defaults ship enabled boot + rotate thresholds', () => {
   assert.equal(DEFAULT_CONFIG.chatHome.bootGreeting, true);
-  assert.equal(DEFAULT_CONFIG.chatHome.maxTurns, 100);
+  assert.equal(DEFAULT_CONFIG.chatHome.maxTurns, 500);
   assert.equal(DEFAULT_CONFIG.chatHome.maxEstTokens, 72_000);
   assert.equal(DEFAULT_CONFIG.chatHome.titlePrefix, 'soulmate');
   const n = normalizeChatHome({});
@@ -201,6 +201,59 @@ test('chatHome: ensure creates, renames, and rotates when full', async () => {
   assert.equal(prompts.length, 1, 'handoff-seed prompt when seedAfterRotate');
   assert.match(prompts[0].content[0].text, /大肥鱼|换了个窗/);
   assert.doesNotMatch(prompts[0].content[0].text, /勿复述/);
+});
+
+test('chatHome: rotateIfFull false reuses full window (IM)', async () => {
+  const created = [];
+  let seq = 0;
+  const controller = {
+    async create() {
+      seq += 1;
+      const sessionId = `im-sess-${seq}`;
+      created.push(sessionId);
+      return { sessionId };
+    },
+    async rename() { return {}; },
+    async events({ address }) {
+      if (address.sessionId === 'im-sess-1') {
+        const records = [];
+        for (let i = 0; i < 12; i += 1) {
+          records.push({
+            type: 'event',
+            event: {
+              type: i % 2 === 0 ? 'user/message' : 'assistant/message',
+              data: i % 2 === 0
+                ? { content: [{ type: 'text', text: `u${i}` }] }
+                : { message: { content: [{ type: 'text', text: `a${i}` }] } },
+            },
+          });
+        }
+        return { records, hasMore: false };
+      }
+      return { records: [], hasMore: false };
+    },
+  };
+  const handoffs = [];
+  const first = await ensureChatHomeSession({
+    chatHome: { maxTurns: 10, maxEstTokens: 999999, titlePrefix: '大海', nextIndex: 1 },
+    controller,
+    seedAfterRotate: false,
+  });
+  assert.equal(first.sessionId, 'im-sess-1');
+
+  const kept = await ensureChatHomeSession({
+    chatHome: first.chatHome,
+    controller,
+    onHandoff: async () => { handoffs.push(1); },
+    seedAfterRotate: false,
+    rotateIfFull: false,
+  });
+  assert.equal(kept.ok, true);
+  assert.equal(kept.rotated, false);
+  assert.equal(kept.sessionId, 'im-sess-1');
+  assert.equal(kept.reusedDespiteFull, true);
+  assert.equal(handoffs.length, 0);
+  assert.equal(created.length, 1);
 });
 
 test('chatHome: deliverViaPrompt requires prompt API', async () => {

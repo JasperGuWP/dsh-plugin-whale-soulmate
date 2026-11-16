@@ -296,17 +296,45 @@ function traitsCard({ draft, effective, setTrait, setTraitScheme, setMbtiType, s
   ])
 }
 
-function spriteCard({ draft, spriteNote, fileInputRef, uploadSprite, restoreDefaultSprite }) {
+/** Bundled static looks — same ids as desktop-pet skins. */
+const BUNDLED_LOOKS = [
+  {
+    id: 'hanfu',
+    label: '汉风 · 襦裙',
+    preview: '/dsh-soulmate/api/pet/frame?id=pet-idle-01&skin=hanfu',
+  },
+  {
+    id: 'winterboy-chibi',
+    label: 'Q版 · 冬装男孩',
+    preview: '/dsh-soulmate/api/pet/frame?id=pet-idle-01&skin=winterboy-chibi',
+  },
+]
+
+function spriteCard({
+  draft, spriteNote, fileInputRef, uploadSprite, restoreDefaultSprite, defaultSpriteUrl,
+  selectBundledLook, petSkin,
+}) {
+  const activeSkin = String(petSkin || '').trim()
+  const previewSrc = draft.appearance.customSpriteUrl || defaultSpriteUrl || DEFAULT_SPRITE_URL
   return h('div', { key: 'sprite', className: 'sm-panel-card' }, [
     h('h3', { key: 'h', className: 'sm-panel-h3' }, '形象'),
     h('div', { key: 'row', className: 'sm-sprite-row' }, [
       h('img', {
         key: 'preview',
         className: 'sm-sprite-preview',
-        src: draft.appearance.customSpriteUrl || DEFAULT_SPRITE_URL,
+        src: previewSrc,
         alt: '形象',
       }),
       h('div', { key: 'ops', className: 'sm-sprite-ops' }, [
+        field('bundled-look', '已有形象', h('select', {
+          key: 'control', className: 'sm-panel-input',
+          value: activeSkin || (BUNDLED_LOOKS[0] && BUNDLED_LOOKS[0].id) || '',
+          onChange: (event) => {
+            const id = event.target.value
+            const look = BUNDLED_LOOKS.find((item) => item.id === id)
+            if (look && selectBundledLook) selectBundledLook(look)
+          },
+        }, BUNDLED_LOOKS.map((look) => h('option', { key: look.id, value: look.id }, look.label)))),
         h('button', {
           key: 'pick', type: 'button', className: 'sm-panel-btn primary',
           onClick: () => { if (fileInputRef.current) fileInputRef.current.click() },
@@ -321,7 +349,7 @@ function spriteCard({ draft, spriteNote, fileInputRef, uploadSprite, restoreDefa
           onChange: (event) => uploadSprite(event.target.files && event.target.files[0]),
         }),
         h('p', { key: 'tip', className: 'sm-panel-muted' },
-          spriteNote || '默认为 Q版透明 PNG，与桌面小伙伴同一形象。支持上传 PNG / JPG / WEBP，透明底最好，不超过 4MB。'),
+          spriteNote || '点选已有形象会同步桌面小伙伴皮肤；也可上传 PNG / JPG / WEBP（透明底最好，不超过 4MB）。「恢复默认」按性别回到默认静图。'),
       ]),
     ]),
   ])
@@ -348,13 +376,13 @@ function petCard({ draft, petDraft, patchPet, PetPreview }) {
         field('petskin', '皮肤', h('select', {
           key: 'control', className: 'sm-panel-input',
           value: petDraft.skin || 'winterboy-chibi',
-          onChange: (event) => patchPet({ skin: event.target.value }),
+          onChange: (event) => patchPet({ skin: event.target.value, skinAuto: false }),
         }, [
           h('option', { key: 'winterboy-chibi', value: 'winterboy-chibi' }, 'Q版 · 冬装男孩'),
           h('option', { key: 'hanfu', value: 'hanfu' }, '汉风 · 襦裙'),
         ])),
         h('p', { key: 'tip', className: 'sm-panel-muted' },
-          '左侧预览优先播皮肤 idle 透明视频；没有视频才轮播 PNG。开启后右下角会动：可拖动、滚轮缩放。关闭则用形象区静态图。'),
+          '左侧预览优先播皮肤 idle 透明视频；没有视频才轮播 PNG。开启后右下角会动：可拖动、滚轮缩放。关闭则用形象区静态图。切换性别会自动换上对应皮肤；手动选皮肤则固定不跟随。'),
       ]),
     ]),
   ])
@@ -423,7 +451,7 @@ function autoSurfSection({ draft, patchExtensions }) {
         key: 'i', type: 'checkbox', checked: !!ext.biliAutoSurfEnabled,
         onChange: (event) => patchExtensions && patchExtensions({ biliAutoSurfEnabled: event.target.checked }),
       }),
-      h('span', { key: 't' }, '定时自动刷 B 站（按兴趣自己看片、记小本本，不会发评论/私信）'),
+      h('span', { key: 't' }, '定时自动刷 B 站（按兴趣自己看片、记小本本；互动由下方开关决定）'),
     ]),
     ext.biliAutoSurfEnabled ? h('div', { key: 'autosurf-knobs', className: 'sm-autosurf-knobs' }, [
       field('autosurf-every', '每 ' + (ext.biliAutoSurfEveryHours || 6) + ' 小时巡一圈', h('input', {
@@ -458,12 +486,12 @@ function autoSurfSection({ draft, patchExtensions }) {
   ]
 }
 
-/** 作息与主动 tab：主动开关 + 日更/梦境 + 专属窗 + B 站授权。 */
+/** 作息与主动 tab：主动开关 + 日更/梦境 + 专属窗（B 站迁至「冲浪」标签）。 */
 function rhythmCard(view) {
   const {
-    draft, proDraft, homeDraft, patchProactive, patchChatHome, patchNotify, patchExtensions,
+    draft, proDraft, homeDraft, patchProactive, patchChatHome, patchNotify,
     proStatus, homeCfg, homeFull, homeMeasure, snap, usage,
-    llmBudgetSection: llmBudget, biliAuthCard: BiliAuth,
+    llmBudgetSection: llmBudget,
   } = view
   const pp = companionPronoun(
     draft.gender === 'male' || draft.gender === 'female' ? draft.gender : null,
@@ -537,18 +565,18 @@ function rhythmCard(view) {
       ...llmBudget({ h, proDraft, usage, patchProactive }),
       h('p', { key: 'quiet', className: 'sm-panel-muted' },
         '免打扰：' + ((proDraft.quietHours && proDraft.quietHours.join('、')) || '无')
-          + ' · 专属窗大约 ' + (homeDraft.maxTurns || 100) + ' 回合后换新窗'),
-      h(BiliAuth, { key: 'bili-auth' }),
+          + ' · 专属窗大约 ' + (homeDraft.maxTurns || 500) + ' 回合后换新窗'
+          + ' · B 站冲浪请到「冲浪」标签'),
       field('maxperday', '每天最多主动 ' + proDraft.maxPerDay + ' 次', h('input', {
         key: 'control', type: 'range', min: 0, max: 8, step: 1,
         value: proDraft.maxPerDay,
         onChange: (event) => patchProactive({ maxPerDay: Number(event.target.value) }),
       })),
-      ...autoSurfSection({ draft, patchExtensions }),
     ]),
   ])
 }
 
 module.exports = {
   field, identityCard, gateCard, traitsCard, spriteCard, petCard, chatHomeAutoMemoryChecks, rhythmCard,
+  autoSurfSection, BUNDLED_LOOKS,
 }

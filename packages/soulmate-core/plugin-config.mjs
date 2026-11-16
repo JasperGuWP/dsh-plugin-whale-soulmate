@@ -7,7 +7,16 @@ import { isObject } from './small-utils.mjs';
 export function resolvePluginConfig(config) {
   const cfg = config === undefined || config === null ? {} : config;
   if (!isObject(cfg)) throw new Error('[soulmate] plugin config must be an object');
-  const out = { homeDir: '', autoSync: true, syncIntervalSec: 300, proactive: true, proactiveIntervalSec: 120, fetch: undefined, ...cfg };
+  const out = {
+    homeDir: '',
+    autoSync: true,
+    syncIntervalSec: 300,
+    proactive: true,
+    proactiveIntervalSec: 120,
+    imAutoPoll: true,
+    fetch: undefined,
+    ...cfg,
+  };
   if (out.homeDir !== undefined && out.homeDir !== '' && typeof out.homeDir !== 'string') {
     throw new Error('[soulmate] config.homeDir must be a string');
   }
@@ -40,7 +49,10 @@ export const CONFIG_PATCH_KEYS = {
   onboardingCompleted: 'boolean',
   widget: { visible: 'boolean', position: 'string', defaultView: 'string' },
   notify: { enabled: 'boolean' },
-  pet: { enabled: 'boolean', sizePx: 'number', sleepAfterIdleSec: 'number', thinkQuietSec: 'number', skin: 'string' },
+  pet: {
+    enabled: 'boolean', sizePx: 'number', sleepAfterIdleSec: 'number', thinkQuietSec: 'number', skin: 'string', skinAuto: 'boolean',
+    physics: { gravity: 'number', restitution: 'number', groundFriction: 'number', throwPower: 'number' },
+  },
   proactive: {
     enabled: 'boolean',
     tzOffsetMinutes: 'number',
@@ -83,6 +95,7 @@ export const CONFIG_PATCH_KEYS = {
     biliAutoSurfEveryHours: 'number',
     biliAutoSurfMaxPick: 'number',
     biliAutoSurfDeepWatch: 'boolean',
+    biliAutoSurfMaxAgeDays: 'number',
     biliKeywords: 'string-array',
   },
   usage: {

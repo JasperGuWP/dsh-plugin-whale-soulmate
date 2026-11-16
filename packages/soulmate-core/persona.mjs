@@ -45,6 +45,7 @@ export {
   traitsToNearestMbti,
   typeFromAxes,
 } from './mbti.mjs';
+import { GENDER_PET_SKIN } from './assets.mjs';
 
 const DAY_MS = 86_400_000;
 
@@ -579,6 +580,8 @@ export async function evolvePersona(home, evolution = {}) {
     if (genderChanged) {
       appearancePatch = appearanceForGender(nextGender, config.appearance);
     }
+    // 桌面小伙伴皮肤跟随性别：女=汉风襦裙、男=Q版冬装；重新建立自动联动（skinAuto）。
+    const genderSkin = genderChanged ? (GENDER_PET_SKIN[nextGender] || GENDER_PET_SKIN.female) : null;
 
     const presetChanged = effectivePresetId !== undefined
       && effectivePresetId !== config.persona?.preset
@@ -690,6 +693,7 @@ export async function evolvePersona(home, evolution = {}) {
     if (appearancePatch && Object.keys(appearancePatch).length > 0) {
       configPatch.appearance = appearancePatch;
     }
+    if (genderSkin) configPatch.pet = { skin: genderSkin, skinAuto: true };
     const next = await saveConfigAuto(home, configPatch);
     if (patch.traits !== undefined || src.preset !== undefined || patch.preset !== undefined) {
       await applyUserTraitPatch(

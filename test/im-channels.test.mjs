@@ -186,7 +186,11 @@ test('weixin: QR login -> token only in credentials.json -> long-poll -> [im:wei
 
       // QR code request
       const qr = await startWeixinQrLogin(home, opts);
-      assert.deepEqual(qr, { ok: true, qrcode: 'QR123', qrcodeImgContent: 'https://liteapp.weixin.qq.com/q/QR123', pollIntervalSec: 1 });
+      assert.equal(qr.ok, true);
+      assert.equal(qr.qrcode, 'QR123');
+      assert.equal(qr.qrcodeImgContent, 'https://liteapp.weixin.qq.com/q/QR123');
+      assert.equal(qr.pollIntervalSec, 1);
+      assert.match(qr.qrDataUrl || '', /^data:image\/png;base64,/);
       const qrCall = net.calls[0];
       assert.equal(qrCall.query.get('bot_type'), '3');
       assert.equal(qrCall.headers['Content-Type'], 'application/json');
@@ -626,7 +630,13 @@ test('privacy: IM credentials never reach /im/status, /state, /config or config.
     },
     async (ctx) => {
       const { service, home, net, POST, GET } = ctx;
-      await saveImCredentials(home, 'weixin', { token: SECRETS[0], userId: 'owner', accountId: 'acc' });
+      await saveImCredentials(home, 'weixin', {
+        token: SECRETS[0],
+        userId: 'owner',
+        accountId: 'acc',
+        // iLink requires a session ticket before sendmessage; privacy scrub still runs first.
+        contextTokens: { owner: 'ctx-privacy-test' },
+      });
       await enable(ctx, 'qq', { mode: 'onebot', onebotHttpUrl: 'http://127.0.0.1:3000', onebotAccessToken: SECRETS[1], appSecret: SECRETS[2], ownerId: '10001' });
       await enable(ctx, 'feishu', { appId: 'cli_a1b2c3d4e5', appSecret: SECRETS[3], verificationToken: SECRETS[4] });
       await enable(ctx, 'dingtalk', { clientId: 'dingabcdefgh1234', clientSecret: SECRETS[5], defaultWebhook: `https://oapi.dingtalk.com/robot/send?access_token=${SECRETS[6]}` });

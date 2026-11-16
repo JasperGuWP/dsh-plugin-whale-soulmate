@@ -10,7 +10,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 export const DEFAULT_CHAT_HOME = Object.freeze({
   activeSessionId: '',
   archiveSessionIds: Object.freeze([]),
-  maxTurns: 100,
+  maxTurns: 500,
   maxEstTokens: 72_000,
   titlePrefix: 'soulmate',
   bootGreeting: true,
@@ -380,6 +380,8 @@ export function composeHandoffSummary(snippets = [], options = {}) {
  * @param {object} [args.persona]
  * @param {(summary: string, meta: object) => Promise<void>} [args.onHandoff]  distill hook
  * @param {boolean} [args.seedAfterRotate]  enqueue handoff-seed wake after rotate
+ * @param {boolean} [args.forceRotate]
+ * @param {boolean} [args.rotateIfFull=true]  when false, reuse active even if full (IM drafts must not spill「大海 · N」)
  * @returns {Promise<{ok:boolean, sessionId:string, chatHome:object, rotated:boolean, measure?:object, delivery?:object}>}
  */
 export async function ensureChatHomeSession(args = {}) {
@@ -484,13 +486,23 @@ export async function ensureChatHomeSession(args = {}) {
       };
     }
     const fullness = isSessionFull(measure, homeCfg);
-    if (!fullness.full && !args.forceRotate) {
+    const rotateIfFull = args.rotateIfFull !== false;
+    if ((!fullness.full || !rotateIfFull) && !args.forceRotate) {
       // Keep title in sync when the user renames the persona / switches preset.
+      // IM callers pass rotateIfFull:false so a full window is reused instead of「大海 · N+1」.
       if (typeof controller.rename === 'function' && (personaName || presetTag)) {
         const want = titleOf(Math.max(1, homeCfg.nextIndex - 1));
         try { await controller.rename({ sessionId: homeCfg.activeSessionId, title: want }); } catch { /* best-effort */ }
       }
-      return { ok: true, sessionId: homeCfg.activeSessionId, chatHome: homeCfg, rotated: false, measure, fullness };
+      return {
+        ok: true,
+        sessionId: homeCfg.activeSessionId,
+        chatHome: homeCfg,
+        rotated: false,
+        measure,
+        fullness,
+        reusedDespiteFull: Boolean(fullness.full && !rotateIfFull),
+      };
     }
 
     // Full (or forced persona-change rotate) → handoff distill, then new window.
