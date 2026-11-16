@@ -115,13 +115,14 @@ export function fingerprintMeasure(measure = {}) {
 
 /**
  * Debounce async work by key; later schedule wins for the same key.
- * @returns {{ schedule(key, fn), flush(), pendingCount() }}
+ * @returns {{ schedule(key, fn), flush(), pendingCount(), cancel() }}
  */
 export function createDebouncedRunner(options = {}) {
   const waitMs = Math.max(0, Math.floor(Number(options.waitMs) || 2500));
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
   /** @type {Map<string, { timer: ReturnType<typeof setTimeout>, fn: () => unknown, at: number }>} */
   const pending = new Map();
+  let disposed = false;
 
   const runFn = (fn) => {
     try {
@@ -135,6 +136,7 @@ export function createDebouncedRunner(options = {}) {
   };
 
   const schedule = (key, fn) => {
+    if (disposed) return;
     const k = str(key);
     if (!k || typeof fn !== 'function') return;
     const prev = pending.get(k);
@@ -146,6 +148,7 @@ export function createDebouncedRunner(options = {}) {
       pending.delete(k);
       runFn(entry.fn);
     }, waitMs);
+    timer.unref?.();
     pending.set(k, { timer, fn, at });
   };
 
@@ -159,7 +162,16 @@ export function createDebouncedRunner(options = {}) {
 
   const pendingCount = () => pending.size;
 
-  return { schedule, flush, pendingCount };
+  /** Plugin teardown: drop pending work instead of writing memory after dispose. */
+  const cancel = () => {
+    disposed = true;
+    for (const entry of pending.values()) {
+      if (entry.timer != null) clearTimeout(entry.timer);
+    }
+    pending.clear();
+  };
+
+  return { schedule, flush, pendingCount, cancel };
 }
 
 /**

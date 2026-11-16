@@ -86,6 +86,7 @@ export function apply(ctx, config = {}) {
 
   // ------------------------------------------------------------------ runtime domains
   const promptEngine = createPromptEngine({ home, warn, sessionController, pushEvent });
+  track(() => () => promptEngine.dispose());
 
   // ensureHomeSession is needed by the memory service (persona-change window rotate),
   // while the chat-home runtime needs the memory service's metered calls — wire lazily.

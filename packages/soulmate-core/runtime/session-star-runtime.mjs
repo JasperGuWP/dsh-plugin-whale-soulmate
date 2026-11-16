@@ -220,5 +220,10 @@ export function createSessionStarRuntime({ home, ctx, sessionController, warn })
     return { ok: true, scheduled, skippedUnchanged, at };
   }
 
-  return { maybeCaptureSessionStars, noteChatHomeSession, scheduleSessionStarCapture };
+  return {
+    maybeCaptureSessionStars,
+    noteChatHomeSession,
+    scheduleSessionStarCapture,
+    dispose: () => sessionStarDebouncer.cancel(),
+  };
 }

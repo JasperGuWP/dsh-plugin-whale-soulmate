@@ -46,6 +46,7 @@ export function createPromptEngine({ home, warn, sessionController, pushEvent })
   let lastPetActivityAt = 0;
   let petThinkingActive = false;
   let petThinkWatchGen = 0;
+  let disposed = false;
   // Which conversation the user is currently in (widget walks her on a switch).
   let lastSessionId = null;
   /** @type {'idle'|'thinking'|'ran-command'|'done'} */
@@ -252,7 +253,10 @@ export function createPromptEngine({ home, warn, sessionController, pushEvent })
     return text;
   }
 
-  const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+  const sleepMs = (ms) => new Promise((resolve) => {
+    const timer = setTimeout(resolve, Math.max(0, Number(ms) || 0));
+    timer.unref?.();
+  });
 
   /**
    * Push a toast-worthy pet-say once per spoken line (wake + user-turn settle share this).
@@ -288,7 +292,7 @@ export function createPromptEngine({ home, warn, sessionController, pushEvent })
    * so Windows toasts fire for normal user chat (not only proactive/boot wakes).
    */
   async function toastSettledReply(gen, sid, beforeMessageId, beforeAssistantCount) {
-    if (typeof pushEvent !== 'function' || !sid) return;
+    if (disposed || typeof pushEvent !== 'function' || !sid) return;
     const controller = sessionController();
     if (!controller || typeof controller.events !== 'function') return;
 
@@ -335,6 +339,7 @@ export function createPromptEngine({ home, warn, sessionController, pushEvent })
    * the browser half can go think → eureka immediately.
    */
   function schedulePetThinkWatch() {
+    if (disposed) return;
     const gen = ++petThinkWatchGen;
     // Freeze baseline synchronously — never await events() before whenIdle, or a
     // 1s reply lands inside the baseline and toastSettledReply sees "nothing new".
@@ -437,5 +442,10 @@ export function createPromptEngine({ home, warn, sessionController, pushEvent })
     refreshPresence,
     renderDriftAnchor,
     getPersonaPrompt,
+    /** Plugin teardown: bump the watch generation so detached think/toast loops exit. */
+    dispose() {
+      disposed = true;
+      petThinkWatchGen += 1;
+    },
   };
 }

@@ -74,6 +74,19 @@ test('debounce runner coalesces bursts', async () => {
   assert.deepEqual(calls, [2]);
 });
 
+test('debounce runner cancel drops pending work and refuses later schedules', async () => {
+  const calls = [];
+  const runner = createDebouncedRunner({ waitMs: 20, now: () => Date.now() });
+  runner.schedule('s1', () => { calls.push(1); });
+  assert.equal(runner.pendingCount(), 1);
+  runner.cancel();
+  assert.equal(runner.pendingCount(), 0);
+  runner.schedule('s1', () => { calls.push(2); });
+  runner.flush();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepEqual(calls, [], 'disposed plugin must not write memory after teardown');
+});
+
 test('captureSessionStarOnce upserts summary from measure', async () => {
   const writes = [];
   await captureSessionStarOnce({
