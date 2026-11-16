@@ -134,11 +134,10 @@ function personaCard({ inv, changelog, selfText, hasSelf }) {
     const raw = changelog[0].reason || changelog[0].source || ''
     recent = String(changelog[0].at || '').slice(5, 16).replace('T', ' ') + ' · ' + (reasonMap[raw] || '性格有更新')
   }
+  // Invariants chips（不把自己说成真人 / 尊重删除权 等）暂不对用户展示；仍参与引擎与 prompt。
+  void inv
   return h('div', { key: 'persona-layer', className: 'sm-eng-card' }, [
-    engHead('03', '人设底色', '不变的原则', 'idle'),
-    h('div', { key: 'inv', className: 'sm-eng-clauses' }, [].concat(inv.values || [], inv.boundaries || []).slice(0, 6).map((text, i) =>
-      h('span', { key: 'inv' + i, className: 'sm-eng-clause' }, text)
-    )),
+    engHead('03', '人设底色', '自我描述与近期性格更新', 'idle'),
     hasSelf
       ? h('p', { key: 'self', className: 'sm-eng-quote' }, selfText)
       : h('p', { key: 'self', className: 'sm-eng-note' }, '还没有写自我描述。'),

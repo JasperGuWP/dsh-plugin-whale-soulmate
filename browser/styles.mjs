@@ -188,7 +188,7 @@ const { CSS_KEY } = require('./util.mjs')
 .sm-panel{height:100%;box-sizing:border-box;overflow-y:auto;padding:0 32px 96px;color:var(--dsw-alias-label-primary,inherit);font-family:var(--dsw-font-family,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif);font-size:14px;line-height:1.6}
 .sm-panel *{box-sizing:border-box}
 .sm-panel-wrap{max-width:840px;margin:0 auto;padding-top:28px;display:flex;flex-direction:column;gap:14px}
-.sm-panel-head{display:flex;gap:16px;align-items:center;padding:4px 2px 6px}
+.sm-panel-head{display:flex;gap:16px;align-items:flex-start;padding:4px 2px 10px;position:relative;z-index:1}
 .sm-panel-avatar{width:84px;height:84px;flex:none;border-radius:18px;border:1px solid var(--dsw-alias-border-l2,#e3e5e8);background:var(--dsw-alias-bg-layer-2,#f2f3f5)}
 .sm-panel-title{margin:0;font-size:19px;font-weight:600;line-height:1.35;color:var(--dsw-alias-label-primary,inherit)}
 .sm-panel-sub{margin:3px 0 0;font-size:12.5px;color:var(--dsw-alias-label-secondary,#4e5561)}
@@ -278,9 +278,9 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-autosurf-knobs{display:flex;flex-direction:column;gap:8px;margin:4px 0 0 22px;min-width:0}
 .sm-autosurf-knobs .sm-panel-field{flex:none;margin:0}
 /* Tab bar: hairline underline that slides, no pills, no fills.
-   Opaque sticky mask (incl. ::before) so scrolled cards cannot peek above the bar. */
+   Solid sticky bg covers content scrolling under the bar. Do NOT use a ::before
+   upward mask — it paints over the in-flow head (等级/心情/提示) and looks clipped. */
 .sm-tabs{display:flex;gap:2px;flex-wrap:wrap;position:sticky;top:0;z-index:6;padding:4px 0 0;background:var(--dsw-alias-bg-base,#fff);border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 8%,transparent);isolation:isolate}
-.sm-tabs::before{content:'';position:absolute;left:-32px;right:-32px;bottom:100%;height:32px;background:inherit;pointer-events:none}
 .sm-tab{position:relative;border:0;background:transparent;padding:9px 13px 10px;font:inherit;font-size:13px;color:var(--dsw-alias-label-tertiary,#8a8f99);cursor:pointer;border-radius:var(--dsw-radius-sm,6px) var(--dsw-radius-sm,6px) 0 0;transition:color .15s,background .15s;white-space:nowrap}
 .sm-tab:hover{color:var(--dsw-alias-label-secondary,#4e5561);background:color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 3%,transparent)}
 .sm-tab.on{color:var(--dsw-alias-label-primary,#0f1115);font-weight:600}
@@ -446,6 +446,10 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-llm-budget-track>i{display:block;height:100%;background:var(--sm-accent,#4d6bfe);border-radius:2px}
 /* 冲浪：平台分列 + 日志卡 */
 .sm-surf-page{display:flex;flex-direction:column;gap:12px;grid-column:1/-1}
+.sm-surf-gate,.sm-dsbot-gate{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:18px 16px}
+.sm-surf-gate-btn,.sm-dsbot-gate-btn{min-height:40px;padding:0 18px;font-size:14px;font-weight:650}
+.sm-surf-gate-bar,.sm-dsbot-gate-bar{display:flex;justify-content:flex-end;margin:0 0 8px}
+.sm-surf-body,.sm-dsbot-body{display:flex;flex-direction:column;gap:12px}
 .sm-surf-platforms{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 4px}
 .sm-surf-platform{height:30px;padding:0 12px;border:1px solid var(--sm-line,#e3e5e8);border-radius:8px;background:transparent;color:var(--sm-ink2,#4e5561);font:inherit;font-size:12.5px;cursor:pointer}
 .sm-surf-platform.on{border-color:color-mix(in srgb,var(--sm-accent,#4d6bfe) 45%,transparent);background:color-mix(in srgb,var(--sm-accent,#4d6bfe) 8%,transparent);color:var(--sm-ink,#0f1115);font-weight:600}

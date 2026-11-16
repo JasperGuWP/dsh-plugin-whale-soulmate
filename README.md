@@ -6,6 +6,8 @@
 [![discussions](https://img.shields.io/github/discussions/JasperGuWP/dsh-plugin-whale-soulmate)](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/discussions)
 [![CI](https://img.shields.io/github/actions/workflow/status/JasperGuWP/dsh-plugin-whale-soulmate/test.yml?branch=main)](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/actions/workflows/test.yml)
 
+![Whale Soulmate · AI companion × transparent-video desktop pet](docs/readme-banner.png)
+
 > **中文** · [English](#english)
 
 嗨～这里住着一只给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）用的**模块化、可插拔 AI 小伙伴（Soulmate）** 🐋

@@ -299,6 +299,7 @@ function surfCard(view) {
   const [filter, setFilter] = React.useState('all')
   const [log, setLog] = React.useState({ entries: [], loading: false })
   const [lightbox, setLightbox] = React.useState(null)
+  const [openBili, setOpenBili] = React.useState(false)
   const closeLightbox = React.useCallback(() => setLightbox(null), [])
 
   React.useEffect(() => {
@@ -360,19 +361,36 @@ function surfCard(view) {
 
   return h('div', { key: 'surf', className: 'sm-surf-page' }, [
     platformBar,
-    h(biliAuthCard, { key: 'auth' }),
-    h('div', { key: 'autosurf', className: 'sm-eng-card' }, [
-      h('header', { key: 'h', className: 'sm-eng-head' }, [
-        h('span', { key: 'n', className: 'sm-eng-num' }, '定时'),
-        h('div', { key: 't' }, [
-          h('h3', { key: 'title' }, '定时冲浪'),
-          h('p', { key: 's', className: 'sm-panel-muted' }, '按兴趣关键词巡片；免打扰时段不巡。'),
+    !openBili
+      ? h('div', { key: 'gate', className: 'sm-eng-card sm-surf-gate' }, [
+        h('p', { key: 'lead', className: 'sm-panel-muted' }, '登录 B 站后可定时巡片、互动与查看冲浪日志。'),
+        h('button', {
+          key: 'go',
+          type: 'button',
+          className: 'sm-btn primary sm-surf-gate-btn',
+          onClick: () => setOpenBili(true),
+        }, 'B站登录冲浪'),
+      ])
+      : h('div', { key: 'bili-body', className: 'sm-surf-body' }, [
+        h('div', { key: 'gate-bar', className: 'sm-surf-gate-bar' }, [
+          h('button', {
+            key: 'fold', type: 'button', className: 'sm-btn', onClick: () => setOpenBili(false),
+          }, '收起 B 站'),
         ]),
+        h(biliAuthCard, { key: 'auth' }),
+        h('div', { key: 'autosurf', className: 'sm-eng-card' }, [
+          h('header', { key: 'h', className: 'sm-eng-head' }, [
+            h('span', { key: 'n', className: 'sm-eng-num' }, '定时'),
+            h('div', { key: 't' }, [
+              h('h3', { key: 'title' }, '定时冲浪'),
+              h('p', { key: 's', className: 'sm-panel-muted' }, '按兴趣关键词巡片；免打扰时段不巡。'),
+            ]),
+          ]),
+          ...autoSurfSection({ draft, patchExtensions }),
+        ]),
+        engageSection({ draft, patchExtensions }),
+        logSection,
       ]),
-      ...autoSurfSection({ draft, patchExtensions }),
-    ]),
-    engageSection({ draft, patchExtensions }),
-    logSection,
     h(SurfLightbox, { key: 'lb', shot: lightbox, onClose: closeLightbox }),
   ])
 }

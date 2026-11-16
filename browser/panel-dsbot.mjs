@@ -47,6 +47,7 @@ function DsBotCard() {
   const [msg, setMsg] = React.useState('')
   const [enabled, setEnabled] = React.useState(false)
   const [sendText, setSendText] = React.useState('')
+  const [openWx, setOpenWx] = React.useState(false)
   const [qr, setQr] = React.useState(null)
   const [contacts, setContacts] = React.useState([])
   const [peer, setPeer] = React.useState('')
@@ -393,11 +394,27 @@ function DsBotCard() {
   return h('div', { className: 'sm-eng-card sm-dsbot-card', 'data-testid': 'dsbot-card' }, [
     h('header', { key: 'top', className: 'sm-dsbot-top' }, [
       h('h3', { key: 'title', className: 'sm-dsbot-title' }, 'DsBot'),
-      h('p', { key: 'lead', className: 'sm-panel-muted' }, '跨端分身：微信官方通道扫码与聊天。'),
+      h('p', { key: 'lead', className: 'sm-panel-muted' }, '跨端分身：点下方按钮进入对应通道。'),
     ]),
-    platformCols,
-    weixinColumn,
-    msg ? h('p', { key: 'msg', className: 'sm-panel-muted', style: { marginTop: 10 } }, msg) : null,
+    !openWx
+      ? h('div', { key: 'gate', className: 'sm-dsbot-gate' }, [
+        h('button', {
+          key: 'wx',
+          type: 'button',
+          className: 'sm-btn primary sm-dsbot-gate-btn',
+          onClick: () => setOpenWx(true),
+        }, '微信 Bot'),
+      ])
+      : h('div', { key: 'wx-body', className: 'sm-dsbot-body' }, [
+        h('div', { key: 'gate-bar', className: 'sm-dsbot-gate-bar' }, [
+          h('button', {
+            key: 'fold', type: 'button', className: 'sm-btn', onClick: () => setOpenWx(false),
+          }, '收起微信'),
+        ]),
+        platformCols,
+        weixinColumn,
+        msg ? h('p', { key: 'msg', className: 'sm-panel-muted', style: { marginTop: 10 } }, msg) : null,
+      ]),
   ])
 }
 
