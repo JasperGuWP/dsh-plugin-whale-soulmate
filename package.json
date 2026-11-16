@@ -22,6 +22,7 @@
   },
   "scripts": {
     "build:client": "node browser/build.mjs",
+    "prepare": "node browser/build.mjs",
     "pretest": "node browser/build.mjs",
     "test": "node --test test/*.test.mjs",
     "prepack": "node browser/build.mjs",
