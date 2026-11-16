@@ -3,6 +3,7 @@
 import { getBiliAuthStatus } from '../../soulmate-bili/index.mjs';
 import { getImStatus, handleImWebhook, manageIm, normalizePlatform, sendImMessage } from '../../soulmate-im/index.mjs';
 import { jsonOut, statusOf } from '../http-plumbing.mjs';
+import { loadConfig } from '../state.mjs';
 import { errMsg } from '../small-utils.mjs';
 
 export function extensionRoutes({ home, service, pushEvent, eventSeq, video, imNet }) {
@@ -77,7 +78,12 @@ export function extensionRoutes({ home, service, pushEvent, eventSeq, video, imN
       handler: async ({ req, query, body }) => {
         const last = String(new URL(req?.url ?? req?.originalUrl ?? '/', 'http://soulmate.local').pathname.split('/').pop() ?? '');
         const platform = req?.params?.platform ?? (normalizePlatform(last) ? last : query.get('platform') ?? last);
-        const res = await handleImWebhook(service, platform, body, { ...imNet(), headers: req?.headers ?? {} });
+        const conf = await loadConfig(home);
+        const res = await handleImWebhook(service, platform, body, {
+          ...imNet(),
+          headers: req?.headers ?? {},
+          allowUnsignedDingtalk: conf.extensions?.imAllowUnsignedDingtalk === true,
+        });
         const payload = res.ok === false ? { ok: false, error: res.error } : (res.response ?? {});
         return jsonOut(res.status ?? 200, payload);
       },

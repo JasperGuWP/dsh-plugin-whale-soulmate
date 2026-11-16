@@ -77,9 +77,12 @@ export function apply(ctx, config = {}) {
   };
 
   // Host services are read lazily: they may appear a moment after apply() runs.
-  // Cordis: never touch ctx.x unless inject declares it — use ctx.get only.
-  const sessionController = () => ctx.get?.('sessionController') ?? ctx.sessionController;
-  const getLlm = () => ctx.get?.('llm') ?? ctx.llm;
+  // Cordis: never touch ctx.x unless inject declares it — on a live ctx (one with .get)
+  // a direct read of an absent service goes through the service proxy and throws.
+  // Bare/test hosts without .get expose services as plain properties instead.
+  const optional = (name) => (typeof ctx.get === 'function' ? ctx.get(name) : ctx[name]);
+  const sessionController = () => optional('sessionController');
+  const getLlm = () => optional('llm');
 
   // ------------------------------------------------------------------ runtime domains
   const promptEngine = createPromptEngine({ home, warn, sessionController, pushEvent });
@@ -279,7 +282,7 @@ export function apply(ctx, config = {}) {
       ctx.inject(['webServer'], (webCtx) => mountHttp(webCtx.webServer ?? webCtx.get?.('webServer'), { routes, ready: readyPromise, warn }))
     );
   } else {
-    const webServer = ctx.get?.('webServer') ?? ctx.webServer;
+    const webServer = typeof ctx.get === 'function' ? ctx.get('webServer') : ctx.webServer;
     if (webServer) track(() => mountHttp(webServer, { routes, ready: readyPromise, warn }));
     else warn('webServer unavailable — HTTP routes not mounted (widget will show 未连接)');
   }

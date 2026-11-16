@@ -41,6 +41,13 @@ const TEXT_FIELDS = {
   episode: ['content'],
   ops: ['note', 'reason'],
 };
+// Nested free text (caller-controlled) must pass the same firewall as top-level fields.
+const NESTED_TEXT = {
+  fact: [
+    ['promise', 'note'],
+    ['provenance', 'source'],
+  ],
+};
 const itemKey = (kind, item) =>
   kind === 'wiki' ? item.slug : kind === 'fact' ? item.id : `${item.date}-${item.kind}`;
 
@@ -78,6 +85,13 @@ function scrubItem(kind, item) {
     const check = inspectAndScrub(next[field]);
     if (!check.allowed) return { allowed: false, blockedReason: check.blockedReason };
     next[field] = check.scrubbedText;
+    redactions.push(...check.redactions);
+  }
+  for (const [obj, field] of NESTED_TEXT[kind] ?? []) {
+    if (!isObject(next[obj]) || typeof next[obj][field] !== 'string') continue;
+    const check = inspectAndScrub(next[obj][field]);
+    if (!check.allowed) return { allowed: false, blockedReason: check.blockedReason };
+    next[obj] = { ...next[obj], [field]: check.scrubbedText };
     redactions.push(...check.redactions);
   }
   if (Array.isArray(next.links)) next.links = next.links.map(String);

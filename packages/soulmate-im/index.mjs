@@ -612,7 +612,7 @@ export async function handleQqWebhook(soulmateService, body, options = {}) {
   if (!(await isPlatformActive(home, 'qq'))) return { ok: false, status: 403, error: 'qq channel is disabled' };
   if (creds.onebotAccessToken) {
     const auth = hget(options.headers, 'authorization').replace(/^(Bearer|Token)\s+/i, '');
-    if (auth && !safeEq(auth, creds.onebotAccessToken)) return { ok: false, status: 403, error: 'access token mismatch' };
+    if (!auth || !safeEq(auth, creds.onebotAccessToken)) return { ok: false, status: 403, error: 'access token mismatch' };
   }
   const event = parseQqOfficialEvent(body) ?? parseOneBotEvent(body, options);
   if (!event) return { ok: true, status: 200, ignored: true, response: {} };
@@ -693,10 +693,11 @@ export async function handleFeishuWebhook(soulmateService, body, options = {}) {
     return { ok: true, status: 200, challenge: body.challenge, response: { challenge: body.challenge } };
   }
   const creds = await loadPlatformCreds(home, 'feishu');
-  if (creds.verificationToken) {
-    const got = str(body.header?.token ?? body.token);
-    if (!got || !safeEq(got, creds.verificationToken)) return { ok: false, status: 403, error: 'verification token mismatch' };
+  if (!creds.verificationToken) {
+    return { ok: false, status: 403, error: 'feishu verificationToken is not configured; set it before accepting events' };
   }
+  const got = str(body.header?.token ?? body.token);
+  if (!got || !safeEq(got, creds.verificationToken)) return { ok: false, status: 403, error: 'verification token mismatch' };
   if (body.encrypt) {
     return { ok: false, status: 400, error: 'encrypted feishu events are not supported; clear the Encrypt Key in the developer console' };
   }
@@ -827,9 +828,10 @@ export async function openDingtalkStreamTicket(home, options = {}) {
   }
 }
 
-function verifyDingtalkSignature(headers, secret) {
+function verifyDingtalkSignature(headers, secret, { allowUnsigned = false } = {}) {
   const sign = hget(headers, 'sign');
-  if (!sign) return true; // callback not signed (e.g. Stream relay) -> nothing to verify
+  // Unsigned callbacks are rejected unless explicitly opted in (e.g. a trusted Stream relay).
+  if (!sign) return allowUnsigned;
   const timestamp = hget(headers, 'timestamp');
   if (!timestamp || Math.abs(Date.now() - Number(timestamp)) > 3_600_000) return false;
   if (!secret) return false;
@@ -842,7 +844,9 @@ export async function handleDingtalkWebhook(soulmateService, body, options = {})
   const home = soulmateService.home;
   if (!isObject(body)) return { ok: false, status: 400, error: 'invalid body' };
   const creds = await loadPlatformCreds(home, 'dingtalk');
-  if (!verifyDingtalkSignature(options.headers, creds.clientSecret)) return { ok: false, status: 403, error: 'signature mismatch' };
+  if (!verifyDingtalkSignature(options.headers, creds.clientSecret, { allowUnsigned: options.allowUnsignedDingtalk === true })) {
+    return { ok: false, status: 403, error: 'signature missing or mismatch' };
+  }
   if (!(await isPlatformActive(home, 'dingtalk'))) return { ok: false, status: 403, error: 'dingtalk channel is disabled' };
 
   const text = str(body.text?.content).trim();
@@ -1025,8 +1029,8 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
     return { ok: true, ignored: true, reason: 'not_whitelisted', platform, senderId };
   }
   const ownerId = platform === 'weixin' ? creds.userId : creds.ownerId;
-  // memories are only quoted back to the owner (everyone is trusted until an owner/whitelist is configured)
-  const trusted = whitelist.length > 0 || !ownerId || ownerId === senderId;
+  // memories are only quoted back to the owner or a whitelisted sender — fail closed when neither is configured
+  const trusted = whitelist.length > 0 || (Boolean(ownerId) && ownerId === senderId);
 
   // privacy firewall (inbound): a high-risk secret never enters memory and is never recalled/echoed
   const checked = inspectAndScrub(text);

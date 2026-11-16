@@ -77,7 +77,7 @@ export function createSessionStarRuntime({ home, ctx, sessionController, warn })
    * Returns { chatHome, changed } — caller saves only when changed.
    */
   const discoverChatHomeSessions = async (chatHome, conf) => {
-    const reg = ctx.get?.('workspaceRegistry') ?? ctx.workspaceRegistry;
+    const reg = typeof ctx.get === 'function' ? ctx.get('workspaceRegistry') : ctx.workspaceRegistry;
     if (!reg || typeof reg.list !== 'function') {
       return { chatHome, changed: false };
     }

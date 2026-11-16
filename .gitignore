@@ -24,6 +24,3 @@ Thumbs.db
 
 # Local runtime home (if anyone points DSH_HOME inside the repo)
 .soulmate-home/
-
-# Tests stay local — not part of the public GitHub tree
-test/

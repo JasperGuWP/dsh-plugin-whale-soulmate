@@ -11,7 +11,7 @@
 //     control refuses, the error is surfaced honestly — never faked as success.
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { extname, join, resolve, sep } from 'node:path';
 import { atomicWriteJson, loadConfig, loadCredentials } from '../soulmate-core/state.mjs';
 import { appendPrivacyAudit, inspectAndScrub } from '../soulmate-core/privacy-firewall.mjs';
 import { cookieFromCredentials } from './auth/credentials.mjs';
@@ -24,6 +24,10 @@ export const WRITE_LIMITS = Object.freeze({
   maxDailyWrites: 20,
   minWriteGapMs: 30 * 1000,
 });
+
+// Bilibili only accepts video containers; the allowlist also keeps arbitrary local
+// files (notes, configs, credentials) from being uploaded via a prompt-injected path.
+const UPLOAD_EXTS = new Set(['.mp4', '.flv', '.mov', '.mkv', '.webm', '.avi', '.m4v', '.ts', '.wmv', '.mpg', '.mpeg']);
 
 const API_BASE = 'https://api.bilibili.com';
 const VC_BASE = 'https://api.vc.bilibili.com';
@@ -376,12 +380,29 @@ export async function biliWriteAction(home, input = {}, options = {}) {
     } else if (action === 'upload') {
       const filePath = str(input.filePath).trim();
       if (!filePath) return hold('no_file', 'upload 需要本机视频文件路径 filePath。');
-      const buf = await readFile(filePath).catch((err) => {
+      // Prompt-injection guard: only video files, never anything inside the soulmate data dir
+      // (credentials / memories live there and must not become uploadable bytes).
+      const resolvedFile = resolve(filePath);
+      const ext = extname(resolvedFile).toLowerCase();
+      if (!UPLOAD_EXTS.has(ext)) return hold('bad_file', 'upload 只接受视频文件（mp4 / flv / mov / mkv / webm / avi 等）。');
+      const homeRoot = resolve(home.rootDir).toLowerCase();
+      const lowerFile = resolvedFile.toLowerCase();
+      if (lowerFile === homeRoot || lowerFile.startsWith(homeRoot + sep.toLowerCase())) {
+        return hold('bad_file', '不能上传 soulmate 数据目录内的文件。');
+      }
+      const buf = await readFile(resolvedFile).catch((err) => {
         throw new Error(`读不到文件：${errMsg(err)}`);
       });
-      const title = clip(str(input.title).trim() || filePath.split(/[\\/]/).pop() || '投稿', 80);
-      const scrub = await scrubOutbound(home, action, `${title}\n${str(input.desc)}`, 2000);
-      if (scrub.blocked) return hold('privacy_blocked', `投稿文案被隐私防火墙拦截：${scrub.reason}`);
+      let title = clip(str(input.title).trim() || filePath.split(/[\\/]/).pop() || '投稿', 80);
+      const scrubTitle = await scrubOutbound(home, action, title, 80);
+      if (scrubTitle.blocked) return hold('privacy_blocked', `投稿标题被隐私防火墙拦截：${scrubTitle.reason}`);
+      title = scrubTitle.text;
+      const scrubDesc = await scrubOutbound(home, action, str(input.desc), 2000);
+      if (scrubDesc.blocked) return hold('privacy_blocked', `投稿简介被隐私防火墙拦截：${scrubDesc.reason}`);
+      const desc = scrubDesc.text;
+      const scrubTags = await scrubOutbound(home, action, (Array.isArray(input.tags) ? input.tags.join(',') : str(input.tags)) || '生活,日常', 200);
+      if (scrubTags.blocked) return hold('privacy_blocked', `投稿标签被隐私防火墙拦截：${scrubTags.reason}`);
+      const tags = scrubTags.text;
       if (input.dryRun === true || options.dryRun === true) {
         return { ok: true, dryRun: true, action, title, bytes: buf.length, writtenToday: todayCount, maxDailyWrites: maxDaily };
       }
@@ -432,9 +453,9 @@ export async function biliWriteAction(home, input = {}, options = {}) {
         copyright: '1',
         source: '',
         tid: String(num(input.tid, 171)),
-        tag: clip((Array.isArray(input.tags) ? input.tags.join(',') : str(input.tags)) || '生活,日常', 200),
+        tag: clip(tags, 200),
         desc_format_id: '0',
-        desc: clip(str(input.desc), 2000),
+        desc: clip(desc, 2000),
         dynamic: '',
         title,
         videos: JSON.stringify([{ filename, title: title.slice(0, 80), desc: '' }]),

@@ -1,7 +1,21 @@
 // HTTP plumbing (works with registerRoute / register(prefix) / use / get+post).
 // No plugin state: route tables are built elsewhere, mounted via mountHttp.
 
+import { isIP } from 'node:net';
 import { errMsg, isObject } from './small-utils.mjs';
+
+/** DNS-rebinding guard: a browser always sends the page's hostname as Host, so only
+ *  loopback names and literal IPs are trustworthy local origins (LAN IPs stay usable). */
+export function isTrustedHost(value) {
+  let name = String(value ?? '').trim().toLowerCase();
+  if (name.startsWith('[')) {
+    const end = name.indexOf(']');
+    name = end > 0 ? name.slice(1, end) : name.slice(1);
+  } else {
+    name = name.split(':')[0];
+  }
+  return name === 'localhost' || isIP(name) !== 0;
+}
 
 export const jsonOut = (status, data) => ({
   status,
@@ -68,14 +82,18 @@ export async function runRoute(route, req, res, { ready } = {}) {
     if (ready) await ready;
     const headers = req?.headers ?? {};
     const url = new URL(req?.url ?? req?.originalUrl ?? route.paths[0], 'http://soulmate.local');
-    if (route.method === 'POST' && !route.external) {
-      if (headers.origin && headers.host) {
-        let sameOrigin = false;
+    if (!route.external && headers.host && !isTrustedHost(headers.host)) {
+      out = jsonOut(403, { ok: false, error: 'untrusted Host header rejected' });
+    }
+    if (!out && route.method === 'POST' && !route.external) {
+      if (headers.origin) {
+        let originHost = '';
         try {
-          sameOrigin = new URL(headers.origin).host === headers.host;
+          originHost = new URL(String(headers.origin)).host;
         } catch {
-          sameOrigin = false;
+          originHost = '';
         }
+        const sameOrigin = headers.host ? originHost === String(headers.host) : isTrustedHost(originHost);
         if (!sameOrigin) {
           out = jsonOut(403, { ok: false, error: 'cross-origin request rejected' });
         }
