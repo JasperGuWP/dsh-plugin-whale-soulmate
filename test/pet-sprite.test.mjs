@@ -274,6 +274,6 @@ test('pet: browser half wires the sprite layer without touching the static PNG c
     assert.ok(src.includes(needle), `client.js should contain ${needle}`);
   }
   // static card still explains image formats for uploads (Q版 default since 0.2.83)
-  assert.ok(src.includes('支持上传 PNG / JPG / WEBP，透明底最好，不超过 4MB。'));
+  assert.ok(src.includes('上传 PNG / JPG / WEBP（透明底最好，不超过 4MB）'));
   assert.ok(src.includes('sm-pet-ops'), 'pet card ops column must use the vertical layout class');
 });

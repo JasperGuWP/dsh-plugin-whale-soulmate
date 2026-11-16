@@ -451,6 +451,9 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-surf-platform.on{border-color:color-mix(in srgb,var(--sm-accent,#4d6bfe) 45%,transparent);background:color-mix(in srgb,var(--sm-accent,#4d6bfe) 8%,transparent);color:var(--sm-ink,#0f1115);font-weight:600}
 .sm-surf-filters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
 .sm-surf-log-list{display:flex;flex-direction:column;gap:12px}
+.sm-surf-log{display:flex;flex-direction:column;gap:10px}
+.sm-surf-log-media{min-width:0}
+.sm-surf-log-body{min-width:0;display:flex;flex-direction:column;gap:6px}
 .sm-surf-log-card{display:grid;grid-template-columns:minmax(96px,140px) minmax(0,1fr);gap:12px;padding:10px;border:1px solid var(--sm-line,#e3e5e8);border-radius:10px;background:color-mix(in srgb,var(--sm-ink,#0f1115) 1.5%,transparent)}
 @media(max-width:560px){.sm-surf-log-card{grid-template-columns:1fr}}
 .sm-surf-cover-btn{display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in;border-radius:8px}
@@ -485,6 +488,7 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 /* DsBot：多列平台 + 微信会话区 */
 .sm-panel-wrap:has(.sm-dsbot-card){max-width:1120px}
 .sm-dsbot-card{padding-bottom:12px}
+.sm-dsbot-column{min-width:0;display:flex;flex-direction:column;gap:10px}
 .sm-dsbot-top{margin-bottom:12px}
 .sm-dsbot-title{margin:0 0 4px;font-size:18px;font-weight:700;letter-spacing:.02em}
 .sm-dsbot-platforms{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}

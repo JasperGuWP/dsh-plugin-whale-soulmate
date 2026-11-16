@@ -311,6 +311,10 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     biliAutoSurfEveryHours: 6,
     biliAutoSurfMaxPick: 2,
     biliAutoSurfDeepWatch: false,
+    biliAutoSurfMaxAgeDays: 180,
+    biliKeywordsAuto: true,
+    biliKeywordsSeed: [],
+    biliKeywordsUpdatedAt: '',
     lastAutoSurfAt: '',
     imEnabled: true,
     imPlatforms: {
@@ -327,6 +331,10 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     biliMaxDailyShares: 3,
     biliWriteEnabled: false,
     biliMaxDailyWrites: 20,
+    biliAutoEngageEnabled: true,
+    biliAutoReplyEnabled: true,
+    biliAutoReplyMaxRounds: 3,
+    biliFollowDedupDays: 7,
   });
 });
 
