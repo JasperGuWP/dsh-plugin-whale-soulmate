@@ -30,6 +30,8 @@
 
 桌宠为透明视频精灵：按住甩出去会重力弹跳、落地 Q 弹；单击轻触、双击互动、滚轮缩放。
 
+🎬 **[演示视频 · 24 秒双皮肤动作集锦](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/releases/download/v0.2.105/whale-soulmate-promo.mp4)**：跳舞 / 爱心脸红 / 生气跺脚 / 滑雪 / 跑步 / 打招呼 / 灵机一动，全部透明通道视频实机录制。
+
 ---
 
 ## 功能一览
