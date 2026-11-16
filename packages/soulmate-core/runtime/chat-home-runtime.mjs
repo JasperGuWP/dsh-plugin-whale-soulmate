@@ -541,4 +541,17 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
 
   return {
     ensureHomeSession,
- 
+    startPersonaQuiz,
+    hostDeliverer,
+    runBootGreeting,
+    runBootGreetingWithRetry,
+    chatHomeStatus,
+    maybeCaptureSessionStars,
+    noteChatHomeSession,
+    scheduleSessionStarCapture,
+    notePetSay,
+    startReplyToastWatch,
+    /** Test hook: allow a second boot greeting in-process. */
+    resetBootGreetingFlag() { bootGreetingDone = false; },
+  };
+}
