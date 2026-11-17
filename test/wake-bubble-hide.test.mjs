@@ -16,4 +16,6 @@ test('wake mark: browser copy stays in sync with core', () => {
   assert.equal(WAKE_BUBBLE_MARK, '\u2063\u2063soulmate-wake\u2063\u2063');
   assert.equal(isWakeBubbleText(WAKE_BUBBLE_MARK + '想打招呼'), true);
   assert.equal(isWakeBubbleText('想打招呼'), false);
+  assert.match(browserSrc, /isVisionDumpText/);
+  assert.match(browserSrc, /你是视频内容分析助手/);
 });

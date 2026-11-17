@@ -51,11 +51,45 @@ function createMockCtx(dir) {
 
 const body = (out) => JSON.parse(out.body);
 
+test('pet-machine: ambient walk after the idle threshold, gated by the switch', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../assets/pet-winterboy-chibi/pet.json', import.meta.url), 'utf8'));
+  let t = 0;
+  const m = createPetMachine(manifest, { now: () => t, random: () => 0, sleepAfterIdleSec: 600 });
+  t = 5000; m.update(t); // before threshold: dwell rolls sit, never walk
+  assert.notEqual(m.state, 'walk');
+  t = 20000; m.update(t); // sit → idle
+  t = 23000; m.update(t); // idle dwell expired + idleFor ≥ 15s + roll 0 → ambient walk
+  assert.equal(m.state, 'walk');
+  let t2 = 0;
+  const off = createPetMachine(manifest, { now: () => t2, random: () => 0, sleepAfterIdleSec: 600, ambientWalk: false });
+  t2 = 5000; off.update(t2);
+  t2 = 20000; off.update(t2);
+  t2 = 23000; off.update(t2);
+  assert.notEqual(off.state, 'walk', 'ambientWalk=false keeps her put');
+});
+
+test('pet-machine: run mirror follows declared native facing (blue-winter faces right)', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../assets/pet-blue-winter/pet.json', import.meta.url), 'utf8'));
+  let t = 0;
+  // rand sequence: idle dwell, idle blink, idle→run roll (0.7), run dwell+facing (0.2 → -1), walk dwell+facing (0.2 → -1)
+  const seq = [0.5, 0.5, 0.7, 0.2, 0.2, 0.2, 0.2];
+  let ri = 0;
+  const m = createPetMachine(manifest, { now: () => t, random: () => (ri < seq.length ? seq[ri++] : 0.5), sleepAfterIdleSec: 600 });
+  t = 5000; m.update(t); // idle dwell expired; roll 0.7 lands on run
+  assert.equal(m.state, 'run');
+  // facing -1 (travel left); run faces right → must mirror
+  assert.equal(m.current(t).mirror, true, 'leftward run mirrors a right-facing video');
+  m.event('walk', t);
+  // walk faces left; facing -1 → no mirror
+  assert.equal(m.current(t).mirror, false, 'leftward walk keeps a left-facing video unmirrored');
+});
+
 test('pet: config defaults ship enabled and deep-merge keeps untouched fields', () => {
   assert.deepEqual(DEFAULT_CONFIG.pet, {
     enabled: true, sizePx: 180, sleepAfterIdleSec: 300, thinkQuietSec: 1.5, skin: 'winterboy-chibi', skinAuto: true,
     physics: { gravity: 1400, restitution: 0.78, groundFriction: 2.5, throwPower: 1 },
     windowEnabled: false, windowElectronPath: '',
+    ambientWalk: true, ambientWalkAfterSec: 15, ambientWalkChance: 0.35,
   });
   const merged = deepMerge(DEFAULT_CONFIG, { pet: { enabled: false } });
   assert.equal(merged.pet.enabled, false);

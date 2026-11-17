@@ -25,10 +25,17 @@ async function loadIgnore() {
 test('ignore: cursor inside body rect catches, outside passes through', async () => {
   const { decideIgnore } = await loadIgnore();
   const rect = { x: 100, y: 100, w: 200, h: 150 };
-  assert.equal(decideIgnore(rect, false, { x: 150, y: 150 }), false, 'inside → catch');
-  assert.equal(decideIgnore(rect, false, { x: 50, y: 50 }), true, 'outside → ignore');
-  assert.equal(decideIgnore(rect, false, { x: 96, y: 150 }), false, 'pad zone catches');
-  assert.equal(decideIgnore(null, false, { x: 150, y: 150 }), true, 'no body reported → ignore');
+  assert.equal(decideIgnore(rect, false, { x: 150, y: 150 }, true), false, 'inside + opaque → catch');
+  assert.equal(decideIgnore(rect, false, { x: 50, y: 50 }, true), true, 'outside → ignore');
+  assert.equal(decideIgnore(rect, false, { x: 96, y: 150 }, true), false, 'pad zone catches');
+  assert.equal(decideIgnore(null, false, { x: 150, y: 150 }, true), true, 'no body reported → ignore');
+});
+
+test('ignore: transparent margin inside the body box passes through', async () => {
+  const { decideIgnore } = await loadIgnore();
+  const rect = { x: 100, y: 100, w: 200, h: 150 };
+  assert.equal(decideIgnore(rect, false, { x: 110, y: 110 }, false), true, 'inside box but transparent pixel → ignore');
+  assert.equal(decideIgnore(rect, true, { x: 110, y: 110 }, false), false, 'held drag still catches everywhere');
 });
 
 test('ignore: busy (drag / flight) always catches even far from body', async () => {

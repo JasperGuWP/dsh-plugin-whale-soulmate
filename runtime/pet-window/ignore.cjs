@@ -10,10 +10,11 @@ function pointInRect(rect, point, pad = BODY_PAD) {
     && point.y >= rect.y - pad && point.y <= rect.y + rect.h + pad
 }
 
-/** 下一拍的 ignore 状态:忙(拖拽/飞行)时永远接住;否则看光标是否在身体里。 */
-function decideIgnore(rect, busy, point) {
+/** 下一拍的 ignore 状态:忙(拖拽)时永远接住;否则要求光标既在身体矩形内、
+ *  又落在不透明像素上(hit)——包围盒内的透明余量必须穿透到背后内容。 */
+function decideIgnore(rect, busy, point, hit) {
   if (busy) return false
-  return !pointInRect(rect, point)
+  return !(hit && pointInRect(rect, point))
 }
 
 module.exports = { pointInRect, decideIgnore, BODY_PAD }

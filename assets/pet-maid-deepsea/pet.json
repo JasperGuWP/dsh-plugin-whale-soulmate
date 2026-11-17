@@ -1,0 +1,192 @@
+{
+  "anchor": {
+    "default": [
+      0.5,
+      1
+    ],
+    "pet-drag": [
+      0.5,
+      0
+    ]
+  },
+  "name": "big-fat-fish",
+  "spriteHeight": 288,
+  "states": {
+    "idle": {
+      "frames": [
+        "pet-idle-01"
+      ],
+      "blink": "pet-idle-02",
+      "blinkSec": 0.12,
+      "next": {
+        "sit": 0.25,
+        "heart": 0.12,
+        "pout": 0.08,
+        "eat": 0.08,
+        "game": 0.08,
+        "dance": 0.05,
+        "run": 0.07
+      },
+      "dwellSec": [
+        2.4,
+        4
+      ],
+      "video": "pet-idle"
+    },
+    "walk": {
+      "frames": [
+        "pet-walk-01",
+        "pet-walk-02"
+      ],
+      "fps": 6,
+      "mirrorForRight": true,
+      "next": {
+        "idle": 1
+      },
+      "dwellSec": [
+        3,
+        8
+      ],
+      "speedPxSec": 40,
+      "video": {
+        "name": "pet-walk",
+        "once": true,
+        "leadSec": 0.6,
+        "tailSec": 0.5
+      }
+    },
+    "sit": {
+      "frames": [
+        "pet-sit"
+      ],
+      "next": {
+        "idle": 1
+      },
+      "dwellSec": [
+        3,
+        6
+      ],
+      "video": "pet-sit"
+    },
+    "sleep": {
+      "frames": [
+        "pet-sleep"
+      ],
+      "wakeTo": "happy",
+      "wakeOn": "click",
+      "enterAfterIdleSec": 300,
+      "video": {
+        "name": "pet-sleep",
+        "once": true
+      },
+      "holdSec": 11
+    },
+    "think": {
+      "frames": [
+        "pet-think-01",
+        "pet-think-02"
+      ],
+      "maxSec": 120,
+      "fps": 2,
+      "video": "pet-think"
+    },
+    "eureka": {
+      "frames": [
+        "pet-eureka"
+      ],
+      "holdSec": 1.2,
+      "video": "pet-eureka"
+    },
+    "wave": {
+      "frames": [
+        "pet-wave"
+      ],
+      "holdSec": 0.8,
+      "next": {
+        "idle": 1
+      },
+      "trigger": "click",
+      "video": "pet-wave"
+    },
+    "drag": {
+      "frames": [
+        "pet-drag"
+      ],
+      "releaseTo": "happy",
+      "trigger": "pointerdown",
+      "video": "pet-drag"
+    },
+    "happy": {
+      "frames": [
+        "pet-happy"
+      ],
+      "holdSec": 0.6,
+      "next": {
+        "idle": 1
+      },
+      "trigger": "dblclick",
+      "video": "pet-happy"
+    },
+    "heart": {
+      "frames": [
+        "pet-heart"
+      ],
+      "holdSec": 1,
+      "next": {
+        "idle": 1
+      },
+      "video": "pet-heart"
+    },
+    "pout": {
+      "frames": [
+        "pet-pout"
+      ],
+      "holdSec": 1,
+      "next": {
+        "idle": 1
+      },
+      "video": "pet-pout"
+    },
+    "eat": {
+      "frames": [
+        "pet-eat"
+      ],
+      "holdSec": 5,
+      "next": {
+        "idle": 1
+      },
+      "video": "pet-eat"
+    },
+    "game": {
+      "frames": [
+        "pet-game"
+      ],
+      "holdSec": 5,
+      "next": {
+        "idle": 1
+      },
+      "video": "pet-game"
+    },
+    "dance": {
+      "frames": [
+        "pet-dance"
+      ],
+      "holdSec": 5,
+      "next": {
+        "idle": 1
+      },
+      "video": "pet-dance"
+    },
+    "run": {
+      "frames": [
+        "pet-run"
+      ],
+      "holdSec": 5,
+      "next": {
+        "idle": 1
+      },
+      "video": "pet-run"
+    }
+  },
+  "displayName": "深海经典"
+}

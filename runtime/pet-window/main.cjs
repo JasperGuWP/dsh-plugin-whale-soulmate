@@ -13,13 +13,19 @@ if (process.env.SOULMATE_PET_WINDOW_DEBUG) {
 }
 
 let win = null
-let body = null // { rect, busy } 渲染端上报(内容区坐标)
+let body = null // { rect, busy, hit } 渲染端上报(内容区坐标;hit=光标处是否不透明像素)
 let ignoring = true
 
 function setIgnore(next) {
   if (!win || win.isDestroyed() || next === ignoring) return
   ignoring = next
   win.setIgnoreMouseEvents(next, { forward: true })
+}
+
+// Windows 上 setBounds/show 可能重置 OS 层穿透旗标而镜像不知情:不强制回写,
+// 整窗会一直收鼠标(桌面点不动),直到下次真实翻转才同步。
+function reassertIgnore() {
+  if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(ignoring, { forward: true })
 }
 
 function createWindow() {
@@ -60,10 +66,12 @@ function createWindow() {
   win.on('show', () => {
     win.setSkipTaskbar(true)
     setTimeout(() => { if (!win.isDestroyed()) win.setSkipTaskbar(true) }, 0)
+    reassertIgnore()
   })
   win.once('ready-to-show', () => {
     // Windows 建窗时把透明窗夹到主屏工作区;首帧后再 setBounds 才拿得到跨屏 hull
     win.setBounds(area)
+    reassertIgnore()
     win.showInactive()
   })
   // paintWhenInitiallyHidden 默认行为下首帧可能不产出,ready-to-show 永不触发 → 兜底显示
@@ -71,6 +79,7 @@ function createWindow() {
     setTimeout(() => {
       if (!win.isDestroyed() && !win.isVisible()) {
         win.setBounds(area)
+        reassertIgnore()
         win.showInactive()
       }
     }, 400)
@@ -100,15 +109,21 @@ app.whenReady().then(() => {
     setIgnore(!on)
   })
   ipcMain.on('pet-window:body', (_event, payload) => {
-    body = payload && payload.rect ? { rect: payload.rect, busy: !!payload.busy } : null
+    body = payload && payload.rect ? { rect: payload.rect, busy: !!payload.busy, hit: !!payload.hit } : null
   })
   createWindow()
+  let ticks = 0
   const timer = setInterval(() => {
     if (!win || win.isDestroyed()) return
     const bounds = win.getContentBounds()
     const cursor = screen.getCursorScreenPoint()
     const point = { x: cursor.x - bounds.x, y: cursor.y - bounds.y }
-    setIgnore(decideIgnore(body && body.rect, !!(body && body.busy), point))
+    // Windows 的 forward 鼠标钩子可能静默失效:穿透期间渲染端收不到 mousemove,
+    // 主动把光标送过去,alpha 采样才不滞后(包围盒内透明穿透依赖它)。
+    if (!win.isDestroyed()) win.webContents.send('pet-window:cursor', { x: cursor.x, y: cursor.y })
+    setIgnore(decideIgnore(body && body.rect, !!(body && body.busy), point, !!(body && body.hit)))
+    // 低频无条件回写:OS 旗标被外部重置时镜像不知情,靠这拍自愈
+    if (++ticks % 16 === 0) reassertIgnore()
   }, POINTER_POLL_MS)
   timer.unref?.()
   app.on('before-quit', () => clearInterval(timer))

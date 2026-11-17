@@ -1,8 +1,11 @@
 /**
- * Bind Bilibili vision timeline summary to the host's normal chat multimodal model
- * (same sessionController.generateReply / prompt path as everyday chat — not a separate "vision product").
+ * Bind Bilibili vision timeline summary to the host multimodal model.
+ * Prefer silent generateReply. If the host only has sessionController.prompt,
+ * fall back to a wake-marked prompt so the client hides the bubble (no blue dump).
  */
+import { WAKE_BUBBLE_MARK } from '../soulmate-core/chat-home.mjs';
 import { materializeVisionImages } from './vision-summary.mjs';
+import { join } from 'node:path';
 
 const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
 
@@ -31,10 +34,9 @@ function toHarnessImageParts(images) {
     if (!url) continue;
     const data = url.match(/^data:([^;]+);base64,(.+)$/i);
     if (data) {
-      blocks.push({
-        type: 'image',
-        source: { type: 'base64', media_type: data[1] || 'image/jpeg', data: data[2] },
-      });
+      // 宿主 admission 的 saveInput 读平铺字段 data/mediaType(非 Anthropic 嵌套 source);
+      // 嵌套形状会让 decodeBase64(undefined) throw,被统一包成 agent-busy「prompt rejected」。
+      blocks.push({ type: 'image', data: data[2], mediaType: data[1] || 'image/jpeg' });
     } else {
       blocks.push({ type: 'image_url', image_url: { url } });
     }
@@ -55,20 +57,33 @@ export function createHostVisionSummarize({
   warn = () => {},
 } = {}) {
   if (!controller) return null;
+  const canGenerate = typeof controller.generateReply === 'function';
+  const canPrompt = typeof controller.prompt === 'function'
+    && chatHome
+    && typeof chatHome.ensureHomeSession === 'function';
+  if (!canGenerate && !canPrompt) return null;
 
   return async ({ model: modelOverride, prompt, images }) => {
+    const textPrompt = str(prompt).trim();
+    if (!textPrompt) throw new Error('empty-prompt');
+    // 无帧（雪碧图也没有）时退化为纯文本通道：字幕+元数据仍可读，诚实标注 ok:text-only。
+    if (!Array.isArray(images) || !images.length) {
+      if (canGenerate) {
+        const out = await controller.generateReply({ text: textPrompt, purpose: 'bili-vision-summary' });
+        const text = extractText(out);
+        if (text) return { text, textOnly: true };
+      }
+      throw new Error('no-images');
+    }
     const ready = await materializeVisionImages(images, {
       fetchImpl,
       soulmateRoot,
       readFileImpl,
     });
     if (!ready.length) throw new Error('no-images');
-    // Require at least one real data URL — relative live-frame paths are useless to the model.
     if (!ready.some((img) => str(img?.url).startsWith('data:'))) {
       throw new Error('no-image-pixels');
     }
-    const textPrompt = str(prompt).trim();
-    if (!textPrompt) throw new Error('empty-prompt');
 
     if (typeof controller.initializeDefaultModel === 'function') {
       try { await controller.initializeDefaultModel(); } catch { /* best-effort */ }
@@ -78,8 +93,8 @@ export function createHostVisionSummarize({
     const openAiContent = [{ type: 'text', text: textPrompt }, ...toOpenAiImageParts(ready)];
     const harnessContent = [{ type: 'text', text: textPrompt }, ...toHarnessImageParts(ready)];
 
-    // A) Same fast path as chat / IM: generateReply on the host multimodal model.
-    if (typeof controller.generateReply === 'function') {
+    // A) Silent generateReply (preferred — never touches the dedicated chat UI).
+    if (canGenerate) {
       const attempts = [
         { text: textPrompt, content: openAiContent, images: ready, model: modelId, purpose: 'bili-vision-summary' },
         { text: textPrompt, content: harnessContent, images: ready, model: modelId, purpose: 'bili-vision-summary' },
@@ -97,74 +112,100 @@ export function createHostVisionSummarize({
       }
     }
 
-    // B) Dedicated soulmate window prompt + wait (works on hosts where generateReply is thin).
-    if (chatHome && typeof chatHome.ensureHomeSession === 'function' && typeof controller.prompt === 'function') {
-      const { deliverViaPrompt } = await import('../soulmate-core/chat-home.mjs');
+    // B) Hidden prompt into home session: WAKE_BUBBLE_MARK makes the client hide the blue bubble.
+    // 宿主把 admission/steer 的任何失败都报成 agent-busy「prompt rejected」(会话 agent 卡忙时
+    // 每次必拒):拒收后等 4s 重试一次,仍拒则轮换到新会话(forceRotate)再试,避开卡死的 agent。
+    if (canPrompt) {
       const { extractLatestAssistantUsage, waitForSessionUsage } = await import('../soulmate-core/usage.mjs');
-
-      const ensured = await chatHome.ensureHomeSession({
-        seedAfterRotate: false,
-        forceRotate: false,
-        rotateIfFull: false,
-      });
-      if (!ensured?.ok || !ensured.sessionId) {
-        throw new Error(ensured?.error || 'no-chat-home-session');
-      }
-      const sessionId = ensured.sessionId;
-
-      let beforeMessageId = '';
-      let beforeAssistantCount = 0;
-      if (typeof controller.events === 'function') {
-        try {
-          const page = await controller.events({
-            address: { kind: 'session', sessionId },
-            maxMessages: 40,
-          }, typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-            ? AbortSignal.timeout(12_000)
-            : new AbortController().signal);
-          const snap = extractLatestAssistantUsage(page);
-          beforeMessageId = snap.messageId || '';
-          beforeAssistantCount = snap.assistantCount || 0;
-        } catch { /* baseline best-effort */ }
-      }
-
-      const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-        ? AbortSignal.timeout(180_000)
-        : new AbortController().signal;
-
-      // Prefer multimodal content on prompt(); fall back to text-only deliverViaPrompt.
-      let delivered;
-      try {
-        const out = await controller.prompt({
-          requestId: `bili-vision-${Date.now()}`,
-          sessionId,
-          mode: 'queue',
-          content: harnessContent,
-          ...(modelId ? { model: modelId } : {}),
-        }, signal);
-        delivered = out && out.ok === false
-          ? { ok: false, reason: str(out.error || out.reason || 'prompt-rejected') }
-          : { ok: true };
-      } catch (err) {
-        delivered = await deliverViaPrompt(controller, {
-          sessionId,
-          kind: 'bili-vision',
-          visibleText: textPrompt.slice(0, 500),
+      const logVision = (rec) => {
+        if (!soulmateRoot) return;
+        import('../soulmate-core/state.mjs').then(({ appendJsonl }) => {
+          appendJsonl(join(soulmateRoot, 'logs', 'proactive.jsonl'), { at: new Date().toISOString(), kind: 'vision-debug', ...rec }).catch(() => {});
+        }).catch(() => {});
+      };
+      const runPrompt = async (forceRotate) => {
+        const ensured = await chatHome.ensureHomeSession({
+          seedAfterRotate: false,
+          forceRotate,
+          rotateIfFull: false,
         });
-        if (!delivered.ok) throw err instanceof Error ? err : new Error(str(err));
-      }
-      if (!delivered.ok) throw new Error(delivered.reason || 'prompt-failed');
+        if (!ensured?.ok || !ensured.sessionId) {
+          throw new Error(ensured?.error || 'no-chat-home-session');
+        }
+        const sessionId = ensured.sessionId;
 
-      const waited = await waitForSessionUsage(controller, {
-        sessionId,
-        beforeMessageId,
-        beforeAssistantCount,
-        timeoutMs: 120_000,
-        rejectTexts: [textPrompt.slice(0, 80)],
-      });
-      const text = str(waited?.text || waited?.reply || '').trim();
-      if (text) return { text };
-      throw new Error('vision-prompt-empty');
+        let beforeMessageId = '';
+        let beforeAssistantCount = 0;
+        if (typeof controller.events === 'function') {
+          try {
+            const page = await controller.events({
+              address: { kind: 'session', sessionId },
+              maxMessages: 40,
+            }, typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+              ? AbortSignal.timeout(12_000)
+              : new AbortController().signal);
+            const snap = extractLatestAssistantUsage(page);
+            beforeMessageId = snap.messageId || '';
+            beforeAssistantCount = snap.assistantCount || 0;
+          } catch { /* baseline best-effort */ }
+        }
+
+        const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+          ? AbortSignal.timeout(180_000)
+          : new AbortController().signal;
+
+        const hiddenContent = [
+          { type: 'text', text: `${WAKE_BUBBLE_MARK}${textPrompt}` },
+          ...toHarnessImageParts(ready),
+        ];
+        let out;
+        try {
+          out = await controller.prompt({
+            requestId: `bili-vision-${Date.now()}`,
+            sessionId,
+            mode: 'queue',
+            content: hiddenContent,
+            ...(modelId ? { model: modelId } : {}),
+          }, signal);
+        } catch (err) {
+          // 宿主也可能直接 throw RemoteError(agent-busy/attachment-invalid),不走 ok:false 返回值
+          const reason = str(err?.message || err);
+          logVision({ ok: false, reason, forceRotate, sessionId, thrown: true });
+          const e = new Error(reason);
+          e.rejected = /prompt rejected|agent-busy/i.test(reason);
+          throw e;
+        }
+        if (out && out.ok === false) {
+          const reason = str(out.error || out.reason || 'prompt-rejected');
+          logVision({ ok: false, reason, forceRotate, sessionId });
+          const err = new Error(reason);
+          err.rejected = true;
+          throw err;
+        }
+
+        const waited = await waitForSessionUsage(controller, {
+          sessionId,
+          beforeMessageId,
+          beforeAssistantCount,
+          timeoutMs: 120_000,
+          rejectTexts: [textPrompt.slice(0, 80), WAKE_BUBBLE_MARK],
+        });
+        const text = str(waited?.text || waited?.reply || '').trim();
+        if (text) return { text };
+        throw new Error('vision-prompt-empty');
+      };
+      try {
+        return await runPrompt(false);
+      } catch (err) {
+        if (!err?.rejected) throw err;
+        await new Promise((r) => setTimeout(r, 4000));
+        try {
+          return await runPrompt(false);
+        } catch (err2) {
+          if (!err2?.rejected) throw err2;
+          return await runPrompt(true);
+        }
+      }
     }
 
     throw new Error('no-host-multimodal-path');

@@ -235,6 +235,30 @@ export function appendEngagePhrase(summary, actions = {}) {
   return `${base}｜${bits.join('、')}`;
 }
 
+/** 无画面模型时的纯文本推断 prompt:字幕/热评/弹幕高峰做时间锚点,明示未看画面。 */
+export function buildTextFallbackPrompt(digest = {}) {
+  const comments = (Array.isArray(digest.hotComments) ? digest.hotComments : [])
+    .slice(0, 5).map((c) => str(c?.text ?? c)).filter(Boolean).join(' / ');
+  const peaks = (Array.isArray(digest.peaks) ? digest.peaks : [])
+    .slice(0, 8).map((p) => `${formatClock(p?.tSec ?? p?.sec ?? p?.t ?? 0)}(${p?.count ?? p?.text ?? ''})`).join(' / ');
+  return [
+    '你是视频内容分析助手。当前没有可用的画面模型,请仅根据下列文本信息推断本片内容与章节时间线。',
+    '要求:以"按文案/弹幕推断,未看画面"为前提;时间线用字幕/弹幕高峰的时间锚点,不得编造具体画面细节。',
+    '输出格式(严格):',
+    '总览:<一句话>',
+    '时间线:',
+    '· mm:ss–mm:ss <章标题>:<要点>',
+    '· …(3–6 段)',
+    '观感:<一句话>',
+    '',
+    `标题:${clip(digest.title, 120)}`,
+    `简介:${clip(digest.desc, 400) || '(无)'}`,
+    `字幕摘录:${clip(digest.transcript, 800) || '(无)'}`,
+    `热评:${clip(comments, 400) || '(无)'}`,
+    `弹幕高峰:${peaks || '(无)'}`,
+  ].join('\n');
+}
+
 /**
  * Full pipeline. visionSummarize required for success.
  * @returns {{ ok, channel, takeaway, frames?, error? }}
@@ -261,9 +285,6 @@ export async function composeVisionTimelineSummary({
     everySec,
     maxFrames,
   });
-  if (!picked.frames.length) {
-    return { ok: false, channel: 'skip:no-frames', takeaway: '', error: 'no-frames' };
-  }
 
   const prompt = buildVisionPrompt({
     title: digest.title,
@@ -286,8 +307,15 @@ export async function composeVisionTimelineSummary({
       images,
     });
     const raw = str(out?.text ?? out?.content ?? out).trim();
+    const textOnly = !picked.frames.length || out?.textOnly === true;
     if (!raw) {
-      return { ok: false, channel: 'skip:vision-error', takeaway: '', error: 'empty-response', frames: picked.frames };
+      return {
+        ok: false,
+        channel: textOnly ? 'skip:no-frames' : 'skip:vision-error',
+        takeaway: '',
+        error: textOnly ? 'no-frames' : 'empty-response',
+        frames: picked.frames,
+      };
     }
     // Model saw only timestamp list (images never attached) — treat as soft failure.
     if (visionResponseLooksBlind(raw)) {
@@ -309,17 +337,48 @@ export async function composeVisionTimelineSummary({
     });
     return {
       ok: true,
-      channel: picked.source === 'live' ? 'ok:live' : 'ok:storyboard',
+      channel: textOnly ? 'ok:text-only' : (picked.source === 'live' ? 'ok:live' : 'ok:storyboard'),
       takeaway,
       frames: picked.frames,
       raw,
+      ...(textOnly ? { textOnly: true } : {}),
     };
   } catch (err) {
+    // 画面模型不可用/拒收图片时,退一步用纯文本推断(字幕/热评/弹幕高峰锚点),
+    // 保证总结与时间线不缺席;明确标注未看画面,不编造画面细节。
+    if (picked.frames.length && typeof visionSummarize === 'function') {
+      try {
+        const out2 = await visionSummarize({
+          model: str(model).trim() || undefined,
+          prompt: buildTextFallbackPrompt(digest),
+          images: [],
+        });
+        const raw2 = str(out2?.text ?? out2?.content ?? out2).trim();
+        if (raw2) {
+          const parsed2 = parseVisionTimelineText(raw2);
+          return {
+            ok: true,
+            channel: 'ok:text-only',
+            takeaway: formatVisionTakeaway({
+              overview: parsed2?.overview,
+              chapters: parsed2?.chapters,
+              opinion: parsed2?.opinion,
+              worthScore: digest.worthScore,
+            }),
+            frames: picked.frames,
+            raw: raw2,
+            textOnly: true,
+            fallback: 'text-infer',
+          };
+        }
+      } catch { /* fall through to the original failure */ }
+    }
+    const textOnly = !picked.frames.length;
     return {
       ok: false,
-      channel: 'skip:vision-error',
+      channel: textOnly ? 'skip:no-frames' : 'skip:vision-error',
       takeaway: '',
-      error: err instanceof Error ? err.message : String(err),
+      error: textOnly ? 'no-frames' : (err instanceof Error ? err.message : String(err)),
       frames: picked.frames,
     };
   }
@@ -349,8 +408,8 @@ export function visionSkipNote(channel = '', error = '') {
 }
 
 /** Soft fallback takeaway with optional note in opinion. */
-export function fallbackTakeawayWithVisionNote(digest, { note = '未看画面', channel = '', error = '' } = {}) {
-  const tag = note || visionSkipNote(channel, error);
+export function fallbackTakeawayWithVisionNote(digest, { note = '', channel = '', error = '' } = {}) {
+  const tag = str(note).trim() || visionSkipNote(channel, error);
   let t = composeVideoTakeaway({
     title: digest?.title,
     desc: digest?.desc,

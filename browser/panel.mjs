@@ -26,6 +26,7 @@ const {
 } = require('./panel-draft.mjs')
 const { setMbtiTypeOnDraft, setMbtiAxisOnDraft, persistTraitSchemeSwitch, buildPersonaEvolvePayload, traitsCardInputs, useTraitsStatePoll } = require('./panel-mbti.mjs')
 const { llmBudgetSection } = require('./panel-llm-budget.mjs')
+const { UpdateBadge } = require('./panel-update.mjs')
 const { OPEN_TAB_EVENT, consumePendingTab } = require('./panel-nav.mjs')
 const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
 const { surfCard: surfCardEl } = require('./panel-surf.mjs')
@@ -407,6 +408,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
           ]),
           h('p', { key: 'hint', className: 'sm-panel-muted' }, '改完会自动保存，侧栏名字也会跟着变。'),
         ]),
+        h(UpdateBadge, { key: 'update' }),
       ])
 
       // The three passive cards live in panel-cards.mjs; this page only hands them the
@@ -538,10 +540,10 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       const tabs = [
         { id: 'surf', label: '冲浪', feature: true },
         { id: 'dsbot', label: 'DsBot', feature: true },
+        { id: 'identity', label: '称呼与形象', feature: true },
         { id: 'status', label: '状态总览' },
         { id: 'personality', label: '性格观察与设置' },
         { id: 'neurons', label: '记忆神经网络' },
-        { id: 'identity', label: '称呼与形象' },
         { id: 'rhythm', label: '作息与主动' },
         { id: 'usage', label: '用量统计' },
         { id: 'diary', label: '日记' },

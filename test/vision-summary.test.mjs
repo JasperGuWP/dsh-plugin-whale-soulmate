@@ -145,7 +145,10 @@ test('composeVisionTimelineSummary success and soft fails', async () => {
     digest: { title: 'x', storyboardFrames: [], liveFrameStills: [] },
     visionSummarize: async () => ({ text: 'x' }),
   });
-  assert.equal(noFrames.channel, 'skip:no-frames');
+  // 没帧但有字幕/文本通道:纯文本总结,不谎称看过画面(surf-e2e 同断言)
+  assert.equal(noFrames.channel, 'ok:text-only');
+  assert.equal(noFrames.ok, true);
+  assert.equal(noFrames.textOnly, true);
 
   const noCb = await composeVisionTimelineSummary({ digest });
   assert.equal(noCb.channel, 'skip:no-vision-model');
@@ -164,4 +167,27 @@ test('composeVisionTimelineSummary success and soft fails', async () => {
   });
   assert.equal(blind.ok, false);
   assert.equal(blind.error, 'blind-no-pixels');
+});
+
+test('composeVisionTimelineSummary: vision rejection falls back to text-infer timeline', async () => {
+  const digest = {
+    title: 'x', desc: 'd', durationSec: 90, worthScore: 8,
+    liveFrameStills: [{ tSec: 0, url: 'u0' }, { tSec: 30, url: 'u30' }],
+    hotComments: [{ text: '前面铺垫太长' }],
+    peaks: [{ sec: 30, count: 42 }],
+  };
+  let calls = 0;
+  const res = await composeVisionTimelineSummary({
+    digest,
+    visionSummarize: async ({ images }) => {
+      calls++;
+      if (images.length) throw new Error('prompt rejected');
+      return { text: '总览:按文案推断的片子\n时间线:\n· 00:00–00:30 铺垫:热评说铺垫长\n· 00:30–01:30 高潮:弹幕高峰\n观感:一般' };
+    },
+  });
+  assert.equal(calls, 2, 'second attempt without images');
+  assert.equal(res.ok, true);
+  assert.equal(res.channel, 'ok:text-only');
+  assert.equal(res.fallback, 'text-infer');
+  assert.match(res.takeaway, /铺垫|00:30/);
 });

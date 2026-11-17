@@ -20,6 +20,7 @@ import {
 } from '../packages/soulmate-core/surf-schedule.mjs';
 import {
   appendSurfLog,
+  deleteSurfLogEntry,
   listSurfLog,
   listSurfLogDates,
   listSurfLogPage,
@@ -98,6 +99,16 @@ test('surf-log append + filter by platform engagement', async () => {
     });
     assert.ok(dayPage.entries.every((e) => surfEntryDayKey(e.at) === dates[0].day));
     assert.equal(dayPage.total, dates[0].count);
+
+    const beforeDelete = await listSurfLog(home, { platform: 'bilibili', filter: 'all', limit: 10 });
+    const victim = beforeDelete.find((e) => e.videoId === 'BVtest1');
+    assert.ok(victim && victim.id);
+    const deleted = await deleteSurfLogEntry(home, { platform: 'bilibili', id: victim.id });
+    assert.equal(deleted.ok, true);
+    assert.equal(deleted.entry.videoId, 'BVtest1');
+    const afterDelete = await listSurfLog(home, { platform: 'bilibili', filter: 'all', limit: 10 });
+    assert.ok(!afterDelete.some((e) => e.videoId === 'BVtest1'));
+    assert.ok(afterDelete.some((e) => e.videoId === 'BVtest2'));
 
     const n = normalizeSurfEntry({ bvid: 'BVx', title: 't' }, 'bilibili');
     assert.equal(n.platform, 'bilibili');

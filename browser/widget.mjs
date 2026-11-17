@@ -8,6 +8,7 @@ const { createPetStage } = require('./pet-stage.mjs')
 const { gestureSayPool } = require('./pet-says.mjs')
 const { wirePetDrag } = require('./pet-drag.mjs')
 const { createPetThrow } = require('./pet-throw.mjs')
+const { isOpaquePetPixel } = require('./pet-hit.mjs')
 
     // ------------------------------------------------------------------
     // Floating widget
@@ -145,11 +146,18 @@ const { createPetThrow } = require('./pet-throw.mjs')
         const url = petVideoUrl(name)
         if (!url) { pet.videoState = null; petLayer.hide(); return }
         pet.videoState = name
-        petLayer.load(name, url, { once: isOnceState(st), mirror: name === 'walk' && pet.m.facing === 1 })
+        petLayer.load(name, url, { once: isOnceState(st), mirror: (name === 'walk' || name === 'run') && mirrorFor(st, pet.m.facing) })
       }
       function petCfgOf(snap) {
         const p = snap && snap.config && snap.config.pet
         return p && p.enabled ? p : null
+      }
+      // 素材原生朝向按 state 声明(video.faces,缺省 left):镜像条件随之反转,
+      // 否则原生朝右的 run 视频向左移动时不镜像=倒着跑。
+      function mirrorFor(st, facing) {
+        const v = st && st.video
+        const faces = (v && typeof v === 'object' && v.faces) || 'left'
+        return faces === 'left' ? facing === 1 : facing === -1
       }
       function petDwellMs(st) {
         const d = st && st.dwellSec
@@ -162,19 +170,19 @@ const { createPetThrow } = require('./pet-throw.mjs')
       }
       function petEnter(m, name, t) {
         const states = (pet && pet.manifest.states) || {}
-        if (m.state === 'walk' && name !== 'walk' && petMotion) petMotion.stop()
+        if ((m.state === 'walk' || m.state === 'run') && name !== m.state && petMotion) petMotion.stop()
         m.state = states[name] ? name : 'idle'
         m.idx = 0
         m.enteredAt = t
         m.switchAt = t + petDwellMs(states[m.state])
-        if (m.state === 'walk') {
+        if (m.state === 'walk' || m.state === 'run') {
           m.facing = Math.random() < 0.5 ? -1 : 1
           // Plan the real locomotion now; facing follows the travel direction.
           if (petMotion) {
-            const st = states.walk || {}
+            const st = states[m.state] || {}
             const v = st.video && typeof st.video === 'object' ? st.video : {}
             const plan = petMotion.plan({
-              speedPxSec: Number(st.speedPxSec) || 40,
+              speedPxSec: Number(st.speedPxSec) || (m.state === 'run' ? 120 : 40),
               dwellMs: petDwellMs(st),
               leadSec: Number(v.leadSec) || 0,
               tailSec: Number(v.tailSec) || 0,
@@ -217,6 +225,15 @@ const { createPetThrow } = require('./pet-throw.mjs')
         try { petWindowScreens = JSON.parse(new URLSearchParams(window.location.search).get('screens') || 'null') } catch (_) { petWindowScreens = null }
       }
       let lastBodySend = 0
+      // 光标位置:宠物自己走/飞到静止光标底下时,靠它每帧重采 alpha,穿透判定不滞后
+      let lastPointer = null
+      if (petWindowBridge) {
+        window.addEventListener('pointermove', (e) => { lastPointer = { x: e.clientX, y: e.clientY } }, { passive: true })
+        // 主进程每拍送光标(穿透期 forward 钩子可能失效,渲染端自己收不到 move)
+        if (typeof petWindowBridge.onCursor === 'function') {
+          petWindowBridge.onCursor((p) => { lastPointer = { x: p.x - window.screenX, y: p.y - window.screenY } })
+        }
+      }
       wirePetDrag({
         widget,
         hitEl,
@@ -240,7 +257,7 @@ const { createPetThrow } = require('./pet-throw.mjs')
         const m = pet.m
         const states = pet.manifest.states || {}
         const st = states[m.state] || {}
-        if (m.state === 'walk' && !m.dragging) {
+        if ((m.state === 'walk' || m.state === 'run') && !m.dragging) {
           const fps = Number(st.fps) || 6
           const frames = st.frames || []
           if (frames.length) m.idx = Math.floor((t - m.enteredAt) / (1000 / fps)) % frames.length
@@ -263,6 +280,11 @@ const { createPetThrow } = require('./pet-throw.mjs')
           const idleFor = t - m.lastAct
           if ((m.state === 'idle' || m.state === 'sit') && states.sleep && idleFor >= (Number(pet.cfg.sleepAfterIdleSec) || 300) * 1000) {
             petEnter(m, 'sleep', t)
+          } else if (m.state === 'idle' && pet.cfg.ambientWalk !== false && !reducedMotion() && states.walk
+            && idleFor >= (Number.isFinite(Number(pet.cfg.ambientWalkAfterSec)) ? Number(pet.cfg.ambientWalkAfterSec) : 15) * 1000
+            && Math.random() < (Number.isFinite(Number(pet.cfg.ambientWalkChance)) ? Number(pet.cfg.ambientWalkChance) : 0.35)) {
+            // 闲置自主散步:没人理她时自己走起来(walk 视频 + 位移)
+            petEnter(m, 'walk', t)
           } else if (st.next && Object.keys(st.next).length) {
             let roll = Math.random()
             let pick = null
@@ -285,7 +307,7 @@ const { createPetThrow } = require('./pet-throw.mjs')
           if (t >= m.blinkAt + blinkMs) m.blinkAt = t + 1500 + Math.random() * 2600
         }
         const frames = cur.frames || ['pet-idle-01']
-        return { id: frames[m.idx % frames.length], mirror: m.state === 'walk' && m.facing === 1 }
+        return { id: frames[m.idx % frames.length], mirror: (m.state === 'walk' || m.state === 'run') && mirrorFor(cur, m.facing) }
       }
       function petApplyFaces(t) {
         if (!pet) return
@@ -329,6 +351,8 @@ const { createPetThrow } = require('./pet-throw.mjs')
             root: () => widget,
             viewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
             size: () => (pet ? petStage.width() : Math.round(148 * 16 / 9)),
+            height: () => (pet ? petStage.height() : 148),
+            screens: () => petWindowScreens,
             isDragging: () => !!(pet && pet.m.dragging),
             isMinimized: () => minimized,
             reducedMotion,
@@ -459,9 +483,18 @@ const { createPetThrow } = require('./pet-throw.mjs')
         if (petWindowBridge && time - lastBodySend > 100) {
           lastBodySend = time
           const r = widget.getBoundingClientRect()
-          // busy 只算「手拿着」:飞行期间整窗仍按身体矩形穿透,不挡桌面点击
-          const busy = !!(pet && pet.m.dragging)
-          petWindowBridge.setBody({ x: r.x, y: r.y, w: r.width, h: r.height }, busy)
+          // busy 只算「手拿着」:m.dragging 在飞行期间也真(保持悬垂姿势),
+          // 若把它当 busy,整窗会在飞行的几秒里收鼠标、挡住桌面点击。
+          const busy = !!(pet && pet.m.dragging && !(petThrow && petThrow.active()))
+          // 包围盒内透明余量也要穿透:hit=光标当前像素是否不透明(素材未就绪时按透明)
+          const hit = !!pet && !!lastPointer && isOpaquePetPixel({
+            clientX: lastPointer.x,
+            clientY: lastPointer.y,
+            frontVideo: () => (petLayer ? petLayer.frontVideo() : null),
+            spriteImg,
+            failClosed: false,
+          })
+          petWindowBridge.setBody({ x: r.x, y: r.y, w: r.width, h: r.height }, busy, hit)
         }
         if (petThrow) petThrow.step(time)
         if (petMotion) petMotion.step(time)

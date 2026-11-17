@@ -12,9 +12,13 @@ import { readFile } from 'node:fs/promises';
  *   - stop/commit/clamp and reduced-motion / minimized / dragging guards
  */
 
-async function loadMotion() {
+async function loadMotion(randomVal = 0) {
   const src = await readFile(new URL('../browser/pet-motion.mjs', import.meta.url), 'utf8');
-  const sandbox = { module: { exports: {} }, exports: {}, console, Math, Object, Array, Number, String, JSON, isFinite };
+  // random 0 → angle 0 → +x horizontal, keeping the legacy distance assertions exact;
+  // direction tests pass other values (0.25 → +y, 0.125 → diagonal).
+  const M = Object.create(Math);
+  M.random = () => randomVal;
+  const sandbox = { module: { exports: {} }, exports: {}, console, Math: M, Object, Array, Number, String, JSON, isFinite };
   vm.runInNewContext(src, sandbox, { filename: 'pet-motion.mjs' });
   return sandbox.module.exports.createPetMotion;
 }
@@ -44,6 +48,7 @@ function env(overrides = {}) {
     reducedMotion: () => state.reduced,
     video: () => state.video,
     wantVideo: () => state.wantVideo,
+    screens: () => state.screens || null,
     onFallback: () => { state.fallbacks++ },
   };
   return { root, state, deps };
@@ -75,16 +80,16 @@ test('motion: minimum distance floor is 60px even for tiny dwell', async () => {
   assert.equal(Math.abs(left(root) - 640), 60);
 });
 
-test('motion: distance capped at 60% of viewport width', async () => {
+test('motion: distance capped at 60% of the smaller viewport dimension', async () => {
   const createPetMotion = await loadMotion();
   const { root, deps } = env({ root: fakeRoot(100, 600) });
   const motion = createPetMotion(deps);
-  motion.plan({ speedPxSec: 1000, dwellMs: 10000 }); // huge → capped at 0.6×1280=768
+  motion.plan({ speedPxSec: 1000, dwellMs: 10000 }); // huge → capped at 0.6×800=480
   motion.step(0); motion.step(10000);
-  assert.ok(Math.abs(left(root) - 100) <= 768 + 0.001, 'capped at W×0.6');
+  assert.ok(Math.abs(left(root) - 100) <= 480 + 0.001, 'capped at min(W,H)×0.6');
 });
 
-test('motion: target clamped inside [8, W−size−8]', async () => {
+test('motion: target clamped inside [0, W−size]', async () => {
   const createPetMotion = await loadMotion();
   const { root, deps } = env({ root: fakeRoot(1200, 600) }); // near right edge
   const motion = createPetMotion(deps);
@@ -92,7 +97,7 @@ test('motion: target clamped inside [8, W−size−8]', async () => {
   assert.ok(plan);
   motion.step(0); motion.step(8000);
   const final = left(root);
-  assert.ok(final >= 8 && final <= 1280 - 148 - 8, `final ${final} within bounds`);
+  assert.ok(final >= 0 && final <= 1280 - 148, `final ${final} within bounds`);
 });
 
 test('motion: cornered with no room → returns false (no walk)', async () => {
@@ -261,4 +266,37 @@ test('motion: facing follows travel direction', async () => {
   const plan = motion.plan({ speedPxSec: 40, dwellMs: 4000 });
   assert.equal(plan.facing, 1, 'left edge forces rightward → mirror');
   assert.equal(root.style.left, undefined, 'plan alone does not move the pet');
+});
+
+test('motion: roam is 2D — random angle can go straight down', async () => {
+  const createPetMotion = await loadMotion(0.25); // angle π/2 → +y
+  const { root, deps } = env({ root: fakeRoot(640, 300) });
+  const motion = createPetMotion(deps);
+  assert.ok(motion.plan({ speedPxSec: 40, dwellMs: 4000 }));
+  motion.step(0); motion.step(4000);
+  assert.equal(left(root), 640, 'x unchanged for a vertical roam');
+  assert.equal(parseFloat(root.style.top), 460, 'y travelled speed×dwell = 160px down');
+});
+
+test('motion: roam is 2D — diagonal moves both axes', async () => {
+  const createPetMotion = await loadMotion(0.125); // angle π/4
+  const { root, deps } = env({ root: fakeRoot(640, 300) });
+  const motion = createPetMotion(deps);
+  assert.ok(motion.plan({ speedPxSec: 40, dwellMs: 4000 }));
+  motion.step(0); motion.step(4000);
+  const d = 160 * Math.SQRT1_2;
+  assert.ok(Math.abs(left(root) - 640 - d) < 0.001, 'x component of the diagonal');
+  assert.ok(Math.abs(parseFloat(root.style.top) - 300 - d) < 0.001, 'y component of the diagonal');
+});
+
+test('motion: roam target never lands in a hole between screens', async () => {
+  const createPetMotion = await loadMotion(0); // +x toward the hole
+  const { root, state, deps } = env({ root: fakeRoot(860, 300) });
+  state.W = 2400;
+  state.screens = [{ x: 0, y: 0, w: 1000, h: 800 }, { x: 1400, y: 0, w: 1000, h: 800 }];
+  const motion = createPetMotion(deps);
+  assert.ok(motion.plan({ speedPxSec: 40, dwellMs: 4000 }));
+  motion.step(0); motion.step(4000);
+  const cx = left(root) + 148 / 2;
+  assert.ok(cx < 1000 || cx >= 1400, `body center ${cx} must stay on a screen`);
 });

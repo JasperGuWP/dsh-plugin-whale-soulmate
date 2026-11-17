@@ -40,6 +40,7 @@ import {
   materializeVisionImages,
   visionSkipNote,
 } from './vision-summary.mjs';
+import { assessTitleWatchWorth } from './title-gate.mjs';
 
 export {
   composeVideoTakeaway,
@@ -56,6 +57,7 @@ export {
   pickVisionFrames,
   visionSkipNote,
 } from './vision-summary.mjs';
+export { assessTitleWatchWorth, normalizeTitleForGate } from './title-gate.mjs';
 export { transcribeViaEndpoint } from './asr-client.mjs';
 
 export { cookieFromCredentials, saveBiliCredentials } from './auth/credentials.mjs';
@@ -968,7 +970,8 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
         visionSummarize,
         model: options.visionModel ?? confLive.extensions?.biliVisionModel ?? '',
       });
-      digest.channels = { ...(digest.channels || {}), visionSummary: vision.channel };
+      const visionChannel = vision.ok && vision.textOnly ? 'ok:text-only' : vision.channel;
+      digest.channels = { ...(digest.channels || {}), visionSummary: visionChannel };
       if (vision.ok && vision.takeaway) {
         digest.takeaway = vision.takeaway;
         digest.summary = `《${digest.title}》 @${digest.author}（${formatClock(digest.durationSec)}）：${vision.takeaway}`;
@@ -988,6 +991,13 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
     }
   } else {
     digest.channels = { ...(digest.channels || {}), visionSummary: 'skip:disabled' };
+  }
+
+  // Engage gate BEFORE memory: 画面没看懂（或没看）就压低评分，日记/纪念墙/互动共用同一终分。
+  const visionCh = str(digest.channels?.visionSummary);
+  const visionOk = /^ok:/.test(visionCh);
+  if (wantVision && visionCh && !visionOk) {
+    digest.worthScore = Math.min(Number(digest.worthScore) || 0, 5);
   }
 
   const notes = composeNotes(digest, conf);
@@ -1062,12 +1072,12 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
   recorded.state = await soulmateService.interact('chat');
   await markVideoSeen(home, digest.bvid, { title: digest.title, worthScore: digest.worthScore }, options.nowMs);
 
-  // Surf journal + optional persona engage (like / fav / comment / follow).
+  // Surf journal + optional persona engage (like / fav / comment / follow) — after takeaway.
   try {
     const confSurf = await loadConfig(home);
     recorded.surf = await afterSurfWatch(home, {
       digest,
-      persona: confSurf.persona,
+      persona: options.persona ?? confSurf.persona,
       options: {
         nowMs: options.nowMs,
         fetchImpl: options.fetchImpl,
@@ -1442,9 +1452,35 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
 
   const videos = [];
   let watched = 0;
+  let skippedTitleCount = 0;
   for (const c of picked) {
     if (watched >= maxPick) break;
     try {
+      // 1) Title gate before frames / multimodal / engage.
+      if (c.kind !== 'article') {
+        const gate = assessTitleWatchWorth(c.title, { desc: c.desc || c.description || '' });
+        if (!gate.ok) {
+          skippedTitleCount += 1;
+          await markVideoSeen(home, c.bvid, {
+            title: c.title,
+            skipped: 'title-gate',
+            reason: gate.reason,
+            kind: gate.kind,
+          }, options.nowMs);
+          videos.push({
+            ok: false,
+            skipped: true,
+            skipKind: 'title-gate',
+            kind: 'video',
+            bvid: c.bvid,
+            title: c.title,
+            reason: gate.reason,
+            keyword: c.keyword,
+            source: c.source,
+          });
+          continue;
+        }
+      }
       if (c.kind === 'article') {
         const res = await watchAndRecordArticle(soulmateService, { target: c.cvid }, net);
         if (res.ok) {
@@ -1533,6 +1569,7 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     pickedCount: watched,
     skippedSeenCount,
     skippedOldCount,
+    skippedTitleCount,
     maxAgeDays,
     maxPick,
     searchOrder,

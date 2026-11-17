@@ -157,7 +157,14 @@ export const DEFAULT_CONFIG = Object.freeze({
     // windowElectronPath 留空 = 自动找 ~/.dsh/electron 的运行时;找不到只告警,不影响页内形象。
     windowEnabled: false,
     windowElectronPath: '',
+    // 闲置自主散步:没人交互 ambientWalkAfterSec 秒后,每次 idle dwell 到期按
+    // ambientWalkChance 概率自己走起来(walk 视频 + 位移);run 仍走 idle.next 概率。
+    ambientWalk: true,
+    ambientWalkAfterSec: 15,
+    ambientWalkChance: 0.35,
   },
+  // 自更新:sourceDir 指向打包源目录(含 *.tgz)才启用检查;空 = 关闭。
+  update: { enabled: true, sourceDir: '', intervalSec: 300 },
   extensions: {
     biliEnabled: true,
     // Scheduled Bilibili patrol (auto surf). Read-only watching: notes + seen ledger,

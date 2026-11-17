@@ -1,7 +1,8 @@
-// Real locomotion for the desktop pet: plan a target across the viewport, then
-// interpolate left/top each frame. Progress comes from the front video's
-// currentTime for once-walks (lead/tail stillness windows), or from elapsed time
-// for the PNG fallback — NEVER from a looping video (currentTime wraps → jump).
+// Real locomotion for the desktop pet: plan a random-direction target across the
+// screens (2D roam: left/right/up/down/diagonal), then interpolate left/top each
+// frame. Progress comes from the front video's currentTime for once-walks
+// (lead/tail stillness windows), or from elapsed time for the PNG fallback —
+// NEVER from a looping video (currentTime wraps → jump).
 // Zero require, dependency-injected getters (no render-time snapshots).
 // No rAF of its own: the widget's existing frame() calls step(t).
 //
@@ -15,14 +16,16 @@ const MOVE_THRESHOLD = 24
 const EDGE_PAD = 0 // 贴屏幕/页边,不留内缩
 
 function createPetMotion(deps) {
-  // deps (all getters): root / viewport / size / isDragging / isMinimized /
-  //   reducedMotion / video (front WALK <video> or null) / wantVideo / onFallback.
+  // deps (all getters): root / viewport / size / height? / screens? / isDragging /
+  //   isMinimized / reducedMotion / video (front WALK <video> or null) / wantVideo / onFallback.
   let token = 0
-  let walk = null // { startX, targetX, y, t0, dwellMs, leadSec, tailSec, speedPxSec, pending, videoMode, waitStart }
+  let walk = null // { startX, startY, targetX, targetY, dirX, dirY, t0, dwellMs, leadSec, tailSec, speedPxSec, pending, videoMode, waitStart }
 
   function rootEl() { return typeof deps.root === 'function' ? deps.root() : null }
   function viewport() { return deps.viewport() }
   function sizePx() { return Number(deps.size()) || 148 }
+  function heightPx() { return Number(typeof deps.height === 'function' ? deps.height() : deps.size()) || 148 }
+  function screens() { return (typeof deps.screens === 'function' && deps.screens()) || null }
   function frontVideo() { return typeof deps.video === 'function' ? deps.video() : null }
   function videoDuration(v) {
     const d = v && Number(v.duration)
@@ -31,6 +34,30 @@ function createPetMotion(deps) {
   function clampX(x, W, size) {
     return Math.min(Math.max(x, EDGE_PAD), Math.max(EDGE_PAD, W - size - EDGE_PAD))
   }
+  function clampY(y, H, size) {
+    return Math.min(Math.max(y, EDGE_PAD), Math.max(EDGE_PAD, H - size - EDGE_PAD))
+  }
+  /** 夹到屏幕并集:中心落在某屏内即合法;洞列/洞行则夹进最近屏,漫游不会停在没有屏幕的地方。 */
+  function clampToScreens(x, y, w, h, W, H) {
+    x = clampX(x, W, w)
+    y = clampY(y, H, h)
+    const list = screens()
+    if (!list || !list.length) return { x, y }
+    const cx = x + w / 2
+    const cy = y + h / 2
+    for (const s of list) {
+      if (cx >= s.x && cx < s.x + s.w && cy >= s.y && cy < s.y + s.h) return { x, y }
+    }
+    let best = null
+    let bd = Infinity
+    for (const s of list) {
+      const px = Math.min(Math.max(cx, s.x + w / 2), Math.max(s.x + w / 2, s.x + s.w - w / 2))
+      const py = Math.min(Math.max(cy, s.y + h / 2), Math.max(s.y + h / 2, s.y + s.h - h / 2))
+      const d = (px - cx) * (px - cx) + (py - cy) * (py - cy)
+      if (d < bd) { bd = d; best = { x: px - w / 2, y: py - h / 2 } }
+    }
+    return best || { x, y }
+  }
   function place(root, x, y) {
     root.style.right = 'auto'
     root.style.bottom = 'auto'
@@ -38,20 +65,23 @@ function createPetMotion(deps) {
     root.style.top = y + 'px'
   }
   /** Distance for a walk: real video duration when known, else dwell estimate (§5.6). */
-  function travelDist(speed, durSec, dwellMs, W) {
+  function travelDist(speed, durSec, dwellMs, span) {
     const secs = durSec > 0 ? durSec : dwellMs / 1000
-    return Math.min(Math.max(speed * secs, MIN_DIST), W * 0.6)
+    return Math.min(Math.max(speed * secs, MIN_DIST), span * 0.6)
   }
 
-  /** Plan one walk on entering the walk state. Video walks stay pending until the
-   *  front walk video's duration is readable; the target is locked once, never mid-walk. */
+  /** Plan one roam on entering the walk/run state: random angle over the full
+   *  circle, distance tied to video pace, target clamped into the screen union.
+   *  Video walks stay pending until the front video's duration is readable; the
+   *  direction is locked once, never mid-walk. */
   function plan(opts) {
     stop()
     const root = rootEl()
     if (!root) return false
     if (deps.reducedMotion() || deps.isMinimized() || deps.isDragging()) return false
-    const { width: W } = viewport()
-    const size = sizePx()
+    const { width: W, height: H } = viewport()
+    const w = sizePx()
+    const h = heightPx()
     const rect = root.getBoundingClientRect()
     const speed = Number(opts && opts.speedPxSec) || 40
     const dwellMs = Number(opts && opts.dwellMs) || 4000
@@ -60,29 +90,32 @@ function createPetMotion(deps) {
     const wantVideo = typeof deps.wantVideo === 'function' ? !!deps.wantVideo() : false
     const dur = videoDuration(frontVideo())
     const videoMode = wantVideo && dur > 0
-    const dist = travelDist(speed, videoMode ? dur : 0, dwellMs, W)
-    const startX = clampX(rect.left, W, size)
-    let dir = Math.random() < 0.5 ? -1 : 1
-    if (startX <= EDGE_PAD + 1) dir = 1
-    else if (startX >= Math.max(EDGE_PAD, W - size - EDGE_PAD) - 1) dir = -1
-    let targetX = clampX(startX + dir * dist, W, size)
-    if (Math.abs(targetX - startX) < MOVE_THRESHOLD) {
-      targetX = clampX(startX - dir * dist, W, size) // cornered: try the other way
-      if (Math.abs(targetX - startX) < MOVE_THRESHOLD) return false
-      dir = -dir
+    const dist = travelDist(speed, videoMode ? dur : 0, dwellMs, Math.min(W, H))
+    const startX = clampX(rect.left, W, w)
+    const startY = clampY(rect.top, H, h)
+    const angle = Math.random() * Math.PI * 2
+    let dirX = Math.cos(angle)
+    let dirY = Math.sin(angle)
+    let t = clampToScreens(startX + dirX * dist, startY + dirY * dist, w, h, W, H)
+    if (Math.hypot(t.x - startX, t.y - startY) < MOVE_THRESHOLD) {
+      dirX = -dirX
+      dirY = -dirY
+      t = clampToScreens(startX + dirX * dist, startY + dirY * dist, w, h, W, H)
+      if (Math.hypot(t.x - startX, t.y - startY) < MOVE_THRESHOLD) return false
     }
     walk = {
-      startX, targetX, y: rect.top, t0: 0, dwellMs, leadSec, tailSec, speedPxSec: speed,
+      startX, startY, targetX: t.x, targetY: t.y, dirX, dirY,
+      t0: 0, dwellMs, leadSec, tailSec, speedPxSec: speed,
       pending: wantVideo && !videoMode, videoMode, waitStart: null,
     }
-    return { facing: targetX > startX ? 1 : -1 }
+    return { facing: t.x > startX ? 1 : -1 }
   }
 
   /** Jump to the target and finish (ended / hidden / explicit commit). */
   function commit() {
     if (!walk) return
     const root = rootEl()
-    if (root) place(root, walk.targetX, walk.y)
+    if (root) place(root, walk.targetX, walk.targetY)
     walk = null
     token++
   }
@@ -97,11 +130,13 @@ function createPetMotion(deps) {
       const dur = videoDuration(frontVideo())
       if (dur > 0) {
         // Walk video ready: lock the real-distance target now (never mid-walk).
-        const { width: W } = viewport()
-        const size = sizePx()
-        const dist = travelDist(walk.speedPxSec, dur, walk.dwellMs, W)
-        const dir = walk.targetX >= walk.startX ? 1 : -1
-        walk.targetX = clampX(walk.startX + dir * dist, W, size)
+        const { width: W, height: H } = viewport()
+        const w = sizePx()
+        const h = heightPx()
+        const dist = travelDist(walk.speedPxSec, dur, walk.dwellMs, Math.min(W, H))
+        const t2 = clampToScreens(walk.startX + walk.dirX * dist, walk.startY + walk.dirY * dist, w, h, W, H)
+        walk.targetX = t2.x
+        walk.targetY = t2.y
         walk.videoMode = true
         walk.pending = false
         walk.t0 = t
@@ -127,7 +162,7 @@ function createPetMotion(deps) {
     } else {
       u = Math.min(1, (t - walk.t0) / Math.max(1, walk.dwellMs))
     }
-    place(root, walk.startX + (walk.targetX - walk.startX) * u, walk.y)
+    place(root, walk.startX + (walk.targetX - walk.startX) * u, walk.startY + (walk.targetY - walk.startY) * u)
     if (u >= 1) commit()
   }
 
@@ -142,9 +177,9 @@ function createPetMotion(deps) {
     const root = rootEl()
     if (!root || !root.style.left) return // still right/bottom anchored → untouched
     const { width: W, height: H } = viewport()
-    const size = sizePx()
     const rect = root.getBoundingClientRect()
-    place(root, clampX(rect.left, W, size), Math.min(Math.max(rect.top, EDGE_PAD), Math.max(EDGE_PAD, H - size - EDGE_PAD)))
+    const c = clampToScreens(rect.left, rect.top, sizePx(), heightPx(), W, H)
+    place(root, c.x, c.y)
   }
 
   return {

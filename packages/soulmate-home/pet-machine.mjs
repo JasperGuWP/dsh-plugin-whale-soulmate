@@ -45,7 +45,7 @@ export function createPetMachine(manifest, opts = {}) {
     m.idx = 0;
     m.enteredAt = t;
     m.switchAt = t + dwellMs(states[m.state], rand);
-    if (m.state === 'walk') m.facing = rand() < 0.5 ? -1 : 1;
+    if (m.state === 'walk' || m.state === 'run') m.facing = rand() < 0.5 ? -1 : 1;
     if (m.state === 'idle') m.blinkAt = t + 1200 + rand() * 2600;
   };
   enter('idle', m.enteredAt);
@@ -77,6 +77,15 @@ export function createPetMachine(manifest, opts = {}) {
       enter('sleep', t);
       return;
     }
+    // 闲置自主散步(与 browser widget 同算法):没人理时自己走起来
+    const ambAfter = Number(opts.ambientWalkAfterSec);
+    const ambChance = Number(opts.ambientWalkChance);
+    if (m.state === 'idle' && opts.ambientWalk !== false && states.walk
+      && idleFor >= (Number.isFinite(ambAfter) ? ambAfter : 15) * 1000
+      && rand() < (Number.isFinite(ambChance) ? ambChance : 0.35)) {
+      enter('walk', t);
+      return;
+    }
     if (st.next && Object.keys(st.next).length) {
       let roll = rand();
       let pick = null;
@@ -92,7 +101,7 @@ export function createPetMachine(manifest, opts = {}) {
 
   const current = (t = clock()) => {
     const st = states[m.state] || {};
-    if (m.state === 'walk' && !m.dragging) {
+    if ((m.state === 'walk' || m.state === 'run') && !m.dragging) {
       const fps = Number(st.fps) || 6;
       const walkFrames = st.frames || [];
       if (walkFrames.length) m.idx = Math.floor((t - m.enteredAt) / (1000 / fps)) % walkFrames.length;
@@ -109,10 +118,12 @@ export function createPetMachine(manifest, opts = {}) {
       m.blinkAt = t + 1500 + rand() * 2600;
     }
     const frames = st.frames || ['pet-idle-01'];
+    const faces = (st.video && typeof st.video === 'object' && st.video.faces) || 'left';
+    const locomotion = m.state === 'walk' || m.state === 'run';
     return {
       state: m.state,
       frame: frames[m.idx % frames.length],
-      mirror: m.state === 'walk' && m.facing === 1,
+      mirror: locomotion && (faces === 'left' ? m.facing === 1 : m.facing === -1),
       blinking: false,
     };
   };

@@ -18,6 +18,9 @@
 //   routes/   — HTTP route tables, grouped by domain.
 
 import { loadConfig, resolveSoulmateHome } from './state.mjs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createSelfUpdate } from './runtime/self-update.mjs';
 import { BILI_EXTENSION_ID } from '../soulmate-bili/index.mjs';
 import { IM_EXTENSION_ID } from '../soulmate-im/index.mjs';
 import { resolvePluginConfig } from './plugin-config.mjs';
@@ -259,7 +262,19 @@ export function apply(ctx, config = {}) {
 
   // ------------------------------------------------------------------ HTTP routes
   // 3D 家园（/soulmate-home）暂停开发：路由不挂载，代码保留在 soulmate-home/ 待重启。
+  // ------------------------------------------------------------------ self-update
+  // 定时对照打包源目录的最新 tarball;面板一键 pnpm add + 桌面端自重启。
+  const selfUpdate = createSelfUpdate({
+    getConfig: () => loadConfig(home),
+    home,
+    packageRoot: cfg.updatePackageRoot || join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
+    warn,
+    spawnImpl: cfg.updateSpawnImpl,
+    execPath: cfg.updateExecPath,
+  });
+
   const routes = buildRoutes({
+    selfUpdate,
     home,
     gateway,
     service,
@@ -307,6 +322,8 @@ export function apply(ctx, config = {}) {
   petWindow.begin();
   // track 会立即执行 fn 取 disposer:这里返回 dispose 函数本身, teardown 时才调用
   track(() => petWindow.dispose);
+  selfUpdate.begin();
+  track(() => selfUpdate.dispose);
 
   // ------------------------------------------------------------------ background auto-sync (consent-gated)
   if (cfg.autoSync) {

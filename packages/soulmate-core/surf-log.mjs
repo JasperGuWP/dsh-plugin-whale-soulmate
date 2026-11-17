@@ -1,5 +1,5 @@
 // Per-platform surf journal (screenshots, links, summary, on-platform actions).
-import { access, rename, writeFile } from 'node:fs/promises';
+import { access, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendJsonl, readJsonlTail } from './state.mjs';
 
@@ -166,21 +166,80 @@ export async function listSurfLog(home, opts = {}) {
 }
 
 /**
- * Patch the newest matching entry (by videoId) — used after engage / reply.
+ * Delete one journal row by exact entry id (preferred) or videoId+at.
  */
-export async function patchSurfLogActions(home, { platform = 'bilibili', videoId, actions, replies, summary } = {}) {
-  const id = str(videoId).trim();
-  if (!id) return { ok: false, error: 'videoId required' };
+export async function deleteSurfLogEntry(home, {
+  platform = 'bilibili',
+  id = '',
+  videoId = '',
+  at = '',
+} = {}) {
+  const entryId = str(id).trim();
+  const vid = str(videoId).trim();
+  const atKey = str(at).trim();
+  if (!entryId && !(vid && atKey)) return { ok: false, error: 'id required' };
   const path = surfLogPath(home, platform);
-  const rows = await readJsonlTail(path, 500);
+  let raw = '';
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return { ok: false, error: 'not-found' };
+    throw err;
+  }
+  const rows = raw
+    .split(/\n/)
+    .map((line) => {
+      const t = line.trim();
+      if (!t) return null;
+      try {
+        return JSON.parse(t);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
   let hit = -1;
   for (let i = rows.length - 1; i >= 0; i -= 1) {
-    const r = rows[i];
-    if (str(r.videoId || r.bvid) === id) {
+    const n = normalizeSurfEntry(rows[i], platform);
+    if (entryId && n.id === entryId) {
+      hit = i;
+      break;
+    }
+    if (!entryId && n.videoId === vid && n.at === atKey) {
       hit = i;
       break;
     }
   }
+  if (hit < 0) return { ok: false, error: 'not-found' };
+  const removed = normalizeSurfEntry(rows[hit], platform);
+  rows.splice(hit, 1);
+  const text = rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');
+  await writeFile(path, text, 'utf8');
+  return { ok: true, entry: removed, remaining: rows.length };
+}
+
+/**
+ * Patch the newest matching entry (by videoId) — used after engage / reply.
+ */
+export async function patchSurfLogActions(home, { platform = 'bilibili', videoId, at = '', id: entryId = '', actions, replies, summary } = {}) {
+  const id = str(videoId).trim();
+  const atKey = str(at).trim();
+  const exactId = str(entryId).trim();
+  if (!id && !exactId) return { ok: false, error: 'videoId required' };
+  const path = surfLogPath(home, platform);
+  // 全量读再重写：tail 截断会把 500 条以前的旧记录整段丢掉。
+  const rows = await readJsonlTail(path, 0);
+  let hit = -1;
+  let fallback = -1;
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const r = rows[i];
+    const n = normalizeSurfEntry(r, platform);
+    // 优先精确匹配（同片重看会有多条记录，不能把互动记到旧条目上）。
+    if (exactId && n.id === exactId) { hit = i; break; }
+    if (!exactId && atKey && n.videoId === id && n.at === atKey) { hit = i; break; }
+    if (fallback < 0 && str(r.videoId || r.bvid) === id) fallback = i;
+  }
+  if (hit < 0) hit = fallback;
   if (hit < 0) return { ok: false, error: 'not-found' };
   const next = normalizeSurfEntry(rows[hit], platform);
   if (actions && typeof actions === 'object') next.actions = { ...next.actions, ...actions };
@@ -201,11 +260,11 @@ export async function patchSurfLogActions(home, { platform = 'bilibili', videoId
 export async function rewriteSurfLogSummaries(home, {
   platform = 'bilibili',
   rebuildFn,
-  limit = 500,
 } = {}) {
   if (typeof rebuildFn !== 'function') return { ok: false, error: 'rebuildFn required', repaired: 0 };
   const path = surfLogPath(home, platform);
-  const rows = await readJsonlTail(path, Math.min(2000, Math.max(1, Math.floor(Number(limit) || 500))));
+  // 全量读再重写：任何截断都会让重写丢掉旧记录。
+  const rows = await readJsonlTail(path, 0);
   let repaired = 0;
   const nextRows = rows.map((raw) => {
     const entry = normalizeSurfEntry(raw, platform);

@@ -306,7 +306,7 @@ export async function afterSurfWatch(home, { digest, persona, options = {} } = {
     replies: [],
   };
 
-  await appendSurfLog(home, base, 'bilibili');
+  const appended = await appendSurfLog(home, base, 'bilibili');
 
   let plan = decideSurfEngageHeuristic({ digest, persona: persona ?? conf.persona });
   if (typeof options.decideEngage === 'function') {
@@ -337,6 +337,8 @@ export async function afterSurfWatch(home, { digest, persona, options = {} } = {
   await patchSurfLogActions(home, {
     platform: 'bilibili',
     videoId: base.videoId,
+    id: appended?.id || '',
+    at: base.at,
     actions,
     summary: summaryWithActions,
   }).catch(() => {});

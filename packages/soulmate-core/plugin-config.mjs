@@ -53,7 +53,9 @@ export const CONFIG_PATCH_KEYS = {
     enabled: 'boolean', sizePx: 'number', sleepAfterIdleSec: 'number', thinkQuietSec: 'number', skin: 'string', skinAuto: 'boolean',
     physics: { gravity: 'number', restitution: 'number', groundFriction: 'number', throwPower: 'number' },
     windowEnabled: 'boolean', windowElectronPath: 'string',
+    ambientWalk: 'boolean', ambientWalkAfterSec: 'number', ambientWalkChance: 'number',
   },
+  update: { enabled: 'boolean', sourceDir: 'string', intervalSec: 'number' },
   proactive: {
     enabled: 'boolean',
     tzOffsetMinutes: 'number',

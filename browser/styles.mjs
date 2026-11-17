@@ -189,6 +189,7 @@ const { CSS_KEY } = require('./util.mjs')
 .sm-panel *{box-sizing:border-box}
 .sm-panel-wrap{max-width:840px;margin:0 auto;padding-top:28px;display:flex;flex-direction:column;gap:14px}
 .sm-panel-head{display:flex;gap:16px;align-items:flex-start;padding:4px 2px 10px;position:relative;z-index:1}
+.sm-panel-update{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
 .sm-panel-avatar{width:84px;height:84px;flex:none;border-radius:18px;border:1px solid var(--dsw-alias-border-l2,#e3e5e8);background:var(--dsw-alias-bg-layer-2,#f2f3f5)}
 .sm-panel-title{margin:0;font-size:19px;font-weight:600;line-height:1.35;color:var(--dsw-alias-label-primary,inherit)}
 .sm-panel-sub{margin:3px 0 0;font-size:12.5px;color:var(--dsw-alias-label-secondary,#4e5561)}
@@ -502,8 +503,10 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-surf-log-title a{color:var(--sm-accent,#4d6bfe);font-weight:600;text-decoration:none}
 .sm-surf-log-title a:hover{text-decoration:underline}
 .sm-surf-log-summary{margin:6px 0 4px;font-size:12.5px;line-height:1.55;color:var(--sm-ink2,#4e5561);white-space:pre-wrap;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow:hidden;cursor:pointer}
-.sm-surf-log-summary-actions{display:flex;gap:8px;margin:0 0 6px}
+.sm-surf-log-summary-actions{display:flex;gap:8px;margin:0 0 6px;flex-wrap:wrap}
 .sm-surf-detail-btn{font-size:12px;padding:4px 10px}
+.sm-surf-delete-btn{font-size:12px;padding:4px 10px;color:#8a3030;border-color:color-mix(in srgb,#8a3030 28%,transparent)}
+.sm-surf-delete-btn:hover{background:color-mix(in srgb,#8a3030 8%,transparent);color:#6e2020}
 .sm-surf-lightbox-detail{max-width:min(720px,94vw);width:100%;max-height:min(86vh,820px);overflow:auto;display:flex;flex-direction:column;align-items:stretch;gap:10px;padding:16px 16px 14px;border-radius:12px;background:var(--dsw-alias-bg-base,#fff);box-shadow:0 16px 48px rgba(0,0,0,.28);color:var(--sm-ink,#0f1115)}
 .sm-surf-lightbox-detail .sm-surf-detail-summary{background:color-mix(in srgb,var(--sm-ink,#0f1115) 4%,#fff)}
 .sm-surf-detail-head{display:flex;flex-direction:column;gap:4px;padding-right:48px}

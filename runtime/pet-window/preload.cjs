@@ -4,5 +4,6 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('smPetWindow', {
   setHit: (on) => ipcRenderer.send('pet-window:hit', !!on),
-  setBody: (rect, busy) => ipcRenderer.send('pet-window:body', { rect, busy: !!busy }),
+  setBody: (rect, busy, hit) => ipcRenderer.send('pet-window:body', { rect, busy: !!busy, hit: !!hit }),
+  onCursor: (cb) => ipcRenderer.on('pet-window:cursor', (_event, p) => cb(p)),
 })

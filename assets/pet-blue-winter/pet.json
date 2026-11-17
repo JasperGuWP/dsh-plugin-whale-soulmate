@@ -181,7 +181,10 @@
       "next": {
         "idle": 1
       },
-      "video": "pet-run"
+      "video": {
+        "name": "pet-run",
+        "faces": "right"
+      }
     }
   },
   "displayName": "蓝色冬装"
