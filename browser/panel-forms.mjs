@@ -426,14 +426,14 @@ function autoSurfSection({ draft, patchExtensions }) {
       h('label', {
         key: 'vision-summary',
         className: 'sm-rhythm-check',
-        title: '用画面帧（真帧优先，否则分镜）+ 标题/简介/对齐字幕，生成时间线总结。无视觉模型或无帧时软降级为文字总结，并提示。',
+        title: '用当前聊天的多模态模型看画面帧（真帧优先，否则分镜），再综合标题/简介/字幕写时间线。接不通模型或无帧时软降级。',
       }, [
         h('input', {
           key: 'i', type: 'checkbox',
           checked: ext.biliVisionSummary !== false,
           onChange: (event) => patchExtensions({ biliVisionSummary: event.target.checked }),
         }),
-        h('span', { key: 't' }, '画面理解总结（时间线）'),
+        h('span', { key: 't' }, '画面理解总结（用聊天多模态模型）'),
       ]),
       h('label', {
         key: 'live-frame',
@@ -476,7 +476,7 @@ function autoSurfSection({ draft, patchExtensions }) {
       ext.biliLiveFrameWatch ? h(LiveFrameReadyHint, { key: 'live-hint' }) : null,
       ext.biliVisionSummary !== false ? field(
         'asr-endpoint',
-        'ASR 转写接口（无字幕时才用；留空则跳过）'
+        'ASR 接口地址（无字幕时才用；留空则跳过）'
           + (String(ext.biliAsrEndpoint || '').trim() ? ' · 已配置' : ' · 未配置'),
         h('input', {
           key: 'control',
@@ -486,14 +486,14 @@ function autoSurfSection({ draft, patchExtensions }) {
           onChange: (event) => patchExtensions({ biliAsrEndpoint: event.target.value }),
         }),
       ) : null,
-      ext.biliVisionSummary !== false && String(ext.biliAsrEndpoint || '').trim() ? field(
+      ext.biliVisionSummary !== false ? field(
         'asr-key',
-        'ASR API Key（可选，Bearer）',
+        'ASR API Key（可选，请求头 Bearer）',
         h('input', {
           key: 'control',
           type: 'password',
           autoComplete: 'off',
-          placeholder: '留空则不带 Authorization',
+          placeholder: '填服务商发给你的 Key；不需要可留空',
           value: ext.biliAsrApiKey || '',
           onChange: (event) => patchExtensions({ biliAsrApiKey: event.target.value }),
         }),
@@ -501,7 +501,7 @@ function autoSurfSection({ draft, patchExtensions }) {
       ext.biliVisionSummary !== false ? h('p', {
         key: 'vision-hint',
         className: 'sm-panel-muted',
-      }, '画面总结需要宿主提供视觉模型；失败时冲浪卡会标「未看画面」并退回标题/字幕摘要。') : null,
+      }, '画面总结走你平时聊天用的多模态模型（不是另装的专用视觉包）。失败时会标明原因并退回标题/字幕摘要；时间线需成功看图后才出现。') : null,
       h('label', {
         key: 'autosurf-popular',
         className: 'sm-rhythm-check',

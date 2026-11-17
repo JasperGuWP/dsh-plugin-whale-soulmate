@@ -10,28 +10,84 @@ import {
   shareVideoToUser,
   watchAndRecordVideo,
 } from '../../soulmate-bili/index.mjs';
+import { createHostVisionSummarize } from '../../soulmate-bili/host-vision.mjs';
 import { clip, str } from '../small-utils.mjs';
+import { loadConfig } from '../state.mjs';
 
-export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatHome }) {
+export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatHome, warn }) {
   const resolveLlmController = () => {
+    const candidates = [];
     try {
       if (typeof chatHome?.getSessionController === 'function') {
-        const c = chatHome.getSessionController();
-        if (c && typeof c.generateReply === 'function') return c;
+        candidates.push(chatHome.getSessionController());
       }
     } catch { /* ignore */ }
     try {
-      const c = typeof ctx?.get === 'function' ? ctx.get('sessionController') : ctx?.sessionController;
-      if (c && typeof c.generateReply === 'function') return c;
+      candidates.push(typeof ctx?.get === 'function' ? ctx.get('sessionController') : ctx?.sessionController);
     } catch { /* ignore */ }
+    try {
+      candidates.push(typeof ctx?.get === 'function' ? ctx.get('llm') : null);
+      candidates.push(typeof ctx?.get === 'function' ? ctx.get('chat') : null);
+    } catch { /* ignore */ }
+    for (const c of candidates) {
+      if (!c) continue;
+      if (typeof c.generateReply === 'function' || typeof c.prompt === 'function') return c;
+      if (typeof c.chat === 'function' || typeof c.complete === 'function') {
+        return {
+          generateReply: async (args) => {
+            const prompt = String(args?.text || args?.prompt || '').trim();
+            const content = args?.content || [
+              { type: 'text', text: prompt },
+              ...(Array.isArray(args?.images) ? args.images.map((img) => ({
+                type: 'image_url',
+                image_url: { url: img.url },
+              })) : []),
+            ];
+            if (typeof c.chat === 'function') {
+              return c.chat({
+                model: args?.model,
+                messages: [{ role: 'user', content }],
+                purpose: args?.purpose || 'bili-vision-summary',
+              });
+            }
+            return c.complete({
+              model: args?.model,
+              prompt,
+              content,
+              images: args?.images,
+              purpose: args?.purpose || 'bili-vision-summary',
+            });
+          },
+        };
+      }
+    }
     return null;
   };
-  const biliNet = () => ({
-    ...(cfg.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
-    ...(cfg.biliBaseUrl ? { baseUrl: cfg.biliBaseUrl } : {}),
-    ...(cfg.biliDmBaseUrl ? { dmBaseUrl: cfg.biliDmBaseUrl } : {}),
-    ...(resolveLlmController() ? { llmController: resolveLlmController() } : {}),
-  });
+
+  const biliNet = async () => {
+    const controller = resolveLlmController();
+    let preferredModel = '';
+    try {
+      const conf = await loadConfig(home);
+      preferredModel = str(conf.extensions?.biliVisionModel).trim();
+    } catch { /* ignore */ }
+    const visionSummarize = createHostVisionSummarize({
+      controller,
+      chatHome,
+      fetchImpl: cfg.biliFetch,
+      model: preferredModel,
+      soulmateRoot: home?.rootDir || '',
+      warn: typeof warn === 'function' ? warn : () => {},
+    });
+    return {
+      ...(cfg.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
+      ...(cfg.biliBaseUrl ? { baseUrl: cfg.biliBaseUrl } : {}),
+      ...(cfg.biliDmBaseUrl ? { dmBaseUrl: cfg.biliDmBaseUrl } : {}),
+      ...(controller ? { llmController: controller } : {}),
+      ...(visionSummarize ? { visionSummarize } : {}),
+      ...(preferredModel ? { visionModel: preferredModel } : {}),
+    };
+  };
 
   function resolveWatchMode(raw) {
     const m = str(raw).trim().toLowerCase();
@@ -102,10 +158,11 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatH
   async function videoWatch(args) {
     const mode = resolveWatchMode(args.mode);
     const frameCap = mode === 'skim' ? 8 : 36;
+    const net = await biliNet();
     const res = await watchAndRecordVideo(
       service,
       { target: args.target, toYouNote: args.toYouNote, innerNote: args.innerNote },
-      { ...biliNet(), maxStoryboardFrames: frameCap }
+      { ...net, maxStoryboardFrames: frameCap }
     );
     if (!res.ok) return res;
     const d = res.digest;
@@ -119,8 +176,9 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatH
   }
 
   async function videoSurf(args) {
+    const net = await biliNet();
     const res = await runAutonomousSurfRound(service, {
-      ...biliNet(),
+      ...net,
       deepWatch: true,
       maxStoryboardFrames: 36,
       ...(Array.isArray(args.keywords) && args.keywords.length ? { keywords: args.keywords } : {}),
@@ -152,14 +210,14 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatH
     const res = await shareVideoToUser(
       home,
       { target: args.target ?? args.bvid, reason: args.reason, via: args.via, message: args.message, targetUser: args.targetUser },
-      biliNet()
+      await biliNet(),
     );
     return res;
   }
 
   /** Thin forwarder — all B 站登录逻辑住在 soulmate-bili/auth/*。 */
   async function biliAuthManage(args = {}) {
-    const res = await manageBiliAuth(home, args, biliNet());
+    const res = await manageBiliAuth(home, args, await biliNet());
     if (res.ok && ['configure_cookie', 'qr_poll', 'import_whale', 'clear', 'verify'].includes(str(args.action))) {
       pushEvent('bili_auth', { action: str(args.action) });
     }
@@ -268,7 +326,7 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatH
       async run(args) {
         // biliWriteAction re-reads config itself (extensions.biliWriteEnabled gate +
         // biliMaxDailyWrites fallback), so the live panel switch is always honoured.
-        const res = await biliWriteAction(home, args, biliNet());
+        const res = await biliWriteAction(home, args, await biliNet());
         if (res.ok && res.dryRun !== true) pushEvent('bili_write', { action: res.action });
         return res;
       },

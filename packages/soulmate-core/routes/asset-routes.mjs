@@ -22,7 +22,7 @@ import { videoNameOf } from '../video-cues.mjs';
 export function assetRoutes({ home, evolvePersona, skins = PET_SKINS, skinsRoot = PET_ASSETS_ROOT }) {
   // Retired skins fold into the default shipped skin so stale saved configs keep
   // working; anything else still fails loud (traversal-proof whitelist).
-  const retired = new Set(['classic', 'underwater', 'winterboy']);
+  const retired = new Set(['classic', 'underwater', 'winterboy', 'maid']);
   const skinId = (id) => (skins[id] || !retired.has(id) ? id : 'winterboy-chibi');
   // Bundled/injected map first; otherwise discover pet-<id>/pet.json on disk at
   // request time, so a freshly copied skin folder works without a restart.

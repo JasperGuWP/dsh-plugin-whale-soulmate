@@ -25,6 +25,7 @@ import {
   shouldRunWeeklyGate,
 } from '../proactive.mjs';
 import { runAutonomousSurfRound } from '../../soulmate-bili/index.mjs';
+import { createHostVisionSummarize } from '../../soulmate-bili/host-vision.mjs';
 import { refreshSurfKeywords } from '../../soulmate-bili/keyword-learn.mjs';
 import { runAutoReplyPatrol } from '../../soulmate-bili/reply-patrol.mjs';
 import { resolveLlmModel } from '../llm-model-pick.mjs';
@@ -421,6 +422,14 @@ export function createProactiveRuntime({
       const llmController = typeof chatHome.getSessionController === 'function'
         ? chatHome.getSessionController()
         : null;
+      const visionSummarize = createHostVisionSummarize({
+        controller: llmController,
+        chatHome,
+        fetchImpl: cfg?.biliFetch,
+        model: live?.extensions?.biliVisionModel || '',
+        soulmateRoot: home?.rootDir || '',
+        warn,
+      });
       res = await runAutonomousSurfRound(
         { home },
         {
@@ -429,9 +438,8 @@ export function createProactiveRuntime({
           keywords,
           ...(cfg?.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
           ...(cfg?.biliBaseUrl ? { baseUrl: cfg.biliBaseUrl } : {}),
-          ...(llmController && typeof llmController.generateReply === 'function'
-            ? { llmController }
-            : {}),
+          ...(llmController ? { llmController } : {}),
+          ...(visionSummarize ? { visionSummarize } : {}),
         }
       );
     } catch (err) {

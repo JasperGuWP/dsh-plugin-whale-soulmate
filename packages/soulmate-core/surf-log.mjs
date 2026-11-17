@@ -87,18 +87,82 @@ export async function appendSurfLog(home, entry, platform = 'bilibili') {
   return row;
 }
 
-/**
- * List newest-first. filter: all | engaged | watch-only
- */
-export async function listSurfLog(home, { platform = 'bilibili', filter = 'all', limit = 40 } = {}) {
-  await migrateLegacySurfLog(home).catch(() => {});
-  const cap = Math.min(200, Math.max(1, Math.floor(Number(limit) || 40)));
-  const rows = await readJsonlTail(surfLogPath(home, platform), Math.max(cap * 3, 120));
-  const normalized = rows.map((r) => normalizeSurfEntry(r, platform)).reverse();
+/** Local calendar day YYYY-MM-DD for an entry timestamp. */
+export function surfEntryDayKey(at, nowMs = Date.now()) {
+  const d = new Date(at || nowMs);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function applySurfFilters(normalized, { filter = 'all', day = '' } = {}) {
   let out = normalized;
-  if (filter === 'engaged') out = normalized.filter((e) => hasEngagement(e.actions) || (e.replies && e.replies.length));
-  else if (filter === 'watch-only') out = normalized.filter((e) => !hasEngagement(e.actions) && !(e.replies && e.replies.length));
-  return out.slice(0, cap);
+  if (filter === 'engaged') out = out.filter((e) => hasEngagement(e.actions) || (e.replies && e.replies.length));
+  else if (filter === 'watch-only') out = out.filter((e) => !hasEngagement(e.actions) && !(e.replies && e.replies.length));
+  const dayKey = str(day).trim();
+  if (dayKey) out = out.filter((e) => surfEntryDayKey(e.at) === dayKey);
+  return out;
+}
+
+/**
+ * Distinct days (newest first) with counts, after engagement filter.
+ */
+export async function listSurfLogDates(home, {
+  platform = 'bilibili',
+  filter = 'all',
+  scan = 2000,
+} = {}) {
+  await migrateLegacySurfLog(home).catch(() => {});
+  const rows = await readJsonlTail(surfLogPath(home, platform), Math.min(5000, Math.max(200, Math.floor(Number(scan) || 2000))));
+  const normalized = rows.map((r) => normalizeSurfEntry(r, platform)).reverse();
+  const filtered = applySurfFilters(normalized, { filter });
+  const counts = new Map();
+  for (const e of filtered) {
+    const day = surfEntryDayKey(e.at);
+    if (!day) continue;
+    counts.set(day, (counts.get(day) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([day, count]) => ({ day, count }))
+    .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
+}
+
+/**
+ * List newest-first. filter: all | engaged | watch-only; optional day=YYYY-MM-DD.
+ * Supports limit + offset for「加载更多」.
+ */
+export async function listSurfLogPage(home, {
+  platform = 'bilibili',
+  filter = 'all',
+  day = '',
+  limit = 20,
+  offset = 0,
+} = {}) {
+  await migrateLegacySurfLog(home).catch(() => {});
+  const cap = Math.min(200, Math.max(1, Math.floor(Number(limit) || 20)));
+  const skip = Math.max(0, Math.floor(Number(offset) || 0));
+  // Read enough tail rows to cover skip+cap after filter (filters shrink the set).
+  const need = Math.min(5000, Math.max((skip + cap) * 6, 200));
+  const rows = await readJsonlTail(surfLogPath(home, platform), need);
+  const normalized = rows.map((r) => normalizeSurfEntry(r, platform)).reverse();
+  const out = applySurfFilters(normalized, { filter, day });
+  const total = out.length;
+  const entries = out.slice(skip, skip + cap);
+  return {
+    entries,
+    total,
+    offset: skip,
+    limit: cap,
+    day: str(day).trim() || '',
+    hasMore: skip + entries.length < total,
+  };
+}
+
+export async function listSurfLog(home, opts = {}) {
+  const page = await listSurfLogPage(home, opts);
+  return page.entries;
 }
 
 /**

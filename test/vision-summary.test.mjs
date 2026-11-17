@@ -1,14 +1,21 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
   appendEngagePhrase,
   composeVisionTimelineSummary,
   evenIndices,
   formatVisionTakeaway,
+  materializeVisionImages,
   parseVisionTimelineText,
   pickVisionFrames,
+  resolveLiveFrameDiskPath,
   sampleTimes,
+  visionResponseLooksBlind,
 } from '../packages/soulmate-bili/vision-summary.mjs';
 
 test('evenIndices caps and spreads', () => {
@@ -81,6 +88,32 @@ test('appendEngagePhrase merges actions', () => {
   assert.match(appendEngagePhrase(base, { skippedReasons: ['score-low'] }), /仅观看/);
 });
 
+test('resolveLiveFrameDiskPath + materialize reads local stills', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sm-vision-'));
+  const bvid = 'BV1uKsM6BExK';
+  const dir = join(root, 'cache', 'live-frames', bvid);
+  await mkdir(dir, { recursive: true });
+  // minimal JPEG (SOI + EOI)
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+  await writeFile(join(dir, 'frame_001.jpg'), jpeg);
+  const url = `/dsh-soulmate/api/live-frame?bvid=${bvid}&i=0`;
+  assert.equal(resolveLiveFrameDiskPath(url, root), join(root, 'cache', 'live-frames', bvid, 'frame_001.jpg'));
+  const ready = await materializeVisionImages([{ url, tSec: 0 }], { soulmateRoot: root });
+  assert.equal(ready.length, 1);
+  assert.match(ready[0].url, /^data:image\/jpeg;base64,/);
+  // relative URL without root must not be passed through blindly
+  const blind = await materializeVisionImages([{ url }], {});
+  assert.equal(blind.length, 0);
+});
+
+test('visionResponseLooksBlind detects timestamp-only excuses', () => {
+  assert.equal(visionResponseLooksBlind('总览：好看\n观感：还行'), false);
+  assert.equal(
+    visionResponseLooksBlind('仍无法判断——三个采样点只给了时间戳，没有画面描述。00:00 / 00:15'),
+    true,
+  );
+});
+
 test('composeVisionTimelineSummary success and soft fails', async () => {
   const digest = {
     title: 'python基础练习题：整数等于浮点数吗',
@@ -122,4 +155,13 @@ test('composeVisionTimelineSummary success and soft fails', async () => {
     visionSummarize: async () => { throw new Error('timeout'); },
   });
   assert.equal(boom.channel, 'skip:vision-error');
+
+  const blind = await composeVisionTimelineSummary({
+    digest,
+    visionSummarize: async () => ({
+      text: '总览：仍无法判断，三个采样点只给了时间戳，没有画面描述\n时间线：\n· 00:00 无画面\n观感：不可分析样本',
+    }),
+  });
+  assert.equal(blind.ok, false);
+  assert.equal(blind.error, 'blind-no-pixels');
 });

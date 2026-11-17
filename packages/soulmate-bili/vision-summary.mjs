@@ -118,6 +118,7 @@ export function pickVisionFrames({
       tSec: hit.tSec,
       url: hit.url,
       label: str(hit.label) || formatClock(hit.tSec),
+      ...(str(hit.path || hit.filePath) ? { path: str(hit.path || hit.filePath) } : {}),
     });
   }
   // Fallback: if density mapping yielded nothing, take evenly from pool order
@@ -127,6 +128,7 @@ export function pickVisionFrames({
       tSec: frameTimeSec(f, i),
       url: frameUrl(f),
       label: str(f.label) || formatClock(frameTimeSec(f, i)),
+      ...(str(f.path || f.filePath) ? { path: str(f.path || f.filePath) } : {}),
     }));
 
   const idxs = evenIndices(candidates.length, maxFrames);
@@ -272,14 +274,31 @@ export async function composeVisionTimelineSummary({
   });
 
   try {
+    const images = picked.frames.map((f) => ({
+      tSec: f.tSec,
+      url: f.url,
+      label: f.label,
+      ...(f.path ? { path: f.path } : {}),
+    }));
     const out = await visionSummarize({
       model: str(model).trim() || undefined,
       prompt,
-      images: picked.frames.map((f) => ({ tSec: f.tSec, url: f.url, label: f.label })),
+      images,
     });
     const raw = str(out?.text ?? out?.content ?? out).trim();
     if (!raw) {
       return { ok: false, channel: 'skip:vision-error', takeaway: '', error: 'empty-response', frames: picked.frames };
+    }
+    // Model saw only timestamp list (images never attached) — treat as soft failure.
+    if (visionResponseLooksBlind(raw)) {
+      return {
+        ok: false,
+        channel: 'skip:vision-error',
+        takeaway: '',
+        error: 'blind-no-pixels',
+        frames: picked.frames,
+        raw,
+      };
     }
     const parsed = parseVisionTimelineText(raw);
     const takeaway = formatVisionTakeaway({
@@ -306,8 +325,32 @@ export async function composeVisionTimelineSummary({
   }
 }
 
-/** Soft fallback takeaway with optional「未看画面」tag in opinion. */
-export function fallbackTakeawayWithVisionNote(digest, { note = '未看画面' } = {}) {
+/** True when the model admits it never saw frame pixels (only timestamps / labels). */
+export function visionResponseLooksBlind(raw = '') {
+  const t = str(raw);
+  if (!t) return false;
+  const noPixels = /没有画面|无画面|看不到画面|未看到画面|无可读画面|画面内容缺失|画面证据缺失|只给了时间戳|仅有时间戳|只有时间戳|没有画面描述|无可读图像|不可分析样本/;
+  const onlyClock = /采样点|时间戳|占位帧/;
+  return noPixels.test(t) && (onlyClock.test(t) || /00:\d{2}/.test(t));
+}
+
+/** Map vision channel code → short Chinese note for the takeaway opinion line. */
+export function visionSkipNote(channel = '', error = '') {
+  const c = str(channel);
+  if (c === 'skip:no-vision-model') return '未接通聊天多模态模型，未生成时间线';
+  if (c === 'skip:no-frames') return '无可用画面帧，未生成时间线';
+  if (c === 'skip:disabled') return '画面总结已关闭';
+  if (c === 'skip:vision-error') {
+    const e = str(error).trim();
+    if (e === 'blind-no-pixels') return '画面未送进模型，未生成时间线';
+    return e ? `画面理解失败：${e.slice(0, 40)}` : '画面理解失败，未生成时间线';
+  }
+  return '未看画面';
+}
+
+/** Soft fallback takeaway with optional note in opinion. */
+export function fallbackTakeawayWithVisionNote(digest, { note = '未看画面', channel = '', error = '' } = {}) {
+  const tag = note || visionSkipNote(channel, error);
   let t = composeVideoTakeaway({
     title: digest?.title,
     desc: digest?.desc,
@@ -315,8 +358,105 @@ export function fallbackTakeawayWithVisionNote(digest, { note = '未看画面' }
     tags: digest?.tags,
     worthScore: digest?.worthScore,
   });
-  if (note && !t.includes(note)) {
-    t = t.replace(/观感：/, `观感：（${note}）`);
+  if (tag && !t.includes(tag)) {
+    t = t.replace(/观感：/, `观感：（${tag}）`);
   }
   return t;
+}
+
+/** Parse `/dsh-soulmate/api/live-frame?bvid=BVxxx&i=0` → disk path under soulmateRoot. */
+export function resolveLiveFrameDiskPath(url, soulmateRoot = '') {
+  const root = str(soulmateRoot).trim();
+  const u = str(url).trim();
+  if (!root || !u || !u.includes('live-frame')) return '';
+  let params;
+  try {
+    if (/^https?:\/\//i.test(u)) params = new URL(u).searchParams;
+    else if (u.startsWith('/')) params = new URL(u, 'http://local.invalid').searchParams;
+    else return '';
+  } catch {
+    return '';
+  }
+  const bvid = str(params.get('bvid')).trim();
+  if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) return '';
+  const i = Math.max(0, Math.floor(Number(params.get('i')) || 0));
+  if (i > 240) return '';
+  const name = `frame_${String(i + 1).padStart(3, '0')}.jpg`;
+  const sep = root.includes('\\') ? '\\' : '/';
+  const base = root.endsWith('/') || root.endsWith('\\') ? root.slice(0, -1) : root;
+  return `${base}${sep}cache${sep}live-frames${sep}${bvid}${sep}${name}`;
+}
+
+async function readLocalImageDataUrl(filePath, readFileImpl) {
+  const p = str(filePath).trim();
+  if (!p) return '';
+  try {
+    let buf;
+    if (typeof readFileImpl === 'function') {
+      buf = await readFileImpl(p);
+    } else {
+      const { readFile } = await import('node:fs/promises');
+      buf = await readFile(p);
+    }
+    if (!buf || !buf.length) return '';
+    const b64 = Buffer.isBuffer(buf) ? buf.toString('base64') : Buffer.from(buf).toString('base64');
+    const lower = p.toLowerCase();
+    const ct = lower.endsWith('.png') ? 'image/png' : lower.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+    return `data:${ct};base64,${b64}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Fetch remote/local frame URLs into data: URLs so vision providers that cannot
+ * pull Bilibili CDN themselves still get pixels.
+ * Prefer on-disk live-frame `path` / soulmateRoot resolution — relative
+ * `/dsh-soulmate/api/live-frame` URLs are not fetchable from the node process.
+ */
+export async function materializeVisionImages(images = [], {
+  fetchImpl,
+  timeoutMs = 20_000,
+  readFileImpl,
+  soulmateRoot = '',
+} = {}) {
+  const fetchFn = typeof fetchImpl === 'function' ? fetchImpl : globalThis.fetch;
+  const out = [];
+  for (const img of Array.isArray(images) ? images : []) {
+    const url = str(img?.url).trim();
+    const localPath = str(img?.path || img?.filePath).trim()
+      || resolveLiveFrameDiskPath(url, soulmateRoot);
+    if (!url && !localPath) continue;
+    if (url.startsWith('data:')) {
+      out.push({ ...img, url });
+      continue;
+    }
+    if (localPath) {
+      const dataUrl = await readLocalImageDataUrl(localPath, readFileImpl);
+      if (dataUrl) {
+        out.push({ ...img, url: dataUrl, path: localPath });
+        continue;
+      }
+    }
+    // Relative app routes cannot be fetched from node — skip rather than pass blind URLs.
+    if (url.startsWith('/') && !url.startsWith('//')) continue;
+    if (typeof fetchFn !== 'function') continue;
+    try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+      const res = await fetchFn(url, {
+        headers: { referer: 'https://www.bilibili.com', accept: 'image/*' },
+        signal: controller?.signal,
+      });
+      if (timer) clearTimeout(timer);
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (!buf.length) continue;
+      const ct = str(res.headers?.get?.('content-type') || 'image/jpeg').split(';')[0] || 'image/jpeg';
+      out.push({ ...img, url: `data:${ct};base64,${buf.toString('base64')}` });
+    } catch {
+      /* skip unreadable frame */
+    }
+  }
+  return out;
 }

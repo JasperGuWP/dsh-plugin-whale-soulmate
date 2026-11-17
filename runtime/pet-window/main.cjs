@@ -7,6 +7,11 @@ const { decideIgnore } = require('./ignore.cjs')
 
 const POINTER_POLL_MS = 60
 
+// 开发/实测 affordance:仅当显式设置环境变量时开 loopback 调试端口
+if (process.env.SOULMATE_PET_WINDOW_DEBUG) {
+  app.commandLine.appendSwitch('remote-debugging-port', String(process.env.SOULMATE_PET_WINDOW_DEBUG))
+}
+
 let win = null
 let body = null // { rect, busy } 渲染端上报(内容区坐标)
 let ignoring = true
@@ -56,10 +61,19 @@ function createWindow() {
     win.setSkipTaskbar(true)
     setTimeout(() => { if (!win.isDestroyed()) win.setSkipTaskbar(true) }, 0)
   })
-  win.once('ready-to-show', () => win.showInactive())
+  win.once('ready-to-show', () => {
+    // Windows 建窗时把透明窗夹到主屏工作区;首帧后再 setBounds 才拿得到跨屏 hull
+    win.setBounds(area)
+    win.showInactive()
+  })
   // paintWhenInitiallyHidden 默认行为下首帧可能不产出,ready-to-show 永不触发 → 兜底显示
   win.webContents.once('did-finish-load', () => {
-    setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.showInactive() }, 400)
+    setTimeout(() => {
+      if (!win.isDestroyed() && !win.isVisible()) {
+        win.setBounds(area)
+        win.showInactive()
+      }
+    }, 400)
   })
   win.on('closed', () => {
     win = null

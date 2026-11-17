@@ -94,6 +94,12 @@ test('pet: manifest + frame routes serve the bundled sprite pack and clean up on
     assert.ok(Object.values(chibi.frameUrls)[0].includes('skin=winterboy-chibi'));
     const badSkin = body(await manifestHandler({ method: 'GET', url: '/dsh-soulmate/api/pet/manifest?skin=nope' }));
     assert.equal(badSkin.ok, false);
+    // retired maid folds into the default skin and drops out of the catalog
+    const maidManifest = body(await manifestHandler({ method: 'GET', url: '/dsh-soulmate/api/pet/manifest?skin=maid' }));
+    assert.equal(maidManifest.ok, true);
+    assert.ok(Object.values(maidManifest.frameUrls)[0].includes('skin=winterboy-chibi'));
+    const skinsOut = body(await routes.get('GET /dsh-soulmate/api/pet/skins')({ method: 'GET', url: '/dsh-soulmate/api/pet/skins' }));
+    assert.ok(!skinsOut.skins.some((s) => s.id === 'maid'), 'maid no longer listed');
 
     const frameHandler = routes.get('GET /dsh-soulmate/api/pet/frame');
     const chibiFrame = await frameHandler({ method: 'GET', url: '/dsh-soulmate/api/pet/frame?id=pet-idle-01&skin=underwater' });

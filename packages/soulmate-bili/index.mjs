@@ -37,6 +37,8 @@ import {
   appendEngagePhrase,
   composeVisionTimelineSummary,
   fallbackTakeawayWithVisionNote,
+  materializeVisionImages,
+  visionSkipNote,
 } from './vision-summary.mjs';
 
 export {
@@ -50,7 +52,9 @@ export {
   appendEngagePhrase,
   composeVisionTimelineSummary,
   fallbackTakeawayWithVisionNote,
+  materializeVisionImages,
   pickVisionFrames,
+  visionSkipNote,
 } from './vision-summary.mjs';
 export { transcribeViaEndpoint } from './asr-client.mjs';
 
@@ -925,20 +929,36 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
     let visionSummarize = options.visionSummarize;
     if (typeof visionSummarize !== 'function' && typeof options.llmController?.generateReply === 'function') {
       const ctrl = options.llmController;
+      const fetchImpl = options.fetchImpl;
       visionSummarize = async ({ model, prompt, images }) => {
+        const ready = await materializeVisionImages(images, {
+          fetchImpl,
+          soulmateRoot: home?.rootDir || '',
+        });
+        if (!ready.length || !ready.some((img) => str(img?.url).startsWith('data:'))) {
+          throw new Error('no-image-pixels');
+        }
         const content = [
           { type: 'text', text: prompt },
-          ...images.map((img) => ({ type: 'image_url', image_url: { url: img.url } })),
+          ...ready.map((img) => ({ type: 'image_url', image_url: { url: img.url } })),
         ];
-        const out = await ctrl.generateReply({
-          text: prompt,
-          content,
-          images,
-          model,
-          purpose: 'bili-vision-summary',
-        });
-        const text = str(out?.text ?? out?.reply ?? out?.content ?? '').trim();
-        return { text };
+        const attempts = [
+          { text: prompt, content, images: ready, model, purpose: 'bili-vision-summary' },
+          { text: prompt, messages: [{ role: 'user', content }], model, purpose: 'bili-vision-summary' },
+          { prompt, content, images: ready, model, purpose: 'bili-vision-summary' },
+        ];
+        let lastErr = null;
+        for (const args of attempts) {
+          try {
+            const out = await ctrl.generateReply(args);
+            const text = str(out?.text ?? out?.reply ?? out?.content ?? out?.message?.content ?? '').trim();
+            if (text) return { text };
+            lastErr = new Error('empty-response');
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        throw lastErr || new Error('vision-generateReply-failed');
       };
     }
     if (typeof visionSummarize === 'function') {
@@ -954,12 +974,17 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
         digest.summary = `《${digest.title}》 @${digest.author}（${formatClock(digest.durationSec)}）：${vision.takeaway}`;
         digest.visionSummary = vision;
       } else {
-        digest.takeaway = fallbackTakeawayWithVisionNote(digest, { note: '未看画面' });
+        digest.takeaway = fallbackTakeawayWithVisionNote(digest, {
+          channel: vision.channel,
+          error: vision.error,
+        });
         digest.visionSummary = vision;
       }
     } else {
       digest.channels = { ...(digest.channels || {}), visionSummary: 'skip:no-vision-model' };
-      digest.takeaway = fallbackTakeawayWithVisionNote(digest, { note: '未看画面' });
+      digest.takeaway = fallbackTakeawayWithVisionNote(digest, {
+        channel: 'skip:no-vision-model',
+      });
     }
   } else {
     digest.channels = { ...(digest.channels || {}), visionSummary: 'skip:disabled' };

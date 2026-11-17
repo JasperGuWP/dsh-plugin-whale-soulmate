@@ -18,7 +18,14 @@ import {
   maxPickCapForInterval,
   resolveSurfIntervalMinutes,
 } from '../packages/soulmate-core/surf-schedule.mjs';
-import { appendSurfLog, listSurfLog, normalizeSurfEntry } from '../packages/soulmate-core/surf-log.mjs';
+import {
+  appendSurfLog,
+  listSurfLog,
+  listSurfLogDates,
+  listSurfLogPage,
+  normalizeSurfEntry,
+  surfEntryDayKey,
+} from '../packages/soulmate-core/surf-log.mjs';
 
 test('sanitizeCommentText blocks abuse and offsite promo', () => {
   assert.equal(sanitizeCommentText('加微信 abc').ok, false);
@@ -73,6 +80,24 @@ test('surf-log append + filter by platform engagement', async () => {
     assert.ok(!engaged.some((e) => e.videoId === 'BVtest1'));
     const watch = await listSurfLog(home, { platform: 'bilibili', filter: 'watch-only', limit: 10 });
     assert.ok(watch.some((e) => e.videoId === 'BVtest1'));
+    const page = await listSurfLogPage(home, { platform: 'bilibili', filter: 'all', limit: 1, offset: 0 });
+    assert.equal(page.entries.length, 1);
+    assert.equal(page.total, 2);
+    assert.equal(page.hasMore, true);
+    const page2 = await listSurfLogPage(home, { platform: 'bilibili', filter: 'all', limit: 1, offset: 1 });
+    assert.equal(page2.entries.length, 1);
+    assert.equal(page2.hasMore, false);
+    const dates = await listSurfLogDates(home, { platform: 'bilibili', filter: 'all' });
+    assert.ok(dates.length >= 1);
+    assert.ok(dates[0].day && dates[0].count >= 1);
+    const dayPage = await listSurfLogPage(home, {
+      platform: 'bilibili',
+      filter: 'all',
+      day: dates[0].day,
+      limit: 20,
+    });
+    assert.ok(dayPage.entries.every((e) => surfEntryDayKey(e.at) === dates[0].day));
+    assert.equal(dayPage.total, dates[0].count);
 
     const n = normalizeSurfEntry({ bvid: 'BVx', title: 't' }, 'bilibili');
     assert.equal(n.platform, 'bilibili');

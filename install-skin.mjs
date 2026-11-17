@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // install-skin.mjs — 一条命令安装桌宠皮肤（无需改代码 / 重新打包 / 重启）
 // 用法: node install-skin.mjs <皮肤素材文件夹> [--id 皮肤id] [--profile desktop]
-// 素材文件夹 = 含 pet.json + pet-*.webm + pet-*.png 的目录（如 output/pet-video-maid/assets）。
+// 素材文件夹 = 含 pet.json + pet-*.webm + pet-*.png 的目录（如 output/pet-video-my-skin/assets）。
 // 原理: 插件 v0.2.108+ 在每次请求时扫描 assets/pet-*/pet.json，复制进去即生效，
 //       面板下拉框会自动列出新皮肤（形象 / 桌面小伙伴 两处）。
 import { readFileSync, readdirSync, copyFileSync, mkdirSync, existsSync } from 'node:fs';

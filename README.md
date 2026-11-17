@@ -30,11 +30,11 @@
 |:---:|:---:|
 | ![汉风·襦裙 — 舞](docs/showcase/hanfu-dance.gif) | ![Q版·冬装男孩 — 滑雪](docs/showcase/winterboy-ski.gif) |
 
-| 女仆装 · 小鲸 | 蓝色冬装 |
-|:---:|:---:|
-| ![女仆装 — 鲸鱼松饼翻锅](docs/showcase/maid-eat.gif) | ![蓝色冬装 — 卖火柴的小女孩](docs/showcase/bluewinter-game.gif) |
+| 蓝色冬装 |
+|:---:|
+| ![蓝色冬装 — 卖火柴的小女孩](docs/showcase/bluewinter-game.gif) |
 
-女仆装会做饭、打扫、给你按摩；蓝色冬装在雪天划火柴、烤红薯、滑冰转圈。同一套动作概念，各自不同的编排。
+蓝色冬装在雪天划火柴、烤红薯、滑冰转圈。同一套动作概念，各自不同的编排。
 
 桌宠为透明视频精灵：按住甩出去会重力弹跳、落地 Q 弹；单击轻触、双击互动、滚轮缩放。
 
@@ -77,7 +77,7 @@ dsh plugin --profile desktop add ./dsh-plugin-whale-soulmate-<version>.tgz
 ```bash
 # 一条命令：把素材文件夹（含 pet.json + pet-*.webm + pet-*.png）复制进已安装插件
 node install-skin.mjs <素材文件夹> --id <皮肤id>
-# 例：node install-skin.mjs ../output/pet-video-maid/assets --id maid
+# 例：node install-skin.mjs ../output/pet-video-my-skin/assets --id my-skin
 ```
 
 装完在面板「形象 / 桌面小伙伴」下拉里选中新皮肤即可，无需重新打包、无需重启。
@@ -157,9 +157,9 @@ Four bundled skins — switch in Settings → Identity (static avatar and pet sk
 |:---:|:---:|
 | ![Hanfu skin — ribbon dance](docs/showcase/hanfu-dance.gif) | ![Winter boy skin — skiing](docs/showcase/winterboy-ski.gif) |
 
-| Maid · Xiaojing | Blue Winter |
-|:---:|:---:|
-| ![Maid skin — pancake flip](docs/showcase/maid-eat.gif) | ![Blue winter skin — match girl](docs/showcase/bluewinter-game.gif) |
+| Blue Winter |
+|:---:|
+| ![Blue winter skin — match girl](docs/showcase/bluewinter-game.gif) |
 
 Transparent video sprites: flick-throw with gravity bounces and a landing squash; tap to pet, double-tap to nuzzle, wheel to zoom.
 
