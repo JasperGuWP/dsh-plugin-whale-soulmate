@@ -1,7 +1,7 @@
 // Companion art + desktop-pet sprite routes. Binary responses; MIME is sniffed
 // from the bytes so a stale extension never mislabels the served image.
 
-import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   BUNDLED_SPRITE_CHIBI,
@@ -9,6 +9,8 @@ import {
   DEFAULT_SPRITE_URL,
   DEFAULT_SPRITE_MALE_URL,
   PET_SKINS,
+  PET_ASSETS_ROOT,
+  PET_SKIN_ID,
   PET_FRAME_ID,
   PET_VIDEO_NAME,
   PET_VIDEO_MIME,
@@ -17,12 +19,20 @@ import { jsonOut, readJsonBody, spriteMimeOf } from '../http-plumbing.mjs';
 import { loadConfig } from '../state.mjs';
 import { videoNameOf } from '../video-cues.mjs';
 
-export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
+export function assetRoutes({ home, evolvePersona, skins = PET_SKINS, skinsRoot = PET_ASSETS_ROOT }) {
   // Retired skins fold into the default shipped skin so stale saved configs keep
   // working; anything else still fails loud (traversal-proof whitelist).
   const retired = new Set(['classic', 'underwater', 'winterboy']);
   const skinId = (id) => (skins[id] || !retired.has(id) ? id : 'winterboy-chibi');
-  const skinDir = (id) => skins[skinId(id)];
+  // Bundled/injected map first; otherwise discover pet-<id>/pet.json on disk at
+  // request time, so a freshly copied skin folder works without a restart.
+  const skinDir = async (id) => {
+    const key = skinId(id);
+    if (skins[key]) return skins[key];
+    if (!PET_SKIN_ID.test(key)) return undefined;
+    const dir = join(skinsRoot, 'pet-' + key);
+    try { await access(join(dir, 'pet.json')); return dir; } catch { return undefined; }
+  };
   return [
     {
       method: 'GET',
@@ -32,7 +42,7 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
         const conf = await loadConfig(home).catch(() => null);
         const petOn = conf?.pet?.enabled !== false;
         const skin = String(conf?.pet?.skin || (conf?.persona?.gender === 'male' ? 'winterboy-chibi' : 'hanfu'));
-        const dir = skinDir(skin);
+        const dir = await skinDir(skin);
         if (petOn && dir) {
           try {
             const buf = await readFile(join(dir, 'pet-idle-01.png'));
@@ -156,11 +166,42 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
     },
     {
       method: 'GET',
+      paths: ['/dsh-soulmate/api/pet/skins'],
+      // Skin catalog for the panel dropdowns: bundled map first, then any extra
+      // pet-<id>/pet.json folders copied into assets/. Installing a new skin is
+      // just a folder copy — no code change, rebuild, or restart.
+      handler: async () => {
+        const entries = [];
+        const seen = new Set();
+        const push = async (id, dir) => {
+          if (seen.has(id)) return;
+          let manifest;
+          try { manifest = JSON.parse(await readFile(join(dir, 'pet.json'), 'utf8')); } catch { return; }
+          seen.add(id);
+          entries.push({
+            id,
+            label: String(manifest.displayName || id),
+            preview: '/dsh-soulmate/api/pet/frame?id=pet-idle-01&skin=' + encodeURIComponent(id),
+          });
+        };
+        for (const [id, dir] of Object.entries(skins)) await push(id, dir);
+        try {
+          const names = (await readdir(skinsRoot, { withFileTypes: true }))
+            .filter((e) => e.isDirectory() && /^pet-[a-z0-9][a-z0-9-]*$/.test(e.name))
+            .map((e) => e.name)
+            .sort();
+          for (const name of names) await push(name.slice(4), join(skinsRoot, name));
+        } catch { /* assets root missing → bundled list only */ }
+        return jsonOut(200, { ok: true, skins: entries });
+      },
+    },
+    {
+      method: 'GET',
       paths: ['/dsh-soulmate/api/pet/manifest'],
       // Sprite-pack manifest: pet.json verbatim plus stable frame URLs for the client engine.
       handler: async ({ query }) => {
         const skin = skinId(String(query.get('skin') || 'winterboy-chibi'));
-        const dir = skins[skin];
+        const dir = await skinDir(skin);
         if (!dir) return jsonOut(400, { ok: false, error: 'unknown pet skin' });
         const manifest = JSON.parse(await readFile(join(dir, 'pet.json'), 'utf8'));
         const ids = new Set();
@@ -194,7 +235,7 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
       handler: async ({ query }) => {
         const name = String(query.get('name') || '');
         if (!PET_VIDEO_NAME.test(name)) return jsonOut(400, { ok: false, error: 'bad video name' });
-        const dir = skinDir(String(query.get('skin') || ''));
+        const dir = await skinDir(String(query.get('skin') || ''));
         if (!dir) return jsonOut(400, { ok: false, error: 'unknown pet skin' });
         const ext = String(query.get('ext') || '');
         if (ext !== 'webm' && ext !== 'mov') return jsonOut(400, { ok: false, error: 'bad video ext' });
@@ -218,13 +259,41 @@ export function assetRoutes({ home, evolvePersona, skins = PET_SKINS }) {
       handler: async ({ query }) => {
         const id = String(query.get('id') || '');
         if (!PET_FRAME_ID.test(id)) return jsonOut(400, { ok: false, error: 'bad frame id' });
-        const dir = skinDir(String(query.get('skin') || 'winterboy-chibi'));
+        const dir = await skinDir(String(query.get('skin') || 'winterboy-chibi'));
         if (!dir) return jsonOut(400, { ok: false, error: 'unknown pet skin' });
         try {
           const buf = await readFile(join(dir, id + '.png'));
           return {
             status: 200,
             headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' },
+            body: buf,
+          };
+        } catch (err) {
+          if (err?.code === 'ENOENT') return jsonOut(404, { ok: false, error: 'frame not found' });
+          throw err;
+        }
+      },
+    },
+    {
+      method: 'GET',
+      paths: ['/dsh-soulmate/api/live-frame'],
+      // Local ffmpeg stills for «真看抽帧». bvid whitelist + index only — no path traversal.
+      handler: async ({ query }) => {
+        const bvid = String(query.get('bvid') || '').trim();
+        if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) return jsonOut(400, { ok: false, error: 'bad bvid' });
+        const i = Math.max(0, Math.floor(Number(query.get('i')) || 0));
+        if (i > 240) return jsonOut(400, { ok: false, error: 'bad index' });
+        const name = `frame_${String(i + 1).padStart(3, '0')}.jpg`;
+        const file = join(home.rootDir, 'cache', 'live-frames', bvid, name);
+        try {
+          const buf = await readFile(file);
+          return {
+            status: 200,
+            headers: {
+              'content-type': 'image/jpeg',
+              'cache-control': 'private, max-age=3600',
+              'x-content-type-options': 'nosniff',
+            },
             body: buf,
           };
         } catch (err) {

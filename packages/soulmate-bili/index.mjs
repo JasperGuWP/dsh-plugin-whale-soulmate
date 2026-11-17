@@ -15,13 +15,44 @@
 //   * Credentials only live in credentials.json (0600), are never echoed and never stored in
 //     memory: everything written to memory passes through the privacy firewall.
 import { readFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { inflateRawSync, inflateSync } from 'node:zlib';
 import { join } from 'node:path';
 import { atomicWriteJson, loadConfig, loadCredentials } from '../soulmate-core/state.mjs';
 import { appendPrivacyAudit, inspectAndScrub } from '../soulmate-core/privacy-firewall.mjs';
+import { clampSurfMaxPick, resolveSurfIntervalMinutes } from '../soulmate-core/surf-schedule.mjs';
 import { cookieFromCredentials } from './auth/credentials.mjs';
 import { afterSurfWatch } from './engage.mjs';
+import {
+  extractLiveFrames,
+  LIVE_FRAME_DEFAULT_EVERY_SEC,
+} from './live-frames.mjs';
+import {
+  composeVideoTakeaway,
+  scrubTranscriptNoise,
+  transcriptAlignedWithMeta,
+} from './subtitle-align.mjs';
+import { transcribeViaEndpoint } from './asr-client.mjs';
+import {
+  appendEngagePhrase,
+  composeVisionTimelineSummary,
+  fallbackTakeawayWithVisionNote,
+} from './vision-summary.mjs';
+
+export {
+  composeVideoTakeaway,
+  scrubTranscriptNoise,
+  takeawayBodyOf,
+  takeawayMismatchesTitle,
+  transcriptAlignedWithMeta,
+} from './subtitle-align.mjs';
+export {
+  appendEngagePhrase,
+  composeVisionTimelineSummary,
+  fallbackTakeawayWithVisionNote,
+  pickVisionFrames,
+} from './vision-summary.mjs';
+export { transcribeViaEndpoint } from './asr-client.mjs';
 
 export { cookieFromCredentials, saveBiliCredentials } from './auth/credentials.mjs';
 export { BILI_WRITE_ACTIONS, WRITE_LIMITS, biliWriteAction } from './write-actions.mjs';
@@ -33,6 +64,17 @@ export {
   composeSurfSummary,
   pickSurfStills,
 } from './engage.mjs';
+export {
+  clampLiveFrameEverySec,
+  extractLiveFrames,
+  liveFrameBudget,
+  liveFramePublicUrl,
+  LIVE_FRAME_DEFAULT_EVERY_SEC,
+  LIVE_FRAME_EVERY_SEC_PRESETS,
+  LIVE_FRAME_MAX_COUNT,
+  pickPlayurlStream,
+  probeFfmpeg,
+} from './live-frames.mjs';
 export {
   BILI_AUTH_ACTIONS,
   clearBiliCredentials,
@@ -90,61 +132,6 @@ export const formatClock = (sec) => {
 };
 const stripTags = (s) => str(s).replace(/<[^>]*>/g, '');
 const stripControl = (s) => str(s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
-
-/** Subtitle/OCR spam often used for「加微信」ads (homophone garbage + QR bait). */
-const SUBTITLE_SPAM_RE = /投降\s*包村|包村\s*拥|拥\s*威信|威信\s*扫|敲重点\s*[↓⬇]+|加\s*[微薇威]\s*信|薇信|威信|二维码|扫一扫|关注公众号|私信领取|免费领取/i;
-
-/**
- * Strip ad/OCR spam and collapse repeated chunks from subtitle/desc text.
- * Exported for unit tests.
- */
-export function scrubTranscriptNoise(text) {
-  let t = stripControl(stripTags(text)).replace(/\s+/g, ' ').trim();
-  if (!t) return '';
-  // Drop sentences/clauses that look like WeChat-ad OCR spam.
-  t = t
-    .split(/(?<=[。！？\n])|(?=敲重点)/)
-    .map((part) => part.trim())
-    .filter((part) => part && !SUBTITLE_SPAM_RE.test(part) && !/^(↓|⬇|\.|…|-)+$/.test(part))
-    .join('');
-  // Collapse a short phrase repeated 3+ times (e.g.「投降 包村 拥 威信 扫」loops).
-  t = t.replace(/(.{4,24}?)(?:\s*\1){2,}/g, '$1');
-  t = t.replace(/(投降\s*包村\s*拥\s*威信\s*扫\s*)+/g, '');
-  t = t.replace(/(敲重点\s*[↓⬇]*\s*)+/g, '');
-  return t.replace(/\s+/g, ' ').trim();
-}
-
-/**
- * Build a short「讲了什么 + 观感」takeaway — never dump raw spammy subtitles.
- */
-export function composeVideoTakeaway({
-  title = '',
-  desc = '',
-  transcript = '',
-  tags = [],
-  worthScore = 0,
-} = {}) {
-  const cleanedTx = scrubTranscriptNoise(transcript);
-  const cleanedDesc = scrubTranscriptNoise(desc);
-  const source = cleanedTx.length >= 40 ? cleanedTx : (cleanedDesc.length >= 12 ? cleanedDesc : '');
-  let content = '';
-  if (source) {
-    // Prefer early informative slice after scrub; avoid starting mid-ad residue.
-    content = clip(source.replace(/^[：:\-—\s]+/, ''), 160);
-  } else {
-    const tagBits = (Array.isArray(tags) ? tags : []).map((x) => str(x).trim()).filter(Boolean).slice(0, 4);
-    content = tagBits.length
-      ? `从标题与标签看，偏「${tagBits.join('、')}」方向`
-      : `从标题看是「${clip(stripControl(title), 40)}」`;
-  }
-  const score = num(worthScore, 0);
-  const opinion = score >= 13
-    ? '观感：信息密度还可以，值得记一笔。'
-    : score >= 7
-      ? '观感：一般，挑着看就行。'
-      : '观感：水分偏多，下次换方向。';
-  return `讲了什么：${content} ${opinion}`;
-}
 
 function decodeEntities(s) {
   return str(s)
@@ -216,6 +203,32 @@ export function parseVideoTarget(urlOrId) {
   return null;
 }
 
+const MIXIN_TAB = Object.freeze([
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+  33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61,
+  26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36,
+  20, 34, 44, 52,
+]);
+
+function mixinKeyFromNav(data) {
+  const wbi = data?.wbi_img ?? {};
+  const keyOf = (u) => str(u).split('/').pop()?.split('.')[0] ?? '';
+  const raw = keyOf(wbi.img_url) + keyOf(wbi.sub_url);
+  return MIXIN_TAB.map((i) => raw[i] || '').join('').slice(0, 32);
+}
+
+export function parseArticleId(input) {
+  if (isObject(input) && (input.cvid || input.id || input.cv)) {
+    return parseArticleId(input.cvid || input.id || input.cv);
+  }
+  const text = str(input).trim();
+  if (!text) return null;
+  const cv = text.match(/(?:article|read)\/cv(\d{1,12})\b/i) || text.match(/\bcv(\d{1,12})\b/i);
+  if (cv) return Number(cv[1]);
+  if (/^\d{1,12}$/.test(text)) return Number(text);
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // HTTP plumbing (injectable fetch)
 // ---------------------------------------------------------------------------
@@ -226,9 +239,11 @@ function makeClient(options = {}) {
   const baseUrl = str(options.baseUrl || BILI_API_BASE).replace(/\/+$/, '');
   const timeoutMs = num(options.timeoutMs, 15_000);
   const cookie = str(options.cookie);
+  let mixinCache = { key: '', at: 0 };
   const headers = (extra = {}) => ({
     'user-agent': UA,
     referer: 'https://www.bilibili.com/',
+    origin: 'https://www.bilibili.com',
     accept: 'application/json, text/plain, */*',
     ...(cookie ? { cookie } : {}),
     ...extra,
@@ -245,18 +260,38 @@ function makeClient(options = {}) {
   };
   const json = async (url, init) => {
     const res = await request(url, init);
-    const body = await res.json();
-    return body;
+    return res.json();
   };
-  /** Bilibili API envelope: `{ code, message, data }`. */
-  const api = async (path, params = {}, init) => {
+  const apiRaw = async (path, params = {}, init) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
     const url = `${baseUrl}${path}${[...q].length ? `?${q}` : ''}`;
     const body = await json(url, init);
     if (!isObject(body)) throw new Error(`unexpected response from ${path}`);
-    if (body.code !== undefined && body.code !== 0) throw new Error(`${path}: code ${body.code} ${str(body.message || body.msg)}`.trim());
+    if (body.code !== undefined && body.code !== 0) {
+      throw new Error(`${path}: code ${body.code} ${str(body.message || body.msg)}`.trim());
+    }
     return body.data ?? body;
+  };
+  const signParams = async (params = {}) => {
+    if (!mixinCache.key || Date.now() - mixinCache.at > 10 * 60 * 1000) {
+      const nav = await apiRaw('/x/web-interface/nav');
+      mixinCache = { key: mixinKeyFromNav(nav), at: Date.now() };
+    }
+    const wts = Math.floor(Date.now() / 1000);
+    const merged = { ...params, wts };
+    const sorted = Object.keys(merged).sort();
+    const query = sorted
+      .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(String(merged[k]).replace(/[!'()*]/g, ''))}`)
+      .join('&');
+    return { ...merged, w_rid: createHash('md5').update(query + mixinCache.key).digest('hex') };
+  };
+  /** Pass init.wbi=true for risk-controlled endpoints (search / popular). */
+  const api = async (path, params = {}, init = {}) => {
+    const signed = init.wbi ? await signParams(params) : params;
+    const rest = { ...init };
+    delete rest.wbi;
+    return apiRaw(path, signed, rest);
   };
   /** Raw bytes -> text, transparently inflating Bilibili's raw-deflate danmaku XML. */
   const text = async (url, init) => {
@@ -274,7 +309,7 @@ function makeClient(options = {}) {
     }
     return plain;
   };
-  return { baseUrl, fetchImpl, request, json, api, text, headers };
+  return { baseUrl, fetchImpl, request, json, api, apiRaw, signParams, text, headers };
 }
 
 function urlPathOf(url) {
@@ -289,16 +324,19 @@ function urlPathOf(url) {
 // 2. Six-channel video understanding
 // ---------------------------------------------------------------------------
 
-/** Pick the best subtitle track: human zh > AI zh > anything. */
-function pickSubtitleTrack(tracks) {
+/** Pick the best subtitle track: human zh > AI zh > zh* ; avoid en when title is CJK-heavy. */
+function pickSubtitleTrack(tracks, { preferCjk = false } = {}) {
   const list = Array.isArray(tracks) ? tracks.filter((t) => t && (t.subtitle_url || t.url)) : [];
   if (!list.length) return null;
   const lan = (t) => str(t.lan).toLowerCase();
+  const isEn = (t) => /^(en|ai-en)/.test(lan(t)) || /english/i.test(str(t.lan_doc));
+  const pool = preferCjk ? list.filter((t) => !isEn(t)) : list;
+  const use = pool.length ? pool : list;
   return (
-    list.find((t) => /^zh/.test(lan(t)) && !/^ai-/.test(lan(t))) ||
-    list.find((t) => /^ai-zh/.test(lan(t))) ||
-    list.find((t) => /^zh/.test(lan(t))) ||
-    list[0]
+    use.find((t) => /^zh/.test(lan(t)) && !/^ai-/.test(lan(t))) ||
+    use.find((t) => /^ai-zh/.test(lan(t))) ||
+    use.find((t) => /^zh/.test(lan(t))) ||
+    use[0]
   );
 }
 
@@ -320,7 +358,11 @@ async function fetchSubtitle(client, view, options) {
     return { segments, lang: str(options.mockData.subtitleLang) || 'mock', source: 'mock' };
   }
   const data = await client.api('/x/player/v2', { bvid: view.bvid, cid: view.cid });
-  const track = pickSubtitleTrack(data?.subtitle?.subtitles);
+  const titleHint = str(view.title || options.titleHint || '');
+  const cjk = (titleHint.match(/[\u4e00-\u9fff]/g) || []).length;
+  const latin = (titleHint.match(/[A-Za-z]/g) || []).length;
+  const preferCjk = cjk >= 4 && cjk >= latin;
+  const track = pickSubtitleTrack(data?.subtitle?.subtitles, { preferCjk });
   if (!track) return { segments: [], lang: '', source: 'none' };
   const body = await client.json(normalizeUrl(track.subtitle_url || track.url));
   return { segments: toSubtitleSegments(body), lang: str(track.lan), langDoc: str(track.lan_doc), source: /^ai-/.test(str(track.lan)) ? 'ai' : 'cc' };
@@ -571,7 +613,7 @@ export async function digestBiliVideo(target, options = {}) {
 
   // ---- channels 2-5 run in parallel; each one fails soft
   const [subRes, shotRes, dmRes, cmRes] = await Promise.allSettled([
-    fetchSubtitle(client, { bvid, cid }, options),
+    fetchSubtitle(client, { bvid, cid, title: str(view.title) }, { ...options, titleHint: str(view.title) }),
     (async () => {
       const data = mock?.videoshot ?? (await client.api('/x/player/videoshot', { ...idArgs, index: 1 }));
       return buildStoryboard(data, options.maxStoryboardFrames);
@@ -594,12 +636,25 @@ export async function digestBiliVideo(target, options = {}) {
     warnings.push(`${name}: ${errMsg(res.reason)}`);
     return fallback;
   };
-  const subtitle = settle('subtitle', subRes, { segments: [], lang: '', source: 'none' }, (v) => !v.segments.length);
+  let subtitle = settle('subtitle', subRes, { segments: [], lang: '', source: 'none' }, (v) => !v.segments.length);
   const storyboard = settle('videoshot', shotRes, { frames: [], sheets: [], frameCount: 0, grid: null }, (v) => !v.frames.length);
   const danmakuList = settle('danmaku', dmRes, [], (v) => !v.length);
   const hotComments = settle('hotComments', cmRes, [], (v) => !v.length);
 
-  const transcriptText = subtitle.segments.map((s) => s.text).join('\n');
+  let transcriptText = subtitle.segments.map((s) => s.text).join('\n');
+  const titleProbe = clip(stripControl(str(view.title)).trim(), 120);
+  const descProbe = clip(stripControl(str(view.desc)).trim(), 600);
+  const align = transcriptAlignedWithMeta({
+    title: titleProbe,
+    desc: descProbe,
+    transcript: transcriptText,
+  });
+  if (!align.aligned) {
+    warnings.push(`subtitle-mismatch: ${align.reason} (标题/简介与字幕对不上，已丢弃字幕正文)`);
+    channels.subtitle = `mismatch:${align.reason}`;
+    subtitle = { segments: [], lang: subtitle.lang, source: 'discarded-mismatch' };
+    transcriptText = '';
+  }
   const cleanedTranscript = scrubTranscriptNoise(transcriptText);
   const dm = analyzeDanmaku(danmakuList);
   const aiRatio = computeAiCommentRatio(hotComments);
@@ -789,6 +844,127 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
   const digest = options.digest ?? (await digestBiliVideo(input.target ?? input.url ?? input.bvid, { keywords: conf.extensions?.biliKeywords, ...options, cookie }));
   if (!digest.ok) return digest;
 
+  // Live frames + optional ASR + vision timeline BEFORE memory/surf so takeaway is final.
+  const confLive = await loadConfig(home);
+  const everySec = options.liveFrameEverySec ?? confLive.extensions?.biliLiveFrameEverySec ?? LIVE_FRAME_DEFAULT_EVERY_SEC;
+  const wantLive = options.liveFrameWatch === true
+    || (options.liveFrameWatch !== false && confLive.extensions?.biliLiveFrameWatch === true);
+  if (wantLive) {
+    try {
+      const client = makeClient({ ...options, cookie });
+      const live = await extractLiveFrames({
+        client,
+        home,
+        bvid: digest.bvid,
+        cid: digest.cid,
+        durationSec: digest.durationSec,
+        everySec,
+        cookie,
+        ffmpegPath: options.ffmpegPath ?? confLive.extensions?.biliFfmpegPath,
+        nowMs: options.nowMs,
+      });
+      digest.liveFrames = live;
+      const ch = { ...(digest.channels || {}) };
+      if (live.ok && Array.isArray(live.frames) && live.frames.length) {
+        digest.liveFrameStills = live.frames;
+        const report = digest.coverage?.report || '';
+        const extra = `真看抽帧 ${live.frames.length} 张（每 ${live.everySec}s${live.truncated ? '，已截断' : ''}）`;
+        digest.coverage = {
+          ...(digest.coverage || {}),
+          liveFrames: live.frames.length,
+          liveEverySec: live.everySec,
+          liveTruncated: !!live.truncated,
+          report: report ? `${report}；${extra}` : extra,
+        };
+        ch.liveFrames = 'ok';
+      } else {
+        ch.liveFrames = `skip:${live.reason || 'failed'}`;
+        digest.coverage = {
+          ...(digest.coverage || {}),
+          liveFrames: 0,
+          liveBlockedReason: live.reason || 'failed',
+        };
+      }
+      digest.channels = ch;
+    } catch (err) {
+      digest.liveFrames = { ok: false, reason: 'error', error: errMsg(err) };
+      digest.channels = { ...(digest.channels || {}), liveFrames: `error: ${errMsg(err)}` };
+    }
+  }
+
+  const transcriptEmpty = !str(digest.transcript || digest.subtitle?.text).trim()
+    || digest.subtitle?.source === 'discarded-mismatch';
+  const asrEndpoint = str(options.asrEndpoint ?? confLive.extensions?.biliAsrEndpoint).trim();
+  if (transcriptEmpty && asrEndpoint) {
+    const asr = await transcribeViaEndpoint({
+      endpoint: asrEndpoint,
+      apiKey: options.asrApiKey ?? confLive.extensions?.biliAsrApiKey ?? '',
+      bvid: digest.bvid,
+      audioUrl: options.asrAudioUrl || '',
+      durationSec: digest.durationSec,
+      fetchImpl: options.fetchImpl,
+    });
+    digest.channels = { ...(digest.channels || {}), asr: asr.channel };
+    if (asr.ok && asr.text) {
+      digest.transcript = asr.text;
+      digest.subtitle = {
+        ...(digest.subtitle || {}),
+        text: asr.text,
+        source: 'asr-endpoint',
+        available: true,
+        segments: asr.segments || [],
+      };
+    }
+  } else if (transcriptEmpty) {
+    digest.channels = { ...(digest.channels || {}), asr: 'skip:unconfigured' };
+  }
+
+  const wantVision = options.visionSummary === true
+    || (options.visionSummary !== false && confLive.extensions?.biliVisionSummary !== false);
+  if (wantVision) {
+    let visionSummarize = options.visionSummarize;
+    if (typeof visionSummarize !== 'function' && typeof options.llmController?.generateReply === 'function') {
+      const ctrl = options.llmController;
+      visionSummarize = async ({ model, prompt, images }) => {
+        const content = [
+          { type: 'text', text: prompt },
+          ...images.map((img) => ({ type: 'image_url', image_url: { url: img.url } })),
+        ];
+        const out = await ctrl.generateReply({
+          text: prompt,
+          content,
+          images,
+          model,
+          purpose: 'bili-vision-summary',
+        });
+        const text = str(out?.text ?? out?.reply ?? out?.content ?? '').trim();
+        return { text };
+      };
+    }
+    if (typeof visionSummarize === 'function') {
+      const vision = await composeVisionTimelineSummary({
+        digest,
+        everySec,
+        visionSummarize,
+        model: options.visionModel ?? confLive.extensions?.biliVisionModel ?? '',
+      });
+      digest.channels = { ...(digest.channels || {}), visionSummary: vision.channel };
+      if (vision.ok && vision.takeaway) {
+        digest.takeaway = vision.takeaway;
+        digest.summary = `《${digest.title}》 @${digest.author}（${formatClock(digest.durationSec)}）：${vision.takeaway}`;
+        digest.visionSummary = vision;
+      } else {
+        digest.takeaway = fallbackTakeawayWithVisionNote(digest, { note: '未看画面' });
+        digest.visionSummary = vision;
+      }
+    } else {
+      digest.channels = { ...(digest.channels || {}), visionSummary: 'skip:no-vision-model' };
+      digest.takeaway = fallbackTakeawayWithVisionNote(digest, { note: '未看画面' });
+    }
+  } else {
+    digest.channels = { ...(digest.channels || {}), visionSummary: 'skip:disabled' };
+  }
+
   const notes = composeNotes(digest, conf);
   const toYouNote = str(input.toYouNote).trim() || notes.toYou;
   const innerNote = str(input.innerNote).trim() || notes.inner;
@@ -863,11 +1039,17 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
 
   // Surf journal + optional persona engage (like / fav / comment / follow).
   try {
-    const conf = await loadConfig(home);
+    const confSurf = await loadConfig(home);
     recorded.surf = await afterSurfWatch(home, {
       digest,
-      persona: conf.persona,
-      options: { nowMs: options.nowMs, fetchImpl: options.fetchImpl, decideEngage: options.decideEngage },
+      persona: confSurf.persona,
+      options: {
+        nowMs: options.nowMs,
+        fetchImpl: options.fetchImpl,
+        decideEngage: options.decideEngage,
+        visionSummarize: options.visionSummarize,
+        llmController: options.llmController,
+      },
     });
   } catch (err) {
     recorded.surf = { ok: false, error: errMsg(err) };
@@ -882,31 +1064,211 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
 
 async function searchVideos(client, keyword, limit, { order = 'pubdate' } = {}) {
   // Default pubdate：避免永远冲到播放量榜上的过时爆款（装机圣经一类）。
+  // WBI 签名：未签名时搜索常返回 code -412（风控），表现为「关键词全挂、只捡到零星结果」。
   const data = await client.api('/x/web-interface/search/type', {
     search_type: 'video',
     keyword,
     order: order === 'click' ? 'click' : 'pubdate',
     page: 1,
-  });
+  }, { wbi: true });
   const rows = Array.isArray(data?.result) ? data.result : [];
   return rows
     .map((r) => ({
+      kind: 'video',
       bvid: str(r.bvid) || parseVideoTarget(str(r.arcurl))?.bvid || '',
       title: decodeEntities(stripTags(r.title)),
       author: str(r.author),
       play: num(r.play),
       pubdate: num(r.pubdate),
       keyword,
+      source: 'keyword',
     }))
     .filter((r) => r.bvid)
     .slice(0, limit);
 }
 
+async function fetchPopularVideos(client, limit = 12) {
+  const data = await client.api('/x/web-interface/popular', { ps: clamp(limit, 1, 50), pn: 1 }, { wbi: true });
+  const rows = Array.isArray(data?.list) ? data.list : Array.isArray(data) ? data : [];
+  return rows
+    .map((r) => {
+      const owner = isObject(r.owner) ? r.owner : {};
+      return {
+        kind: 'video',
+        bvid: str(r.bvid),
+        title: decodeEntities(stripTags(r.title)),
+        author: str(owner.name || r.author),
+        play: num(r.stat?.view ?? r.play),
+        pubdate: num(r.pubdate),
+        keyword: '(热门)',
+        source: 'popular',
+      };
+    })
+    .filter((r) => r.bvid)
+    .slice(0, limit);
+}
+
+async function searchArticles(client, keyword, limit = 8) {
+  const data = await client.api('/x/web-interface/search/type', {
+    search_type: 'article',
+    keyword,
+    order: 'pubdate',
+    page: 1,
+  }, { wbi: true });
+  const rows = Array.isArray(data?.result) ? data.result : [];
+  return rows
+    .map((r) => ({
+      kind: 'article',
+      cvid: num(r.id || r.cvid),
+      title: decodeEntities(stripTags(r.title)),
+      author: str(r.author || r.uname),
+      pubdate: num(r.pubdate || r.publish_time),
+      keyword,
+      source: 'article-keyword',
+    }))
+    .filter((r) => r.cvid > 0)
+    .slice(0, limit);
+}
+
+async function fetchRecommendArticles(client, limit = 8) {
+  // Soft endpoint: some regions/accounts return empty; never hard-fail the surf round.
+  try {
+    const data = await client.api('/x/article/recommends', { cid: 0, pn: 1, ps: clamp(limit, 1, 30) });
+    const rows = Array.isArray(data?.articles) ? data.articles
+      : Array.isArray(data?.list) ? data.list
+        : Array.isArray(data) ? data : [];
+    return rows
+      .map((r) => ({
+        kind: 'article',
+        cvid: num(r.id || r.cvid),
+        title: decodeEntities(stripTags(r.title)),
+        author: str(r.author?.name || r.author || r.uname),
+        pubdate: num(r.publish_time || r.ctime || r.pubdate),
+        keyword: '(热门文章)',
+        source: 'article-popular',
+      }))
+      .filter((r) => r.cvid > 0)
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Patrol: search by interest keywords, skip already-seen BV ids (bili-seen.json),
- * watch the top `maxPick` videos and report.
- * options: { keywords, maxPick = 2, candidates, force, perKeyword, deepWatch, maxStoryboardFrames, fetchImpl, baseUrl, ... }
- * deepWatch (or extensions.biliAutoSurfDeepWatch): more storyboard frames + rich digest fields in the return payload.
+ * Read one Bilibili 专栏 article (cv id).
+ */
+export async function digestBiliArticle(target, options = {}) {
+  const cvid = parseArticleId(target);
+  if (!cvid) return { ok: false, error: `无法识别专栏 id（cv…）：${clip(str(target), 60)}` };
+  const client = makeClient(options);
+  let view = null;
+  let info = null;
+  try {
+    view = await client.api('/x/article/view', { id: cvid });
+  } catch (err) {
+    try {
+      info = await client.api('/x/article/viewinfo', { id: cvid });
+    } catch (err2) {
+      return { ok: false, error: `读取专栏失败：${errMsg(err)}; ${errMsg(err2)}`, cvid };
+    }
+  }
+  const title = clip(stripControl(str(view?.title || info?.title)).trim(), 120) || `cv${cvid}`;
+  const author = clip(str(view?.author?.name || info?.author_name || view?.author || ''), 40) || '未知作者';
+  const html = str(view?.content || view?.origin_content || '');
+  const body = scrubTranscriptNoise(stripTags(html).replace(/&nbsp;/g, ' '));
+  const summary = clip(body || str(view?.summary || info?.summary || ''), 280);
+  const banner = normalizeUrl(view?.banner_url || view?.image_urls?.[0] || info?.banner_url || '');
+  const url = `https://www.bilibili.com/read/cv${cvid}`;
+  const takeaway = summary
+    ? `讲了什么：${summary}`
+    : `讲了什么：专栏《${title}》（正文未取到，仅标题）`;
+  return {
+    ok: true,
+    kind: 'article',
+    cvid,
+    id: `cv${cvid}`,
+    title,
+    author,
+    url,
+    coverUrl: banner,
+    summary: `《${title}》 @${author}：${takeaway}`,
+    takeaway,
+    transcript: body,
+    worthScore: body.length >= 400 ? 11 : body.length >= 80 ? 8 : 5,
+    coverage: {
+      depth: body.length >= 200 ? 'solid' : 'partial',
+      subtitle: body.length >= 40,
+      report: body.length ? `专栏正文已读（约 ${body.length} 字）` : '专栏正文未读到',
+    },
+  };
+}
+
+export async function watchAndRecordArticle(soulmateService, input = {}, options = {}) {
+  if (!soulmateService || typeof soulmateService.retainFact !== 'function') {
+    throw new Error('[soulmate-bili] watchAndRecordArticle requires the ctx.soulmate service');
+  }
+  const home = soulmateService.home;
+  const cookie = options.cookie === undefined ? await cookieFromCredentials(home) : options.cookie;
+  const digest = options.digest ?? (await digestBiliArticle(input.target ?? input.cvid ?? input.id, { ...options, cookie }));
+  if (!digest.ok) return digest;
+  const seenKey = `cv${digest.cvid}`;
+  const factContent = `[article] 《${digest.title}》 @${digest.author} · cv${digest.cvid} · ${digest.takeaway} · ${digest.url}`;
+  const fact = await soulmateService.retainFact({
+    id: `f_bili_${seenKey}`,
+    topic: `[article] ${clip(digest.title, 60)}`,
+    category: 'article',
+    content: factContent,
+    importance: 3,
+    halfLifeDays: 45,
+    nowMs: options.nowMs,
+  });
+  const epTitle = `看专栏 · ${clip(digest.title, 40)}`;
+  const toYou = await soulmateService.recordEpisode({
+    kind: 'to-you',
+    title: epTitle,
+    content: `读了专栏《${digest.title}》（${digest.url}）。\n\n${digest.takeaway}`,
+    nowMs: options.nowMs,
+  });
+  const inner = await soulmateService.recordEpisode({
+    kind: 'inner',
+    title: epTitle,
+    content: `记一笔专栏 cv${digest.cvid}：《${digest.title}》。${digest.takeaway}`,
+    visibility: 'private',
+    nowMs: options.nowMs,
+  });
+  await markVideoSeen(home, seenKey, { title: digest.title, kind: 'article', worthScore: digest.worthScore }, options.nowMs);
+  try {
+    const { appendSurfLog } = await import('../soulmate-core/surf-log.mjs');
+    await appendSurfLog(home, {
+      videoId: seenKey,
+      bvid: seenKey,
+      url: digest.url,
+      title: digest.title,
+      author: digest.author,
+      coverUrl: digest.coverUrl,
+      worthScore: digest.worthScore,
+      summary: digest.takeaway,
+      actions: { like: false, favorite: false, comment: false, follow: false, skippedReasons: ['article'] },
+      at: new Date(options.nowMs ?? Date.now()).toISOString(),
+    });
+  } catch {
+    // surf log is best-effort
+  }
+  return {
+    ok: true,
+    kind: 'article',
+    cvid: digest.cvid,
+    id: seenKey,
+    title: digest.title,
+    worthScore: digest.worthScore,
+    digest,
+    recorded: { fact, toYou, inner },
+  };
+}
+
+/**
+ * Patrol: keywords + optional 热门视频/专栏, skip already-seen ids (bili-seen.json),
+ * watch up to `maxPick` items (default: config.extensions.biliAutoSurfMaxPick).
  */
 export async function runAutonomousSurfRound(soulmateService, options = {}) {
   const home = soulmateService.home;
@@ -917,10 +1279,19 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
   const keywords = (Array.isArray(options.keywords) && options.keywords.length ? options.keywords : conf.extensions?.biliKeywords?.length ? conf.extensions.biliKeywords : DEFAULT_SURF_KEYWORDS)
     .map((k) => str(k).trim())
     .filter(Boolean);
-  const maxPick = clamp(Math.floor(num(options.maxPick, 2)), 1, 5);
+  const intervalMinutes = resolveSurfIntervalMinutes(conf.extensions || {});
+  const confPick = Math.floor(num(conf.extensions?.biliAutoSurfMaxPick, 2));
+  const maxPick = clampSurfMaxPick(
+    Number.isFinite(options.maxPick) ? options.maxPick : confPick,
+    intervalMinutes,
+  );
   const perKeyword = clamp(Math.floor(num(options.perKeyword, 8)), 1, 20);
   const deepWatch = options.deepWatch === true
     || (options.deepWatch !== false && conf.extensions?.biliAutoSurfDeepWatch === true);
+  const includePopular = options.includePopular === true
+    || (options.includePopular !== false && conf.extensions?.biliSurfIncludePopular !== false);
+  const includeArticles = options.includeArticles === true
+    || (options.includeArticles !== false && conf.extensions?.biliSurfIncludeArticles !== false);
   const maxAgeDays = clamp(
     Math.floor(num(options.maxAgeDays ?? conf.extensions?.biliAutoSurfMaxAgeDays, 180)),
     7,
@@ -937,15 +1308,35 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
   const errors = [];
   const pool = [];
   let searchOk = 0;
+  let popularCount = 0;
+  let articleCandidateCount = 0;
   if (Array.isArray(options.candidates) && options.candidates.length) {
     for (const c of options.candidates) {
+      if (isObject(c) && (c.kind === 'article' || c.cvid)) {
+        const cvid = parseArticleId(c.cvid || c.id || c);
+        if (cvid) {
+          pool.push({
+            kind: 'article',
+            cvid,
+            id: `cv${cvid}`,
+            title: str(c.title),
+            keyword: '(candidates)',
+            pubdate: num(c.pubdate),
+            source: 'candidates',
+          });
+        }
+        continue;
+      }
       const p = parseVideoTarget(isObject(c) ? c.bvid || c.url || c : c);
       if (p?.bvid) {
         pool.push({
+          kind: 'video',
           bvid: p.bvid,
+          id: p.bvid,
           title: isObject(c) ? str(c.title) : '',
           keyword: '(candidates)',
           pubdate: num(isObject(c) ? c.pubdate : 0),
+          source: 'candidates',
         });
       }
     }
@@ -963,7 +1354,45 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     }
     // round-robin so every interest gets a chance at the top slots
     for (let i = 0; i < perKeyword; i++) for (const l of lists) if (l[i]) pool.push(l[i]);
-    if (!searchOk && keywords.length) return { ok: false, searchedKeywords: keywords, error: `所有关键词搜索都失败了：${errors.join('; ')}`, errors };
+
+    if (includePopular) {
+      try {
+        const hot = await fetchPopularVideos(client, Math.max(8, maxPick * 3));
+        popularCount = hot.length;
+        for (const row of hot) pool.push(row);
+      } catch (err) {
+        errors.push(`热门: ${errMsg(err)}`);
+      }
+    }
+
+    if (includeArticles) {
+      const articleLists = [];
+      for (const kw of keywords.slice(0, 4)) {
+        try {
+          articleLists.push(await searchArticles(client, kw, 4));
+        } catch (err) {
+          errors.push(`专栏:${kw}: ${errMsg(err)}`);
+          articleLists.push([]);
+        }
+      }
+      try {
+        articleLists.push(await fetchRecommendArticles(client, 8));
+      } catch (err) {
+        errors.push(`专栏热门: ${errMsg(err)}`);
+      }
+      for (let i = 0; i < 8; i++) {
+        for (const l of articleLists) {
+          if (l[i]) {
+            pool.push(l[i]);
+            articleCandidateCount += 1;
+          }
+        }
+      }
+    }
+
+    if (!searchOk && !popularCount && !articleCandidateCount && keywords.length) {
+      return { ok: false, searchedKeywords: keywords, error: `所有关键词搜索都失败了：${errors.join('; ')}`, errors };
+    }
   }
 
   const seen = await readSeenLedger(home);
@@ -972,18 +1401,18 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
   let skippedSeenCount = 0;
   let skippedOldCount = 0;
   for (const c of pool) {
-    if (taken.has(c.bvid)) continue;
-    taken.add(c.bvid);
-    if (seen[c.bvid]) {
+    const id = c.kind === 'article' ? `cv${c.cvid}` : c.bvid;
+    if (!id || taken.has(id)) continue;
+    taken.add(id);
+    if (seen[id]) {
       skippedSeenCount += 1;
       continue;
     }
-    // Skip stale viral hits when search returned a pubdate (candidates may omit it).
     if (c.pubdate > 0 && c.pubdate < minPubSec) {
       skippedOldCount += 1;
       continue;
     }
-    picked.push(c);
+    picked.push({ ...c, id });
   }
 
   const videos = [];
@@ -991,6 +1420,32 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
   for (const c of picked) {
     if (watched >= maxPick) break;
     try {
+      if (c.kind === 'article') {
+        const res = await watchAndRecordArticle(soulmateService, { target: c.cvid }, net);
+        if (res.ok) {
+          watched += 1;
+          videos.push({
+            ok: true,
+            kind: 'article',
+            cvid: res.cvid,
+            id: res.id,
+            title: res.title,
+            author: res.digest.author,
+            worthScore: res.worthScore,
+            url: res.digest.url,
+            keyword: c.keyword,
+            source: c.source,
+            takeaway: res.digest.takeaway,
+            coverage: res.digest.coverage,
+            howIWatched: res.digest.coverage?.report || '',
+          });
+        } else {
+          videos.push({ ok: false, kind: 'article', cvid: c.cvid, error: res.error });
+          errors.push(`cv${c.cvid}: ${res.error}`);
+          await markVideoSeen(home, `cv${c.cvid}`, { failed: true, kind: 'article' }, options.nowMs);
+        }
+        continue;
+      }
       const res = await watchAndRecordVideo(soulmateService, { target: c.bvid }, { ...net, maxStoryboardFrames: frameCap });
       if (res.ok) {
         watched += 1;
@@ -999,6 +1454,7 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
         if (deepWatch) {
           videos.push({
             ok: true,
+            kind: 'video',
             deepWatch: true,
             bvid: res.bvid,
             title: res.title,
@@ -1006,6 +1462,7 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
             worthScore: res.worthScore,
             url: d.url,
             keyword: c.keyword,
+            source: c.source,
             desc: d.desc,
             takeaway: d.takeaway,
             summary: d.summary,
@@ -1020,6 +1477,7 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
         } else {
           videos.push({
             ok: true,
+            kind: 'video',
             deepWatch: false,
             bvid: res.bvid,
             title: res.title,
@@ -1027,20 +1485,20 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
             worthScore: res.worthScore,
             url: d.url,
             keyword: c.keyword,
+            source: c.source,
             takeaway: d.takeaway,
             coverage: d.coverage ? { depth: d.coverage.depth, report: d.coverage.report } : undefined,
             howIWatched: d.coverage?.report || '',
           });
         }
       } else {
-        videos.push({ ok: false, bvid: c.bvid, error: res.error });
+        videos.push({ ok: false, kind: 'video', bvid: c.bvid, error: res.error });
         errors.push(`${c.bvid}: ${res.error}`);
-        // an unreadable video must not be retried forever
         await markVideoSeen(home, c.bvid, { failed: true }, options.nowMs);
       }
     } catch (err) {
-      videos.push({ ok: false, bvid: c.bvid, error: errMsg(err) });
-      errors.push(`${c.bvid}: ${errMsg(err)}`);
+      videos.push({ ok: false, kind: c.kind || 'video', bvid: c.bvid, cvid: c.cvid, error: errMsg(err) });
+      errors.push(`${c.id || c.bvid}: ${errMsg(err)}`);
     }
   }
   return {
@@ -1051,7 +1509,12 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     skippedSeenCount,
     skippedOldCount,
     maxAgeDays,
+    maxPick,
     searchOrder,
+    includePopular,
+    includeArticles,
+    popularCount,
+    articleCandidateCount,
     candidateCount: pool.length,
     videos,
     ...(errors.length ? { errors } : {}),

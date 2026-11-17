@@ -3,21 +3,34 @@ const React = require('react')
 const h = React.createElement
 const {
   TRAIT_LABELS,
-  DEFAULT_SPRITE_URL,
   MBTI_TYPES,
   MBTI_AXES,
   MBTI_AXIS_LABELS,
   MBTI_BLURBS,
 } = require('./panel-draft.mjs')
-const { companionPronoun } = require('./util.mjs')
+const { companionPronoun, api } = require('./util.mjs')
 const { paintBalloonMini } = require('./balloon-sprite.mjs')
+const { field, BUNDLED_LOOKS, skinFrameUrl, lookPetCard } = require('./panel-pet.mjs')
 
-/** A labelled control row. */
-function field(key, label, control) {
-  return h('label', { key, className: 'sm-panel-field' }, [
-    h('span', { key: 'label' }, label),
-    control,
-  ])
+/** Hint under «真看抽帧»: login + ffmpeg readiness from bili/auth status. */
+function LiveFrameReadyHint() {
+  const [status, setStatus] = React.useState(null)
+  React.useEffect(() => {
+    let alive = true
+    api('bili/auth').then((s) => { if (alive && s && s.ok !== false) setStatus(s) }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+  if (!status) return h('p', { className: 'sm-panel-muted' }, '正在检查 ffmpeg / 登录状态…')
+  if (!status.loggedIn) {
+    return h('p', { className: 'sm-panel-muted' }, '真看抽帧需要先登录 B 站（上方扫码或 Cookie）。未登录时仍用字幕/分镜看片。')
+  }
+  if (!status.ffmpegReady) {
+    return h('p', { className: 'sm-panel-muted' },
+      '未检测到本机 ffmpeg，无法抽真实帧。请安装 ffmpeg 并加入 PATH（或在配置里填 biliFfmpegPath），然后刷新。当前仍用字幕/分镜看片。'
+        + (status.ffmpegError ? '（' + String(status.ffmpegError).slice(0, 80) + '）' : ''))
+  }
+  return h('p', { className: 'sm-panel-muted' },
+    '已就绪：登录 + ffmpeg' + (status.ffmpegVersion ? ' ' + status.ffmpegVersion : '') + '。开启后按上方密度从播放流抽帧。')
 }
 
 /** Settings-page gender pick: same inflated ♂/♀ balloons as onboarding (not flat circles). */
@@ -296,98 +309,6 @@ function traitsCard({ draft, effective, setTrait, setTraitScheme, setMbtiType, s
   ])
 }
 
-/** Bundled static looks — same ids as desktop-pet skins. */
-const BUNDLED_LOOKS = [
-  {
-    id: 'hanfu',
-    label: '汉风 · 襦裙',
-    preview: '/dsh-soulmate/api/pet/frame?id=pet-idle-01&skin=hanfu',
-  },
-  {
-    id: 'winterboy-chibi',
-    label: 'Q版 · 冬装男孩',
-    preview: '/dsh-soulmate/api/pet/frame?id=pet-idle-01&skin=winterboy-chibi',
-  },
-]
-
-function spriteCard({
-  draft, spriteNote, fileInputRef, uploadSprite, restoreDefaultSprite, defaultSpriteUrl,
-  selectBundledLook, petSkin,
-}) {
-  const activeSkin = String(petSkin || '').trim()
-  const previewSrc = draft.appearance.customSpriteUrl || defaultSpriteUrl || DEFAULT_SPRITE_URL
-  return h('div', { key: 'sprite', className: 'sm-panel-card' }, [
-    h('h3', { key: 'h', className: 'sm-panel-h3' }, '形象'),
-    h('div', { key: 'row', className: 'sm-sprite-row' }, [
-      h('img', {
-        key: 'preview',
-        className: 'sm-sprite-preview',
-        src: previewSrc,
-        alt: '形象',
-      }),
-      h('div', { key: 'ops', className: 'sm-sprite-ops' }, [
-        field('bundled-look', '已有形象', h('select', {
-          key: 'control', className: 'sm-panel-input',
-          value: activeSkin || (BUNDLED_LOOKS[0] && BUNDLED_LOOKS[0].id) || '',
-          onChange: (event) => {
-            const id = event.target.value
-            const look = BUNDLED_LOOKS.find((item) => item.id === id)
-            if (look && selectBundledLook) selectBundledLook(look)
-          },
-        }, BUNDLED_LOOKS.map((look) => h('option', { key: look.id, value: look.id }, look.label)))),
-        h('button', {
-          key: 'pick', type: 'button', className: 'sm-panel-btn primary',
-          onClick: () => { if (fileInputRef.current) fileInputRef.current.click() },
-        }, '更换图片…'),
-        h('button', {
-          key: 'restore', type: 'button', className: 'sm-panel-btn',
-          onClick: () => restoreDefaultSprite(),
-        }, '恢复默认'),
-        h('input', {
-          key: 'file', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif',
-          ref: fileInputRef, style: { display: 'none' },
-          onChange: (event) => uploadSprite(event.target.files && event.target.files[0]),
-        }),
-        h('p', { key: 'tip', className: 'sm-panel-muted' },
-          spriteNote || '点选已有形象会同步桌面小伙伴皮肤；也可上传 PNG / JPG / WEBP（透明底最好，不超过 4MB）。「恢复默认」按性别回到默认静图。'),
-      ]),
-    ]),
-  ])
-}
-
-function petCard({ draft, petDraft, patchPet, PetPreview }) {
-  return h('div', { key: 'pet', className: 'sm-panel-card' }, [
-    h('h3', { key: 'h', className: 'sm-panel-h3' }, '桌面小伙伴'),
-    h('div', { key: 'row', className: 'sm-sprite-row' }, [
-      h(PetPreview, { key: 'preview', skin: petDraft.skin || 'winterboy-chibi', fallback: draft.appearance.customSpriteUrl || DEFAULT_SPRITE_URL }),
-      h('div', { key: 'ops', className: 'sm-sprite-ops sm-pet-ops' }, [
-        h('label', { key: 'on' }, [
-          h('input', {
-            key: 'i', type: 'checkbox', checked: !!petDraft.enabled,
-            onChange: (event) => patchPet({ enabled: event.target.checked }),
-          }),
-          h('span', { key: 't' }, '开启动画形象'),
-        ]),
-        field('petsize', '尺寸 ' + petDraft.sizePx + ' 像素（高；滚轮也可缩放）', h('input', {
-          key: 'control', type: 'range', min: 96, max: 320, step: 4,
-          value: Math.min(320, Math.max(96, Number(petDraft.sizePx) || 148)),
-          onChange: (event) => patchPet({ sizePx: Number(event.target.value) }),
-        })),
-        field('petskin', '皮肤', h('select', {
-          key: 'control', className: 'sm-panel-input',
-          value: petDraft.skin || 'winterboy-chibi',
-          onChange: (event) => patchPet({ skin: event.target.value, skinAuto: false }),
-        }, [
-          h('option', { key: 'winterboy-chibi', value: 'winterboy-chibi' }, 'Q版 · 冬装男孩'),
-          h('option', { key: 'hanfu', value: 'hanfu' }, '汉风 · 襦裙'),
-        ])),
-        h('p', { key: 'tip', className: 'sm-panel-muted' },
-          '左侧预览优先播皮肤 idle 透明视频；没有视频才轮播 PNG。开启后右下角会动：可拖动、滚轮缩放。关闭则用形象区静态图。切换性别会自动换上对应皮肤；手动选皮肤则固定不跟随。'),
-      ]),
-    ]),
-  ])
-}
-
 /** 专属窗 session 星图自动写入开关（作息与主动页）。 */
 function chatHomeAutoMemoryChecks({ homeDraft, patchChatHome }) {
   return [
@@ -444,7 +365,19 @@ function AutoSurfKeywords({ keywords, onCommit }) {
 
 /** 定时自动冲浪：间隔 + 每次数量 + 兴趣关键词，只读看片，不写 B 站。 */
 function autoSurfSection({ draft, patchExtensions }) {
+  const {
+    SURF_INTERVAL_MINUTES,
+    resolveSurfIntervalMinutes,
+    maxPickCapForInterval,
+    clampSurfMaxPick,
+    formatSurfIntervalLabel,
+    surfIntervalIndex,
+  } = require('./surf-schedule.mjs')
   const ext = draft.extensions || {}
+  const intervalMin = resolveSurfIntervalMinutes(ext)
+  const intervalIdx = surfIntervalIndex(intervalMin)
+  const pickCap = maxPickCapForInterval(intervalMin)
+  const pickValue = clampSurfMaxPick(ext.biliAutoSurfMaxPick, intervalMin)
   return [
     h('label', { key: 'autosurf-on', className: 'sm-rhythm-check' }, [
       h('input', {
@@ -454,16 +387,31 @@ function autoSurfSection({ draft, patchExtensions }) {
       h('span', { key: 't' }, '定时自动刷 B 站（按兴趣自己看片、记小本本；互动由下方开关决定）'),
     ]),
     ext.biliAutoSurfEnabled ? h('div', { key: 'autosurf-knobs', className: 'sm-autosurf-knobs' }, [
-      field('autosurf-every', '每 ' + (ext.biliAutoSurfEveryHours || 6) + ' 小时巡一圈', h('input', {
-        key: 'control', type: 'range', min: 1, max: 24, step: 1,
-        value: ext.biliAutoSurfEveryHours || 6,
-        onChange: (event) => patchExtensions({ biliAutoSurfEveryHours: Number(event.target.value) }),
+      field('autosurf-every', '每 ' + formatSurfIntervalLabel(intervalMin) + ' 巡一圈', h('input', {
+        key: 'control', type: 'range', min: 0, max: SURF_INTERVAL_MINUTES.length - 1, step: 1,
+        value: intervalIdx,
+        onChange: (event) => {
+          const minutes = SURF_INTERVAL_MINUTES[Number(event.target.value)] || 360
+          const nextCap = maxPickCapForInterval(minutes)
+          const nextPick = clampSurfMaxPick(ext.biliAutoSurfMaxPick, minutes)
+          patchExtensions({
+            biliAutoSurfEveryMinutes: minutes,
+            biliAutoSurfEveryHours: minutes / 60,
+            biliAutoSurfMaxPick: Math.min(nextPick, nextCap),
+          })
+        },
       })),
-      field('autosurf-pick', '每次看 ' + (ext.biliAutoSurfMaxPick || 2) + ' 个新视频', h('input', {
-        key: 'control', type: 'range', min: 1, max: 5, step: 1,
-        value: ext.biliAutoSurfMaxPick || 2,
-        onChange: (event) => patchExtensions({ biliAutoSurfMaxPick: Number(event.target.value) }),
-      })),
+      field(
+        'autosurf-pick',
+        '每次看 ' + pickValue + ' 个（本档最多 ' + pickCap + '）',
+        h('input', {
+          key: 'control', type: 'range', min: 1, max: pickCap, step: 1,
+          value: pickValue,
+          onChange: (event) => patchExtensions({
+            biliAutoSurfMaxPick: clampSurfMaxPick(event.target.value, intervalMin),
+          }),
+        }),
+      ),
       h('label', {
         key: 'autosurf-deep',
         className: 'sm-rhythm-check',
@@ -474,6 +422,109 @@ function autoSurfSection({ draft, patchExtensions }) {
           onChange: (event) => patchExtensions({ biliAutoSurfDeepWatch: event.target.checked }),
         }),
         h('span', { key: 't' }, '认真看完（加深字幕/分镜消化）'),
+      ]),
+      h('label', {
+        key: 'vision-summary',
+        className: 'sm-rhythm-check',
+        title: '用画面帧（真帧优先，否则分镜）+ 标题/简介/对齐字幕，生成时间线总结。无视觉模型或无帧时软降级为文字总结，并提示。',
+      }, [
+        h('input', {
+          key: 'i', type: 'checkbox',
+          checked: ext.biliVisionSummary !== false,
+          onChange: (event) => patchExtensions({ biliVisionSummary: event.target.checked }),
+        }),
+        h('span', { key: 't' }, '画面理解总结（时间线）'),
+      ]),
+      h('label', {
+        key: 'live-frame',
+        className: 'sm-rhythm-check',
+        title: '登录 B 站后用本机 ffmpeg 从播放流抽真实画面帧（最密每 15 秒一帧）。未安装 ffmpeg 时不会抽帧，仅提示；画面总结可改用分镜。',
+      }, [
+        h('input', {
+          key: 'i', type: 'checkbox', checked: !!ext.biliLiveFrameWatch,
+          onChange: (event) => patchExtensions({ biliLiveFrameWatch: event.target.checked }),
+        }),
+        h('span', { key: 't' }, '真看抽帧（需登录 + 本机 ffmpeg）'),
+      ]),
+      (ext.biliVisionSummary !== false || ext.biliLiveFrameWatch) ? field(
+        'live-frame-every',
+        '看片/总结密度：每 ' + (ext.biliLiveFrameEverySec || 30) + ' 秒一帧（最密 15 秒，送模最多 16 帧）',
+        h('input', {
+          key: 'control',
+          type: 'range',
+          min: 0,
+          max: 6,
+          step: 1,
+          value: (() => {
+            const presets = [15, 20, 30, 45, 60, 90, 120]
+            const cur = Number(ext.biliLiveFrameEverySec) || 30
+            let best = 2
+            let bestDiff = Infinity
+            presets.forEach((p, i) => {
+              const d = Math.abs(p - cur)
+              if (d < bestDiff) { best = i; bestDiff = d }
+            })
+            return best
+          })(),
+          onChange: (event) => {
+            const presets = [15, 20, 30, 45, 60, 90, 120]
+            const sec = presets[Number(event.target.value)] || 30
+            patchExtensions({ biliLiveFrameEverySec: sec })
+          },
+        }),
+      ) : null,
+      ext.biliLiveFrameWatch ? h(LiveFrameReadyHint, { key: 'live-hint' }) : null,
+      ext.biliVisionSummary !== false ? field(
+        'asr-endpoint',
+        'ASR 转写接口（无字幕时才用；留空则跳过）'
+          + (String(ext.biliAsrEndpoint || '').trim() ? ' · 已配置' : ' · 未配置'),
+        h('input', {
+          key: 'control',
+          type: 'url',
+          placeholder: 'https://your-asr.example/v1/transcribe',
+          value: ext.biliAsrEndpoint || '',
+          onChange: (event) => patchExtensions({ biliAsrEndpoint: event.target.value }),
+        }),
+      ) : null,
+      ext.biliVisionSummary !== false && String(ext.biliAsrEndpoint || '').trim() ? field(
+        'asr-key',
+        'ASR API Key（可选，Bearer）',
+        h('input', {
+          key: 'control',
+          type: 'password',
+          autoComplete: 'off',
+          placeholder: '留空则不带 Authorization',
+          value: ext.biliAsrApiKey || '',
+          onChange: (event) => patchExtensions({ biliAsrApiKey: event.target.value }),
+        }),
+      ) : null,
+      ext.biliVisionSummary !== false ? h('p', {
+        key: 'vision-hint',
+        className: 'sm-panel-muted',
+      }, '画面总结需要宿主提供视觉模型；失败时冲浪卡会标「未看画面」并退回标题/字幕摘要。') : null,
+      h('label', {
+        key: 'autosurf-popular',
+        className: 'sm-rhythm-check',
+        title: '每轮除兴趣搜索外，再拉综合热门；关键词被风控（412）时也能凑满「每次看 N 个」。',
+      }, [
+        h('input', {
+          key: 'i', type: 'checkbox',
+          checked: ext.biliSurfIncludePopular !== false,
+          onChange: (event) => patchExtensions({ biliSurfIncludePopular: event.target.checked }),
+        }),
+        h('span', { key: 't' }, '看最新热门视频'),
+      ]),
+      h('label', {
+        key: 'autosurf-articles',
+        className: 'sm-rhythm-check',
+        title: '同轮顺带读专栏文章（按兴趣词 + 推荐），计入「每次看 N 个」。',
+      }, [
+        h('input', {
+          key: 'i', type: 'checkbox',
+          checked: ext.biliSurfIncludeArticles !== false,
+          onChange: (event) => patchExtensions({ biliSurfIncludeArticles: event.target.checked }),
+        }),
+        h('span', { key: 't' }, '看热门/兴趣专栏文章'),
       ]),
       h('label', {
         key: 'autosurf-kw-auto',
@@ -596,6 +647,6 @@ function rhythmCard(view) {
 }
 
 module.exports = {
-  field, identityCard, gateCard, traitsCard, spriteCard, petCard, chatHomeAutoMemoryChecks, rhythmCard,
+  field, identityCard, gateCard, traitsCard, skinFrameUrl, lookPetCard, chatHomeAutoMemoryChecks, rhythmCard,
   autoSurfSection, BUNDLED_LOOKS,
 }

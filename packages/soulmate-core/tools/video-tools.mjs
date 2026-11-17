@@ -12,11 +12,25 @@ import {
 } from '../../soulmate-bili/index.mjs';
 import { clip, str } from '../small-utils.mjs';
 
-export function videoTools({ makeTool, service, home, cfg, pushEvent }) {
+export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatHome }) {
+  const resolveLlmController = () => {
+    try {
+      if (typeof chatHome?.getSessionController === 'function') {
+        const c = chatHome.getSessionController();
+        if (c && typeof c.generateReply === 'function') return c;
+      }
+    } catch { /* ignore */ }
+    try {
+      const c = typeof ctx?.get === 'function' ? ctx.get('sessionController') : ctx?.sessionController;
+      if (c && typeof c.generateReply === 'function') return c;
+    } catch { /* ignore */ }
+    return null;
+  };
   const biliNet = () => ({
     ...(cfg.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
     ...(cfg.biliBaseUrl ? { baseUrl: cfg.biliBaseUrl } : {}),
     ...(cfg.biliDmBaseUrl ? { dmBaseUrl: cfg.biliDmBaseUrl } : {}),
+    ...(resolveLlmController() ? { llmController: resolveLlmController() } : {}),
   });
 
   function resolveWatchMode(raw) {
@@ -110,13 +124,23 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent }) {
       deepWatch: true,
       maxStoryboardFrames: 36,
       ...(Array.isArray(args.keywords) && args.keywords.length ? { keywords: args.keywords } : {}),
+      // Omit maxPick so runAutonomousSurfRound reads extensions.biliAutoSurfMaxPick (user slider).
       ...(Number.isFinite(args.maxPick) ? { maxPick: args.maxPick } : {}),
+      ...(args.includePopular === false || args.includePopular === true ? { includePopular: args.includePopular } : {}),
+      ...(args.includeArticles === false || args.includeArticles === true ? { includeArticles: args.includeArticles } : {}),
     });
     if (res.ok) {
       pushEvent('video-surf', {
         deepWatch: true,
         pickedCount: res.pickedCount,
-        videos: (res.videos || []).filter((v) => v.ok).slice(0, 3).map((v) => ({ title: v.title, worthScore: v.worthScore, depth: v.coverage?.depth })),
+        maxPick: res.maxPick,
+        videos: (res.videos || []).filter((v) => v.ok).slice(0, 5).map((v) => ({
+          title: v.title,
+          worthScore: v.worthScore,
+          depth: v.coverage?.depth,
+          kind: v.kind || 'video',
+          source: v.source,
+        })),
       });
     }
     return res;
@@ -169,13 +193,16 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent }) {
       name: 'soulmate_video_surf',
       timeoutMs: 180_000,
       description:
-        'Run an autonomous video-surfing round by interest keywords (with deduplication ledger), or share a top-rated video ' +
-        '(@ user via DM/comment with strict daily quota, 7-day dedup, and AI-spam comment floodgate). ' +
-        'action "surf" (default) patrols; action "share" needs target + reason and is refused unless sharing was enabled in config.',
+        'Run an autonomous Bilibili surfing round (interest keywords + latest popular videos + 专栏 articles by default; ' +
+        'dedup ledger), or share a top-rated video (@ user via DM/comment with strict daily quota). ' +
+        'action "surf" (default) patrols; action "share" needs target + reason. ' +
+        'When maxPick is omitted, uses the user\'s panel setting extensions.biliAutoSurfMaxPick (not a hard-coded 2).',
       parameters: {
         action: { type: 'string', enum: ['surf', 'share'], description: 'surf (default) | share' },
         keywords: { type: 'array', items: { type: 'string' }, description: 'surf: interest keywords (default: config.extensions.biliKeywords).' },
-        maxPick: { type: 'number', description: 'surf: how many new videos to watch (default 2, max 5).' },
+        maxPick: { type: 'number', description: 'surf: how many new items to watch (1–5). Default = panel biliAutoSurfMaxPick.' },
+        includePopular: { type: 'boolean', description: 'surf: also pull 综合热门 videos (default true).' },
+        includeArticles: { type: 'boolean', description: 'surf: also read 专栏 articles (default true).' },
         target: { type: 'string', description: 'share: video URL or BV id.' },
         reason: { type: 'string', description: 'share: why it is worth the user\'s attention (>= 8 chars).' },
         via: { type: 'string', enum: ['dm', 'comment'], description: 'share: dm (default) or comment.' },

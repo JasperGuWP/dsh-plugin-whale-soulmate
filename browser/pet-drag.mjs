@@ -23,7 +23,7 @@ function releaseVelocity(samples) {
  * onGrab fires on every valid pointerdown (before any movement) so a flying pet
  * can be caught; onDragEnd receives the release velocity for flick-throw.
  */
-function wirePetDrag({ widget, hitEl, spriteImg, getPet, getPetLayer, onGrab, onDragStart, onDragEnd, setSwallow }) {
+function wirePetDrag({ widget, hitEl, spriteImg, getPet, getPetLayer, onGrab, onDragStart, onDragEnd, onHit, setSwallow }) {
   let dragMoved = false
   let dragOff = null
   let hitOn = true
@@ -34,6 +34,8 @@ function wirePetDrag({ widget, hitEl, spriteImg, getPet, getPetLayer, onGrab, on
     if (on === hitOn) return
     hitOn = on
     if (hitEl) hitEl.style.pointerEvents = on ? 'auto' : 'none'
+    // 桌面窗口形态据此即时翻转整窗穿透(forward 钩子通道)
+    if (typeof onHit === 'function') onHit(on)
   }
 
   function sample(clientX, clientY) {

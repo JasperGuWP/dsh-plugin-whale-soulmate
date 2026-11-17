@@ -5,7 +5,6 @@
 // existing frame() calls step(t) every frame, even while no flight is running
 // (a landing squash may outlive the flight that triggered it).
 
-const EDGE_PAD = 8
 const MAX_SPEED = 3600 // soft cap on release speed, × throwPower
 const MIN_THROW_SPEED = 200 // below this a release is a gentle put-down, not a throw
 const REST_VX = 6
@@ -68,10 +67,10 @@ function createPetThrow(deps) {
       flight.lastT = t
       const { width: W, height: H } = deps.viewport()
       const { width: w, height: h } = deps.size()
-      const minX = EDGE_PAD
-      const maxX = Math.max(minX, W - w - EDGE_PAD)
-      const minY = EDGE_PAD
-      const maxY = Math.max(minY, H - h - EDGE_PAD)
+      // 贴屏幕边:零内缩。多屏时按宠物中心所在「列」取上下界(屏缝不是墙)。
+      const screens = (typeof deps.screens === 'function' && deps.screens()) || null
+      const minX = 0
+      const maxX = Math.max(minX, W - w)
       const p = flight.p
       // Sub-step so a max-speed flick (≤ ~120px/frame) still lands on the exact
       // bounce frame instead of skipping past the floor.
@@ -80,11 +79,29 @@ function createPetThrow(deps) {
       let landedImpact = 0
       for (let i = 0; i < n; i++) {
         flight.vy += p.gravity * sub
+        const prevX = flight.x
         flight.x += flight.vx * sub
         flight.y += flight.vy * sub
+        let top = 0
+        let bottom = H
+        if (screens && screens.length) {
+          const cx = flight.x + w / 2
+          let col = null
+          for (const s of screens) {
+            if (cx >= s.x && cx < s.x + s.w) {
+              col = col
+                ? { top: Math.min(col.top, s.y), bottom: Math.max(col.bottom, s.y + s.h) }
+                : { top: s.y, bottom: s.y + s.h }
+            }
+          }
+          // 洞列(该横坐标没有屏幕)是墙:退回上一位置并弹回
+          if (!col) { flight.x = prevX; flight.vx = -flight.vx * p.restitution }
+          else { top = col.top; bottom = col.bottom }
+        }
+        const maxY = Math.max(top, bottom - h)
         if (flight.x <= minX) { flight.x = minX; flight.vx = Math.abs(flight.vx) * p.restitution }
         else if (flight.x >= maxX) { flight.x = maxX; flight.vx = -Math.abs(flight.vx) * p.restitution }
-        if (flight.y <= minY) { flight.y = minY; flight.vy = Math.abs(flight.vy) * p.restitution }
+        if (flight.y <= top) { flight.y = top; flight.vy = Math.abs(flight.vy) * p.restitution }
         let grounded = false
         if (flight.y >= maxY) {
           flight.y = maxY

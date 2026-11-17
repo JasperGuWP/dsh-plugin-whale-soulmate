@@ -189,9 +189,41 @@ function draftFromSummary(snap) {
     extensions: {
       biliEnabled: !(config.extensions && config.extensions.biliEnabled === false),
       biliAutoSurfEnabled: !!(config.extensions && config.extensions.biliAutoSurfEnabled),
-      biliAutoSurfEveryHours: clampNum(Number(config.extensions && config.extensions.biliAutoSurfEveryHours) || 6, 1, 24),
-      biliAutoSurfMaxPick: clampNum(Number(config.extensions && config.extensions.biliAutoSurfMaxPick) || 2, 1, 5),
+      biliAutoSurfEveryHours: Number(config.extensions && config.extensions.biliAutoSurfEveryHours) || 6,
+      biliAutoSurfEveryMinutes: (() => {
+        const {
+          resolveSurfIntervalMinutes,
+        } = require('./surf-schedule.mjs')
+        return resolveSurfIntervalMinutes(config.extensions || {})
+      })(),
+      biliAutoSurfMaxPick: (() => {
+        const {
+          clampSurfMaxPick,
+          resolveSurfIntervalMinutes,
+        } = require('./surf-schedule.mjs')
+        const mins = resolveSurfIntervalMinutes(config.extensions || {})
+        return clampSurfMaxPick(config.extensions && config.extensions.biliAutoSurfMaxPick, mins)
+      })(),
       biliAutoSurfDeepWatch: !!(config.extensions && config.extensions.biliAutoSurfDeepWatch),
+      biliSurfIncludePopular: !(config.extensions && config.extensions.biliSurfIncludePopular === false),
+      biliSurfIncludeArticles: !(config.extensions && config.extensions.biliSurfIncludeArticles === false),
+      biliLiveFrameWatch: !!(config.extensions && config.extensions.biliLiveFrameWatch),
+      biliLiveFrameEverySec: (() => {
+        const presets = [15, 20, 30, 45, 60, 90, 120]
+        const cur = Number(config.extensions && config.extensions.biliLiveFrameEverySec) || 30
+        let best = 30
+        let bestDiff = Infinity
+        for (const p of presets) {
+          const d = Math.abs(p - cur)
+          if (d < bestDiff) { best = p; bestDiff = d }
+        }
+        return best
+      })(),
+      biliFfmpegPath: (config.extensions && config.extensions.biliFfmpegPath) || '',
+      biliVisionSummary: !(config.extensions && config.extensions.biliVisionSummary === false),
+      biliVisionModel: (config.extensions && config.extensions.biliVisionModel) || '',
+      biliAsrEndpoint: (config.extensions && config.extensions.biliAsrEndpoint) || '',
+      biliAsrApiKey: (config.extensions && config.extensions.biliAsrApiKey) || '',
       biliKeywordsAuto: !(config.extensions && config.extensions.biliKeywordsAuto === false),
       biliKeywordsSeed: (config.extensions && Array.isArray(config.extensions.biliKeywordsSeed))
         ? config.extensions.biliKeywordsSeed.slice()

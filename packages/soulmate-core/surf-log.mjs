@@ -129,3 +129,29 @@ export async function patchSurfLogActions(home, { platform = 'bilibili', videoId
   await writeFile(path, text, 'utf8');
   return { ok: true, entry: next };
 }
+
+/**
+ * Rewrite summaries for entries where rebuildFn returns a new summary string.
+ * rebuildFn(entry) → string | null (null = keep).
+ */
+export async function rewriteSurfLogSummaries(home, {
+  platform = 'bilibili',
+  rebuildFn,
+  limit = 500,
+} = {}) {
+  if (typeof rebuildFn !== 'function') return { ok: false, error: 'rebuildFn required', repaired: 0 };
+  const path = surfLogPath(home, platform);
+  const rows = await readJsonlTail(path, Math.min(2000, Math.max(1, Math.floor(Number(limit) || 500))));
+  let repaired = 0;
+  const nextRows = rows.map((raw) => {
+    const entry = normalizeSurfEntry(raw, platform);
+    const summary = rebuildFn(entry);
+    if (summary == null || summary === entry.summary) return entry;
+    repaired += 1;
+    return { ...entry, summary: str(summary) };
+  });
+  if (repaired === 0) return { ok: true, repaired: 0 };
+  const text = nextRows.map((r) => JSON.stringify(r)).join('\n') + (nextRows.length ? '\n' : '');
+  await writeFile(path, text, 'utf8');
+  return { ok: true, repaired };
+}

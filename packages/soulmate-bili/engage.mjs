@@ -3,6 +3,8 @@ import { loadConfig } from '../soulmate-core/state.mjs';
 import { appendSurfLog, listSurfLog, patchSurfLogActions } from '../soulmate-core/surf-log.mjs';
 import { biliWriteAction } from './write-actions.mjs';
 import { rememberPostedComment } from './comment-ledger.mjs';
+import { composeVideoTakeaway, takeawayMismatchesTitle } from './subtitle-align.mjs';
+import { appendEngagePhrase } from './vision-summary.mjs';
 
 const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
 const num = (v, d = 0) => {
@@ -249,8 +251,17 @@ export function pickSurfStills(frames, count = 3) {
 /** Build summary line for the log card（内容要点 + 观感，不贴原始字幕垃圾）. */
 export function composeSurfSummary(digest, persona) {
   const score = num(digest?.worthScore, 0);
-  // Prefer dedicated takeaway; never fall back to digest.summary (it already embeds takeaway).
-  const takeaway = str(digest?.takeaway).trim();
+  let takeaway = str(digest?.takeaway).trim();
+  // Guard: discard mismatched subtitle takeaways — skip when vision timeline already approved.
+  if (takeaway && !digest?.visionSummary?.ok && takeawayMismatchesTitle(digest?.title, takeaway)) {
+    takeaway = composeVideoTakeaway({
+      title: digest?.title,
+      desc: digest?.desc,
+      transcript: '',
+      tags: digest?.tags,
+      worthScore: score,
+    });
+  }
   const selfRef = str(persona?.selfRef).trim() || '我';
   const head = `看了《${clip(digest?.title, 40)}》@${clip(digest?.author, 20)}，评分 ${score}/20。`;
   if (takeaway) return `${head}${takeaway}`;
@@ -266,8 +277,11 @@ export async function afterSurfWatch(home, { digest, persona, options = {} } = {
   const conf = await loadConfig(home);
   const ext = conf.extensions ?? {};
   const summary = composeSurfSummary(digest, persona ?? conf.persona);
-  // Keep a denser storyboard strip for the surf-log gallery (not only 3 thumbs).
-  const stills = pickSurfStills(digest?.storyboardFrames || [], 18);
+  // Prefer real ffmpeg stills when present; else denser videoshot strip.
+  const liveStills = Array.isArray(digest?.liveFrameStills) ? digest.liveFrameStills : [];
+  const stills = liveStills.length
+    ? pickSurfStills(liveStills, Math.min(24, liveStills.length))
+    : pickSurfStills(digest?.storyboardFrames || [], 18);
 
   const base = {
     platform: 'bilibili',
@@ -319,12 +333,13 @@ export async function afterSurfWatch(home, { digest, persona, options = {} } = {
     actions = await executeSurfEngage(home, { digest, plan, options });
   }
 
+  const summaryWithActions = appendEngagePhrase(summary, actions);
   await patchSurfLogActions(home, {
     platform: 'bilibili',
     videoId: base.videoId,
     actions,
-    summary,
+    summary: summaryWithActions,
   }).catch(() => {});
 
-  return { ok: true, plan, actions, summary };
+  return { ok: true, plan, actions, summary: summaryWithActions };
 }

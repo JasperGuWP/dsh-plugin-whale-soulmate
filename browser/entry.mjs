@@ -17,7 +17,8 @@ const { installNotifications } = require('./notify.mjs')
       if (typeof disposeStyles === 'function' && typeof ctx.effect === 'function') ctx.effect(() => disposeStyles)
 
       // Hide plugin wake notices painted as user bubbles (marker from buildWakeVisibleNotice).
-      if (typeof document !== 'undefined' && document.body) {
+      // 桌面独立窗口形态只养宠物:宿主页面专用的气泡/标签/toast 安装跳过,避免与页内形态重复。
+      if (typeof document !== 'undefined' && document.body && !window.__smPetWindow) {
         const disposeWakeHide = installWakeBubbleHider()
         if (typeof disposeWakeHide === 'function' && typeof ctx.effect === 'function') {
           ctx.effect(() => disposeWakeHide)

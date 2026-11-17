@@ -118,6 +118,14 @@ test('shouldAutoSurf: disabled / quiet / interval / first round', () => {
   assert.ok(soon.nextInMs > 0);
   // 7h ago → due
   assert.equal(shouldAutoSurf({ ...base, lastAutoSurfAt: new Date(T0 - 7 * 3_600_000).toISOString() }).surf, true);
+  // 10-minute interval: minutes field wins over hours
+  const ten = {
+    ...base,
+    config: { ...base.config, biliAutoSurfEveryMinutes: 10, biliAutoSurfEveryHours: 6 },
+    lastAutoSurfAt: new Date(T0 - 11 * 60_000).toISOString(),
+  };
+  assert.equal(shouldAutoSurf(ten).surf, true);
+  assert.equal(shouldAutoSurf({ ...ten, lastAutoSurfAt: new Date(T0 - 5 * 60_000).toISOString() }).surf, false);
 });
 
 // ---------------------------------------------------------------------------

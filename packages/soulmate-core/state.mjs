@@ -153,16 +153,44 @@ export const DEFAULT_CONFIG = Object.freeze({
     // Flick-throw feel (dsh-pet 同款默认): gravity px/s² (0 = floaty, legal),
     // wall/floor restitution 0~1, ground friction /s, overall throw gain (>0).
     physics: { gravity: 1400, restitution: 0.78, groundFriction: 2.5, throwPower: 1 },
+    // 桌面独立窗口形态(透明置顶画布):与页内 enabled 互不影响,可同时开。
+    // windowElectronPath 留空 = 自动找 ~/.dsh/electron 的运行时;找不到只告警,不影响页内形象。
+    windowEnabled: false,
+    windowElectronPath: '',
   },
   extensions: {
     biliEnabled: true,
     // Scheduled Bilibili patrol (auto surf). Read-only watching: notes + seen ledger,
     // never writes to B 站. Off by default; the rhythm tab opts in.
     biliAutoSurfEnabled: false,
+    /** Legacy hours field (still accepted). Prefer biliAutoSurfEveryMinutes. */
     biliAutoSurfEveryHours: 6,
+    /** Discrete minutes: 10 / 30 / 60 / 90 / 120 / 180 / 240 / 360 / 480 / 720 / 1440 */
+    biliAutoSurfEveryMinutes: 360,
     biliAutoSurfMaxPick: 2,
     /** When true, timed patrol digests more storyboard/transcript and reports coverage depth. */
     biliAutoSurfDeepWatch: false,
+    /** Also pull B 站综合热门 into each surf round (fills slots when keyword search is thin / 412). */
+    biliSurfIncludePopular: true,
+    /** Also read B 站专栏文章（关键词 + 推荐）。 */
+    biliSurfIncludeArticles: true,
+    /**
+     * Optional «真看抽帧»: playurl + local ffmpeg stills.
+     * Off by default; needs B 站登录 + system ffmpeg (see biliFfmpegPath).
+     */
+    biliLiveFrameWatch: false,
+    /** Seconds per live frame; clamped to [15, 120], presets 15/20/30/45/60/90/120. */
+    biliLiveFrameEverySec: 30,
+    /** Optional absolute path to ffmpeg; empty = PATH lookup. */
+    biliFfmpegPath: '',
+    /** Vision timeline takeaway after watch (soft-falls back when no frames/model). */
+    biliVisionSummary: true,
+    /** Optional host vision model id; empty = auto. */
+    biliVisionModel: '',
+    /** External ASR endpoint URL; used only when official subtitles missing/mismatched. */
+    biliAsrEndpoint: '',
+    /** Optional Bearer token for ASR endpoint (avoid logging). */
+    biliAsrApiKey: '',
     /** Skip search hits older than this many days (default 180). */
     biliAutoSurfMaxAgeDays: 180,
     /** Learn / refresh biliKeywords from chat + memory before each patrol. */

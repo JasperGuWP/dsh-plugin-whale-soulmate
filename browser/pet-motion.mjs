@@ -12,7 +12,7 @@
 const WAIT_READY_MS = 3000
 const MIN_DIST = 60
 const MOVE_THRESHOLD = 24
-const EDGE_PAD = 8
+const EDGE_PAD = 0 // 贴屏幕/页边,不留内缩
 
 function createPetMotion(deps) {
   // deps (all getters): root / viewport / size / isDragging / isMinimized /

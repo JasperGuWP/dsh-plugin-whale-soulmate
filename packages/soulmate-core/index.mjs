@@ -24,6 +24,7 @@ import { resolvePluginConfig } from './plugin-config.mjs';
 import { errMsg } from './small-utils.mjs';
 import { makeToolFactory } from './tool-cards.mjs';
 import { mountHttp } from './http-plumbing.mjs';
+import { createPetWindowRuntime } from './runtime/pet-window-runtime.mjs';
 import { createCloudGateway } from './cloud-gateway.mjs';
 import { createPromptEngine } from './runtime/prompt-engine.mjs';
 import { createMemoryService } from './runtime/memory-service.mjs';
@@ -295,6 +296,17 @@ export function apply(ctx, config = {}) {
     if (webServer) track(() => mountHttp(webServer, { routes, ready: readyPromise, warn }));
     else warn('webServer unavailable — HTTP routes not mounted (widget will show 未连接)');
   }
+
+  // ------------------------------------------------------------------ desktop window pet (config-gated)
+  // 独立透明窗口形态:与页内 widget 共用同一套浏览器引擎与路由,开关 pet.windowEnabled。
+  const petWindow = createPetWindowRuntime({
+    home, routes, ready: readyPromise, warn,
+    // host 级注入(测试/嵌入宿主用);用户配置走 pet.windowElectronPath
+    spawnImpl: cfg.petWindowSpawnImpl, electronPath: cfg.petWindowElectronPath,
+  });
+  petWindow.begin();
+  // track 会立即执行 fn 取 disposer:这里返回 dispose 函数本身, teardown 时才调用
+  track(() => petWindow.dispose);
 
   // ------------------------------------------------------------------ background auto-sync (consent-gated)
   if (cfg.autoSync) {

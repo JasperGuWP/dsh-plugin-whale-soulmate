@@ -10,7 +10,14 @@ import {
   composeSurfSummary,
   pickSurfStills,
 } from '../packages/soulmate-bili/engage.mjs';
-import { scrubTranscriptNoise, composeVideoTakeaway } from '../packages/soulmate-bili/index.mjs';
+import { scrubTranscriptNoise, composeVideoTakeaway, transcriptAlignedWithMeta } from '../packages/soulmate-bili/index.mjs';
+import { appendEngagePhrase } from '../packages/soulmate-bili/vision-summary.mjs';
+import {
+  clampSurfMaxPick,
+  formatSurfIntervalLabel,
+  maxPickCapForInterval,
+  resolveSurfIntervalMinutes,
+} from '../packages/soulmate-core/surf-schedule.mjs';
 import { appendSurfLog, listSurfLog, normalizeSurfEntry } from '../packages/soulmate-core/surf-log.mjs';
 
 test('sanitizeCommentText blocks abuse and offsite promo', () => {
@@ -138,4 +145,77 @@ test('composeVideoTakeaway prefers cleaned content over spam subtitles', () => {
   assert.match(out, /观感/);
   assert.match(out, /三维建模|主板|装机/);
   assert.doesNotMatch(out, /投降|包村|威信/);
+});
+
+test('transcriptAlignedWithMeta rejects unrelated subtitle bodies', () => {
+  const bad = transcriptAlignedWithMeta({
+    title: 'python基础练习题：整数等于浮点数吗',
+    desc: '编程入门',
+    transcript: '京都米其林怀石料理、鲷鱼烧、清水寺散步、打卡美食探店、夜间灯笼很美。'.repeat(4),
+  });
+  assert.equal(bad.aligned, false);
+  const good = transcriptAlignedWithMeta({
+    title: 'python基础练习题：整数等于浮点数吗',
+    desc: '浮点数比较',
+    transcript: '今天讲 python 基础，整数和浮点数能不能直接用等号比较，注意精度问题。'.repeat(2),
+  });
+  assert.equal(good.aligned, true);
+});
+
+test('composeVideoTakeaway discards mismatched Kyoto/Goodall-style transcripts', () => {
+  const kyoto = composeVideoTakeaway({
+    title: 'python基础练习题：整数等于浮点数吗',
+    desc: '',
+    transcript: '今天我们要飞1500km去京都吃一顿米其林两星的怀石料理看看人均5万日元的套餐到底吃什么啊登机啦登机啦'.repeat(2),
+    tags: ['python', '编程'],
+    worthScore: 7,
+  });
+  assert.match(kyoto, /python|编程|整数|浮点|标题/);
+  assert.doesNotMatch(kyoto, /京都|米其林|怀石/);
+
+  const news = composeVideoTakeaway({
+    title: '【无线新闻台】午间报道:乌军逾千无人机袭俄罗斯及克里米亚大桥',
+    desc: '',
+    transcript: '珍妮·古道尔博士会给你们讲个故事。在动画结束之后请耐心等待，了解如何把本视频下载为免费的儿童读物。一切都源于一声空中传来的低语。'.repeat(2),
+    worthScore: 5,
+  });
+  assert.match(news, /无线新闻|乌军|无人机|克里米亚|标题/);
+  assert.doesNotMatch(news, /古道尔|Jane|儿童读物/);
+});
+
+test('composeSurfSummary rebuilds when takeaway mismatches title', () => {
+  const summary = composeSurfSummary({
+    title: 'python基础练习题：整数等于浮点数吗',
+    author: '野生编程',
+    worthScore: 7,
+    tags: ['python'],
+    takeaway: '讲了什么：今天我们要飞1500km去京都吃米其林怀石料理人均5万日元登机啦登机啦看看京都到底有什么好吃好玩 观感：一般，挑着看就行。',
+  }, { selfRef: '我' });
+  assert.match(summary, /python|编程|标题/);
+  assert.doesNotMatch(summary, /京都|米其林/);
+});
+
+test('appendEngagePhrase keeps vision takeaway and adds actions', () => {
+  const takeaway = '讲了什么：整数与浮点比较\n时间线：\n· 00:00–01:00 演示\n观感：清楚';
+  const summary = composeSurfSummary({
+    title: 'python基础练习题：整数等于浮点数吗',
+    author: '野生编程',
+    worthScore: 8,
+    takeaway,
+    visionSummary: { ok: true, channel: 'ok:storyboard' },
+  }, { selfRef: '我' });
+  assert.match(summary, /时间线/);
+  assert.match(appendEngagePhrase(summary, { like: true, favorite: true }), /｜已点赞、已收藏/);
+});
+
+test('surf schedule: interval presets and pick caps', () => {
+  assert.equal(resolveSurfIntervalMinutes({ biliAutoSurfEveryHours: 6 }), 360);
+  assert.equal(resolveSurfIntervalMinutes({ biliAutoSurfEveryMinutes: 10 }), 10);
+  assert.equal(formatSurfIntervalLabel(90), '1.5 小时');
+  assert.equal(maxPickCapForInterval(10), 2);
+  assert.equal(maxPickCapForInterval(30), 6);
+  assert.equal(maxPickCapForInterval(60), 10);
+  assert.equal(clampSurfMaxPick(5, 10), 2);
+  assert.equal(clampSurfMaxPick(5, 30), 5);
+  assert.equal(clampSurfMaxPick(99, 1440), 20);
 });

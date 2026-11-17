@@ -50,9 +50,9 @@ function env(overrides = {}) {
 }
 
 const px = (root, key) => parseFloat(root.style[key]);
-// viewport 1280×800, stage 263×148, pad 8 → floor top = 644, right left = 1009
-const FLOOR = 644;
-const RIGHT = 1009;
+// viewport 1280×800, stage 263×148, 零内缩 → floor top = 652, right left = 1017
+const FLOOR = 652;
+const RIGHT = 1017;
 
 function run(thrower, frames, dtMs = 16) {
   let t = 0;
@@ -198,6 +198,52 @@ test('throw: bad physics overrides fall back to defaults per key', async () => {
   thrower.step(16);
   const dx = px(root, 'left') - 100;
   assert.ok(Math.abs(dx - 3600 * 0.016) < 1, 'throwPower 0 → default 1, cap intact');
+});
+
+test('throw: side-by-side screens — seam is not a wall, pet crosses and rests on far screen', async () => {
+  const { createPetThrow } = await loadThrow();
+  const { root, state, deps } = env({ W: 2560 });
+  state.screens = [{ x: 0, y: 0, w: 1280, h: 800 }, { x: 1280, y: 0, w: 1280, h: 800 }];
+  deps.screens = () => state.screens;
+  const thrower = createPetThrow(deps);
+  thrower.start(1100, 300, 1500, -200);
+  let crossed = false;
+  let t = 0;
+  for (let i = 0; i < 900; i++) {
+    thrower.step(t); t += 16;
+    if (px(root, 'left') > 1280) crossed = true;
+  }
+  assert.ok(crossed, 'pet crossed the screen seam');
+  assert.equal(thrower.active(), false);
+  assert.ok(px(root, 'left') > 1280, 'rests on the far screen');
+  assert.equal(px(root, 'top'), FLOOR);
+});
+
+test('throw: staggered screens — floor follows the column the pet is over', async () => {
+  const { createPetThrow } = await loadThrow();
+  const { root, state, deps } = env({ W: 2560 });
+  state.screens = [{ x: 0, y: 0, w: 1280, h: 800 }, { x: 1280, y: 0, w: 1280, h: 600 }];
+  deps.screens = () => state.screens;
+  const thrower = createPetThrow(deps);
+  thrower.start(1100, 300, 1500, -200);
+  run(thrower, 900);
+  assert.equal(thrower.active(), false);
+  assert.ok(px(root, 'left') > 1280, 'on the shorter screen');
+  assert.equal(px(root, 'top'), 600 - 148, 'rests on the shorter screen floor');
+});
+
+test('throw: hole column between screens acts as a wall', async () => {
+  const { createPetThrow } = await loadThrow();
+  const { root, state, deps } = env({ W: 2400 });
+  state.screens = [{ x: 0, y: 0, w: 1000, h: 800 }, { x: 1400, y: 0, w: 1000, h: 800 }];
+  deps.screens = () => state.screens;
+  const thrower = createPetThrow(deps);
+  thrower.start(700, 300, 2000, 0);
+  let t = 0;
+  for (let i = 0; i < 300; i++) {
+    thrower.step(t); t += 16;
+    assert.ok(px(root, 'left') + 263 / 2 < 1000, 'body center never enters the hole at t=' + t);
+  }
 });
 
 test('drag: releaseVelocity reads a fast flick', async () => {

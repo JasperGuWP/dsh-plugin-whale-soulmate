@@ -150,7 +150,20 @@ async function startMockBili(videos, { search = [] } = {}) {
       case '/x/v2/reply':
         if (!video) return json(null, -404);
         return json({ replies: video.comments, hots: [] });
+      case '/x/web-interface/nav':
+        return json({
+          isLogin: false,
+          wbi_img: {
+            img_url: 'https://i0.hdslb.com/bfs/wbi/abcdefghijklmnopqrstuvwxyz0123456789.png',
+            sub_url: 'https://i0.hdslb.com/bfs/wbi/zyxwvutsrqponmlkjihgfedcba9876543210.png',
+          },
+        });
+      case '/x/web-interface/popular':
+        return json({ list: [] });
+      case '/x/article/recommends':
+        return json({ articles: [] });
       case '/x/web-interface/search/type':
+        if (q('search_type') === 'article') return json({ result: [] });
         return json({
           result: search.map((s, i) => ({ bvid: s.bvid, title: `<em class="keyword">${q('keyword')}</em> ${s.title}`, author: 'UP小明', play: 1000 - i })),
         });
@@ -309,8 +322,18 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     biliEnabled: true,
     biliAutoSurfEnabled: false,
     biliAutoSurfEveryHours: 6,
+    biliAutoSurfEveryMinutes: 360,
     biliAutoSurfMaxPick: 2,
     biliAutoSurfDeepWatch: false,
+    biliSurfIncludePopular: true,
+    biliSurfIncludeArticles: true,
+    biliLiveFrameWatch: false,
+    biliLiveFrameEverySec: 30,
+    biliFfmpegPath: '',
+    biliVisionSummary: true,
+    biliVisionModel: '',
+    biliAsrEndpoint: '',
+    biliAsrApiKey: '',
     biliAutoSurfMaxAgeDays: 180,
     biliKeywordsAuto: true,
     biliKeywordsSeed: [],
@@ -651,10 +674,15 @@ test('runAutonomousSurfRound: picks by keywords, skips already-seen BV ids on th
     { bvid: BV_C, title: '视频C' },
   ];
   await withEnv(allVideos(), { search }, async ({ mock, service, net }) => {
-    const r1 = await runAutonomousSurfRound(service, { ...net, keywords: ['AI', '编程'] });
+    const r1 = await runAutonomousSurfRound(service, {
+      ...net,
+      keywords: ['AI', '编程'],
+      includePopular: false,
+      includeArticles: false,
+    });
     assert.equal(r1.ok, true, JSON.stringify(r1));
     assert.deepEqual(r1.searchedKeywords, ['AI', '编程']);
-    assert.equal(r1.pickedCount, 2, 'maxPick defaults to 2');
+    assert.equal(r1.pickedCount, 2, 'maxPick defaults to config/schedule cap (2)');
     assert.equal(r1.skippedSeenCount, 0);
     assert.deepEqual(r1.videos.map((v) => v.bvid), [BV_GOOD, BV_B]);
     assert.ok(r1.videos.every((v) => v.ok && typeof v.worthScore === 'number'));
@@ -685,10 +713,14 @@ test('runAutonomousSurfRound: picks by keywords, skips already-seen BV ids on th
 test('runAutonomousSurfRound: default keywords come from config, can be switched off, and search failures are loud', async () => {
   await withEnv(allVideos(), { search: [{ bvid: BV_GOOD, title: 'x' }] }, async ({ mock, service, net }) => {
     await saveConfigAuto(service.home, { extensions: { biliKeywords: ['独立开发', '数码科技'] } });
-    const r = await runAutonomousSurfRound(service, { ...net, maxPick: 1 });
+    const r = await runAutonomousSurfRound(service, {
+      ...net, maxPick: 1, includePopular: false, includeArticles: false,
+    });
     assert.deepEqual(r.searchedKeywords, ['独立开发', '数码科技']);
     assert.equal(r.pickedCount, 1);
-    const searched = mock.requests.filter((x) => x.path === '/x/web-interface/search/type').map((x) => x.query.keyword);
+    const searched = mock.requests
+      .filter((x) => x.path === '/x/web-interface/search/type' && x.query.search_type === 'video')
+      .map((x) => x.query.keyword);
     assert.deepEqual(searched, ['独立开发', '数码科技']);
 
     await saveConfigAuto(service.home, { extensions: { biliKeywords: [] } });

@@ -28,6 +28,7 @@ import { runAutonomousSurfRound } from '../../soulmate-bili/index.mjs';
 import { refreshSurfKeywords } from '../../soulmate-bili/keyword-learn.mjs';
 import { runAutoReplyPatrol } from '../../soulmate-bili/reply-patrol.mjs';
 import { resolveLlmModel } from '../llm-model-pick.mjs';
+import { clampSurfMaxPick, resolveSurfIntervalMinutes } from '../surf-schedule.mjs';
 import { clip, errMsg, str } from '../small-utils.mjs';
 import { priceInfo } from './chat-home-runtime.mjs';
 import { createProactiveDistill } from './proactive-distill.mjs';
@@ -397,7 +398,7 @@ export function createProactiveRuntime({
       lastAutoSurfAt: ext.lastAutoSurfAt ?? '',
     });
     if (!decision.surf) return { ok: true, ran: false, reason: decision.reason };
-    const maxPick = Math.min(5, Math.max(1, Math.floor(Number(ext.biliAutoSurfMaxPick) || 2)));
+    const maxPick = clampSurfMaxPick(ext.biliAutoSurfMaxPick, resolveSurfIntervalMinutes(ext));
     const deepWatch = ext.biliAutoSurfDeepWatch === true;
     let keywordsRefresh = null;
     try {
@@ -417,6 +418,9 @@ export function createProactiveRuntime({
     const keywords = Array.isArray(live?.extensions?.biliKeywords) ? live.extensions.biliKeywords : ext.biliKeywords;
     let res;
     try {
+      const llmController = typeof chatHome.getSessionController === 'function'
+        ? chatHome.getSessionController()
+        : null;
       res = await runAutonomousSurfRound(
         { home },
         {
@@ -425,6 +429,9 @@ export function createProactiveRuntime({
           keywords,
           ...(cfg?.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
           ...(cfg?.biliBaseUrl ? { baseUrl: cfg.biliBaseUrl } : {}),
+          ...(llmController && typeof llmController.generateReply === 'function'
+            ? { llmController }
+            : {}),
         }
       );
     } catch (err) {

@@ -210,6 +210,13 @@ const { createPetThrow } = require('./pet-throw.mjs')
         if (name === 'click') petEnter(m, 'wave', t)
         else if (name === 'dblclick') petEnter(m, 'happy', t)
       }
+      // 桌面窗口形态:preload 桥(仅透明窗内存在);身体矩形/忙碌态供主进程兜底泵判穿透
+      const petWindowBridge = (typeof window !== 'undefined' && window.__smPetWindow && window.smPetWindow) || null
+      let petWindowScreens = null
+      if (petWindowBridge) {
+        try { petWindowScreens = JSON.parse(new URLSearchParams(window.location.search).get('screens') || 'null') } catch (_) { petWindowScreens = null }
+      }
+      let lastBodySend = 0
       wirePetDrag({
         widget,
         hitEl,
@@ -226,6 +233,7 @@ const { createPetThrow } = require('./pet-throw.mjs')
         },
         onDragStart: (t) => petEvent('dragStart', t),
         onDragEnd: (t, vel) => petEvent('dragEnd', t, vel),
+        onHit: (on) => { if (petWindowBridge) petWindowBridge.setHit(pet ? on : false) },
         setSwallow: (v) => { swallowClick = !!v },
       })
       function petFrameAt(t) {
@@ -342,6 +350,7 @@ const { createPetThrow } = require('./pet-throw.mjs')
             stage: () => stageEl,
             viewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
             size: () => ({ width: petStage.width(), height: petStage.height() }),
+            screens: () => petWindowScreens,
             physics: () => (pet ? pet.cfg.physics : null),
             reducedMotion,
             onRest: (t) => { if (pet) { pet.m.dragging = false; petEnter(pet.m, 'happy', t) } },
@@ -447,6 +456,13 @@ const { createPetThrow } = require('./pet-throw.mjs')
 
       function frame(time) {
         if (destroyed) return
+        if (petWindowBridge && time - lastBodySend > 100) {
+          lastBodySend = time
+          const r = widget.getBoundingClientRect()
+          // busy 只算「手拿着」:飞行期间整窗仍按身体矩形穿透,不挡桌面点击
+          const busy = !!(pet && pet.m.dragging)
+          petWindowBridge.setBody({ x: r.x, y: r.y, w: r.width, h: r.height }, busy)
+        }
         if (petThrow) petThrow.step(time)
         if (petMotion) petMotion.step(time)
         if (pet) petApplyFaces(time)

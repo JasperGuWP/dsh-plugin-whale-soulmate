@@ -79,6 +79,22 @@ export async function getBiliAuthStatus(home) {
   const [conf, fields] = await Promise.all([loadConfig(home), loadBiliCredentialFields(home)]);
   const ext = conf.extensions ?? {};
   const loggedIn = Boolean(fields.sessdata && fields.biliJct);
+  let ffmpegReady = false;
+  let ffmpegVersion = '';
+  let ffmpegError = '';
+  try {
+    const { probeFfmpeg } = await import('../live-frames.mjs');
+    const probe = await probeFfmpeg({ ffmpegPath: ext.biliFfmpegPath });
+    ffmpegReady = probe.ok === true;
+    ffmpegVersion = probe.version || '';
+    ffmpegError = probe.ok ? '' : (probe.error || 'not-found');
+  } catch (err) {
+    ffmpegError = err instanceof Error ? err.message : String(err);
+  }
+  const liveOn = ext.biliLiveFrameWatch === true;
+  let liveFrameWatchBlockedReason = '';
+  if (liveOn && !loggedIn) liveFrameWatchBlockedReason = 'not-logged-in';
+  else if (liveOn && !ffmpegReady) liveFrameWatchBlockedReason = 'no-ffmpeg';
   return {
     ok: true,
     loggedIn,
@@ -91,5 +107,11 @@ export async function getBiliAuthStatus(home) {
     biliShareEnabled: ext.biliShareEnabled === true,
     biliShareVia: ext.biliShareVia === 'comment' ? 'comment' : 'dm',
     biliTargetUserMasked: maskKey(str(ext.biliTargetUser)),
+    ffmpegReady,
+    ffmpegVersion,
+    ffmpegError,
+    liveFrameWatchEnabled: liveOn,
+    liveFrameEverySec: Number(ext.biliLiveFrameEverySec) || 30,
+    liveFrameWatchBlockedReason,
   };
 }

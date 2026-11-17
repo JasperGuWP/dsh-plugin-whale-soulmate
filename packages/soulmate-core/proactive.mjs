@@ -440,12 +440,20 @@ export function shouldAutoSurf(args = {}) {
   if (cfg.biliEnabled === false) return { surf: false, reason: 'bili-disabled' };
   if (cfg.biliAutoSurfEnabled !== true) return { surf: false, reason: 'disabled' };
   if (inRanges(clock.minutes, cfg.quietHours ?? [])) return { surf: false, reason: 'quiet-hours' };
-  const gapMs = Math.max(1, num(cfg.biliAutoSurfEveryHours, 6)) * 3_600_000;
+  // Prefer minutes presets (10m…24h); fall back to legacy everyHours.
+  let gapMinutes = num(cfg.biliAutoSurfEveryMinutes, 0);
+  if (!(gapMinutes > 0)) gapMinutes = Math.max(1, num(cfg.biliAutoSurfEveryHours, 6)) * 60;
+  const gapMs = Math.max(60_000, gapMinutes * 60_000);
   const last = Date.parse(args.lastAutoSurfAt ?? '');
   if (Number.isFinite(last) && nowMs - last < gapMs) {
-    return { surf: false, reason: 'too-soon', nextInMs: Math.ceil(last + gapMs - nowMs) };
+    return { surf: false, reason: 'too-soon', nextInMs: Math.ceil(last + gapMs - nowMs), gapMinutes };
   }
-  return { surf: true, reason: Number.isFinite(last) ? 'interval-due' : 'first-round', dateKey: clock.dateKey };
+  return {
+    surf: true,
+    reason: Number.isFinite(last) ? 'interval-due' : 'first-round',
+    dateKey: clock.dateKey,
+    gapMinutes,
+  };
 }
 
 /** Weekly gate: idempotent per ISO week, so a restart loop cannot burn the budget. */

@@ -405,3 +405,30 @@ test('client.js: video pipeline needles present after build', async () => {
     assert.ok(src.includes(needle), `client.js should contain ${needle}`);
   }
 });
+
+test('video routes: /pet/skins catalog discovers copied folders without restart', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sm-skins-root-'));
+  try {
+    const pack = join(root, 'pet-testskin');
+    await mkdir(pack, { recursive: true });
+    await writeFile(join(pack, 'pet.json'), JSON.stringify({ displayName: '测试皮肤', states: { idle: { frames: ['pet-idle-01'] } } }));
+    await mkdir(join(root, 'pet-broken'), { recursive: true }); // no pet.json → skipped
+    const routes = assetRoutes({ home: {}, evolvePersona: async () => {}, skinsRoot: root });
+    const catalog = body(await routeOf(routes, 'GET', '/dsh-soulmate/api/pet/skins')({ query: new URLSearchParams() }));
+    assert.equal(catalog.ok, true);
+    const ids = catalog.skins.map((s) => s.id);
+    assert.ok(ids.includes('winterboy-chibi') && ids.includes('hanfu'), 'bundled skins listed');
+    assert.ok(ids.includes('testskin'), 'discovered folder listed');
+    assert.ok(!ids.includes('broken'), 'folder without pet.json skipped');
+    const entry = catalog.skins.find((s) => s.id === 'testskin');
+    assert.equal(entry.label, '测试皮肤');
+    assert.ok(entry.preview.includes('skin=testskin'));
+    // discovered skin serves its manifest without being in the bundled map
+    const manifest = body(await routeOf(routes, 'GET', '/dsh-soulmate/api/pet/manifest')({ query: new URLSearchParams('skin=testskin') }));
+    assert.equal(manifest.ok, true);
+    assert.equal(manifest.displayName, '测试皮肤');
+    // traversal still rejected by the id whitelist
+    const bad = await routeOf(routes, 'GET', '/dsh-soulmate/api/pet/frame')({ query: new URLSearchParams('id=pet-idle-01&skin=../evil') });
+    assert.equal(bad.status, 400);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

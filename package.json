@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-whale-soulmate",
-  "version": "0.2.107",
+  "version": "0.2.111",
   "description": "Modular, pluggable AI companion (Soulmate) for DeepSeek Harness: persona + LLM Wiki memory + five-layer privacy firewall + desktop pet + AIGC cloud sync.",
   "type": "module",
   "main": "index.js",
@@ -9,6 +9,7 @@
     "client.js",
     "cordis.patch.yml",
     "packages/",
+    "runtime/",
     "assets/",
     "README.md",
     "LICENSE",

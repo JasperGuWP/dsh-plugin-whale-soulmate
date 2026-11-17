@@ -24,11 +24,17 @@
 
 ## 形象展示
 
-两套内置皮肤，在「设置 → 称呼与形象」一键切换（静图与桌宠皮肤同步）：
+四套内置皮肤，在「设置 → 称呼与形象」一键切换（静图与桌宠皮肤同步）：
 
 | 汉风 · 襦裙 | Q版 · 冬装男孩 |
 |:---:|:---:|
 | ![汉风·襦裙 — 舞](docs/showcase/hanfu-dance.gif) | ![Q版·冬装男孩 — 滑雪](docs/showcase/winterboy-ski.gif) |
+
+| 女仆装 · 小鲸 | 蓝色冬装 |
+|:---:|:---:|
+| ![女仆装 — 鲸鱼松饼翻锅](docs/showcase/maid-eat.gif) | ![蓝色冬装 — 卖火柴的小女孩](docs/showcase/bluewinter-game.gif) |
+
+女仆装会做饭、打扫、给你按摩；蓝色冬装在雪天划火柴、烤红薯、滑冰转圈。同一套动作概念，各自不同的编排。
 
 桌宠为透明视频精灵：按住甩出去会重力弹跳、落地 Q 弹；单击轻触、双击互动、滚轮缩放。
 
@@ -63,6 +69,18 @@ dsh plugin --profile desktop add ./dsh-plugin-whale-soulmate-<version>.tgz
 
 > **务必装 tarball，不要装目录。** 目录会记成 `link:`，容易触发 `ERR_MODULE_NOT_FOUND`。  
 > node 半侧**无热加载**：装完请重启 dsh 进程。
+
+### 安装新皮肤（v0.2.108+，免改代码 / 免重启）
+
+皮肤自动发现：插件每次请求时扫描 `assets/pet-*/pet.json`，面板下拉框自动列出新皮肤。
+
+```bash
+# 一条命令：把素材文件夹（含 pet.json + pet-*.webm + pet-*.png）复制进已安装插件
+node install-skin.mjs <素材文件夹> --id <皮肤id>
+# 例：node install-skin.mjs ../output/pet-video-maid/assets --id maid
+```
+
+装完在面板「形象 / 桌面小伙伴」下拉里选中新皮肤即可，无需重新打包、无需重启。
 
 也可（锁定 commit 更稳）：
 
@@ -133,11 +151,15 @@ Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./N
 
 ### Pet skins
 
-Two bundled skins — switch in Settings → Identity (static avatar and pet skin stay in sync):
+Four bundled skins — switch in Settings → Identity (static avatar and pet skin stay in sync):
 
 | Hanfu · Ruqun | Chibi · Winter Boy |
 |:---:|:---:|
 | ![Hanfu skin — ribbon dance](docs/showcase/hanfu-dance.gif) | ![Winter boy skin — skiing](docs/showcase/winterboy-ski.gif) |
+
+| Maid · Xiaojing | Blue Winter |
+|:---:|:---:|
+| ![Maid skin — pancake flip](docs/showcase/maid-eat.gif) | ![Blue winter skin — match girl](docs/showcase/bluewinter-game.gif) |
 
 Transparent video sprites: flick-throw with gravity bounces and a landing squash; tap to pet, double-tap to nuzzle, wheel to zoom.
 
@@ -162,6 +184,8 @@ dsh plugin --profile web add ./dsh-plugin-whale-soulmate-<version>.tgz
 ```
 
 Install the **tarball**, not a directory. Restart dsh (node half is not hot-reloadable).
+
+New skins (v0.2.108+) need no code change or restart: `node install-skin.mjs <asset-folder> --id <skin-id>` copies the pack into the installed plugin; skins are discovered per request and listed in the panel dropdowns.
 
 ```bash
 dsh plugin --profile web add github:JasperGuWP/dsh-plugin-whale-soulmate#<sha>

@@ -21,6 +21,10 @@ export const GENDER_PET_SKIN = Object.freeze({ female: 'hanfu', male: 'winterboy
 export const PET_WINTERBOY_CHIBI_DIR = fileURLToPath(new URL('../../assets/pet-winterboy-chibi/', import.meta.url));
 export const PET_HANFU_DIR = fileURLToPath(new URL('../../assets/pet-hanfu/', import.meta.url));
 export const PET_SKINS = { 'winterboy-chibi': PET_WINTERBOY_CHIBI_DIR, hanfu: PET_HANFU_DIR };
+/** Assets root: extra pet-<id>/ packs copied here are discovered at request time. */
+export const PET_ASSETS_ROOT = fileURLToPath(new URL('../../assets/', import.meta.url));
+/** Skin id whitelist for discovered packs (folder name must be 'pet-' + id). */
+export const PET_SKIN_ID = /^[a-z0-9][a-z0-9-]*$/;
 export const PET_FRAME_ID = /^pet-[a-z0-9-]+$/;
 /** Pet video assets: basename whitelist + MIME for the transparent-video route. */
 export const PET_VIDEO_NAME = /^[a-z0-9][a-z0-9-]*$/;

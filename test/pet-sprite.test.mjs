@@ -55,6 +55,7 @@ test('pet: config defaults ship enabled and deep-merge keeps untouched fields', 
   assert.deepEqual(DEFAULT_CONFIG.pet, {
     enabled: true, sizePx: 180, sleepAfterIdleSec: 300, thinkQuietSec: 1.5, skin: 'winterboy-chibi', skinAuto: true,
     physics: { gravity: 1400, restitution: 0.78, groundFriction: 2.5, throwPower: 1 },
+    windowEnabled: false, windowElectronPath: '',
   });
   const merged = deepMerge(DEFAULT_CONFIG, { pet: { enabled: false } });
   assert.equal(merged.pet.enabled, false);
@@ -270,10 +271,10 @@ test('pet: browser half wires the sprite layer without touching the static PNG c
   // Assert the *behaviour* (both cards mounted under the identity tab), not a local
   // variable name: the panel was split into panel-forms.mjs, so the old literal
   // `identity: [identity, spriteCard, petCard]` is an implementation detail.
-  for (const needle of ['桌面小伙伴', "api('pet/manifest", 'petEvent(', 'identity: [identity, spriteCardEl, petCardEl]', 'petThinking', "addEventListener('wheel'", 'pet/manifest?skin=', 'petskin']) {
+  for (const needle of ['桌面小伙伴', "api('pet/manifest", 'petEvent(', 'identity: [identity, lookPetCardEl]', 'petThinking', "addEventListener('wheel'", 'pet/manifest?skin=', 'petskin']) {
     assert.ok(src.includes(needle), `client.js should contain ${needle}`);
   }
   // static card still explains image formats for uploads (Q版 default since 0.2.83)
-  assert.ok(src.includes('上传 PNG / JPG / WEBP（透明底最好，不超过 4MB）'));
+  assert.ok(src.includes('选已有形象会同步页内头像与桌面小伙伴皮肤'));
   assert.ok(src.includes('sm-pet-ops'), 'pet card ops column must use the vertical layout class');
 });

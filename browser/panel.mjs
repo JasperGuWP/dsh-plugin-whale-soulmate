@@ -4,7 +4,7 @@ const h = React.createElement
 const { api, clampNum, PRESET_FALLBACK, API } = require('./util.mjs')
 const { drawNeurons, neuronViews, DEFAULT_VIEW } = require('./neuron/index.mjs')
 const { drawAvatar } = require('./avatar.mjs')
-const { uploadSpriteFile, deleteSprite } = require('./sprite.mjs')
+const { deleteSprite } = require('./sprite.mjs')
 const { engHead, statusCard, schedulingCard, personaCard } = require('./panel-cards.mjs')
 const { usageCard } = require('./panel-usage.mjs')
 const { diaryCard } = require('./panel-diary.mjs')
@@ -13,8 +13,8 @@ const {
   identityCard,
   gateCard: gateCardEl,
   traitsCard,
-  spriteCard,
-  petCard,
+  skinFrameUrl,
+  lookPetCard,
   rhythmCard: rhythmCardEl,
 } = require('./panel-forms.mjs')
 const {
@@ -69,8 +69,8 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       const moodRef = React.useRef('neutral')
       // Must live with the other hooks — never after the empty-draft early return, or
       // React crashes on the first successful load and the settings page goes blank.
-      const fileInputRef = React.useRef(null)
       const [spriteNote, setSpriteNote] = React.useState('')
+      const [skinList, setSkinList] = React.useState(null)
       const [proStatus, setProStatus] = React.useState(null)
       const savedSigRef = React.useRef('')
       const savingRef = React.useRef(false)
@@ -107,6 +107,18 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       }, [])
 
       React.useEffect(() => { load() }, [load])
+      // Skin catalog: fetched on mount and refreshed while the identity tab is
+      // open, so a freshly copied skin folder shows up without a client rebuild.
+      React.useEffect(() => {
+        let alive = true
+        const fetchSkins = () => api('pet/skins').then((s) => {
+          if (alive && s && s.ok && Array.isArray(s.skins) && s.skins.length) setSkinList(s.skins)
+        })
+        fetchSkins()
+        if (tab !== 'identity') return () => { alive = false }
+        const timer = setInterval(fetchSkins, 15000)
+        return () => { alive = false; clearInterval(timer) }
+      }, [tab])
       useTraitsStatePoll(React, tab, load)
       React.useEffect(() => {
         if (tab !== 'neurons') return undefined
@@ -228,8 +240,18 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
               extensions: {
                 biliAutoSurfEnabled: !!current.extensions.biliAutoSurfEnabled,
                 biliAutoSurfEveryHours: Number(current.extensions.biliAutoSurfEveryHours) || 6,
+                biliAutoSurfEveryMinutes: Number(current.extensions.biliAutoSurfEveryMinutes) || 360,
                 biliAutoSurfMaxPick: Number(current.extensions.biliAutoSurfMaxPick) || 2,
                 biliAutoSurfDeepWatch: !!current.extensions.biliAutoSurfDeepWatch,
+                biliSurfIncludePopular: current.extensions.biliSurfIncludePopular !== false,
+                biliSurfIncludeArticles: current.extensions.biliSurfIncludeArticles !== false,
+                biliLiveFrameWatch: !!current.extensions.biliLiveFrameWatch,
+                biliLiveFrameEverySec: Number(current.extensions.biliLiveFrameEverySec) || 30,
+                biliFfmpegPath: String(current.extensions.biliFfmpegPath || ''),
+                biliVisionSummary: current.extensions.biliVisionSummary !== false,
+                biliVisionModel: String(current.extensions.biliVisionModel || ''),
+                biliAsrEndpoint: String(current.extensions.biliAsrEndpoint || ''),
+                biliAsrApiKey: String(current.extensions.biliAsrApiKey || ''),
                 biliKeywordsAuto: current.extensions.biliKeywordsAuto !== false,
                 biliKeywordsSeed: (current.extensions.biliKeywordsSeed || []).map((k) => String(k).trim()).filter(Boolean),
                 biliKeywords: (current.extensions.biliKeywords || []).map((k) => String(k).trim()).filter(Boolean),
@@ -359,12 +381,18 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       const changelog = (engine && engine.persona && engine.persona.changelog) || []
       const pending = (engine && engine.persona && engine.persona.candidatesPending) || 0
       const spriteUrl = draft.appearance.customSpriteUrl && String(draft.appearance.customSpriteUrl).trim()
+      // 头部头像跟随桌宠皮肤:上传图优先,否则用皮肤静帧,
+      // 换皮肤后「设置」头部不再停在旧图。
+      const headSkin = (draft.pet && draft.pet.skin) || ''
+      const headSrc = (draft.appearance.spriteIsUpload && spriteUrl)
+        ? spriteUrl
+        : (headSkin ? skinFrameUrl(headSkin, skinList) : (spriteUrl || ''))
       const selfText = (engine && engine.persona && engine.persona.selfSummary) || ''
       const hasSelf = Boolean(selfText) && !selfText.includes('尚未填写')
 
       const head = h('div', { key: 'head', className: 'sm-panel-head' }, [
-        spriteUrl
-          ? h('img', { key: 'sprite', className: 'sm-sprite', src: spriteUrl, alt: '精灵贴图' })
+        headSrc
+          ? h('img', { key: 'sprite', className: 'sm-sprite', src: headSrc, alt: '精灵贴图' })
           : h('canvas', { key: 'avatar', ref: canvasRef, className: 'sm-panel-avatar', width: 176, height: 176 }),
         h('div', { key: 'meta', className: 'sm-panel-id' }, [
           h('h2', { key: 'title', className: 'sm-panel-title' }, (snap && snap.displayName ? snap.displayName : 'soulmate') + ' 的设置'),
@@ -434,25 +462,13 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
         quizBusy, setQuizBusy, quizMsg, setQuizMsg, quizMsgKind, setQuizMsgKind, snap,
       }))
 
-      // Companion art: the byte-level work (trim padding, POST the PNG) lives in
-      // sprite.mjs; this wrapper only owns the note the panel shows while it runs.
-      async function uploadSprite(file) {
-        if (!file) return
-        setSpriteNote('上传中…')
-        try {
-          const { url, bytes } = await uploadSpriteFile(file)
-          patchAppearance({ customSpriteUrl: url })
-          setSpriteNote('已上传 ' + Math.round(bytes / 1024) + 'KB · 即将自动保存')
-        } catch (err) {
-          setSpriteNote('上传失败：' + (err && err.message ? err.message : String(err)))
-        }
-      }
       async function restoreDefaultSprite() {
         setSpriteNote('恢复默认…')
         try {
           const url = await deleteSprite(draft.gender)
           const fallback = draft.gender === 'male' ? DEFAULT_SPRITE_MALE_URL : DEFAULT_SPRITE_URL
-          patchAppearance({ customSpriteUrl: url || fallback })
+          patchAppearance({ customSpriteUrl: url || fallback, spriteIsUpload: false })
+          patchPet({ skin: draft.gender === 'male' ? 'winterboy-chibi' : 'hanfu', skinAuto: true })
           setSpriteNote('已恢复默认 · Q版形象')
         } catch (err) {
           setSpriteNote('恢复失败：' + (err && err.message ? err.message : String(err)))
@@ -466,7 +482,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
           // Drop uploaded sticker so the bundled frame shows through.
           try { await deleteSprite(draft.gender) } catch (_) { /* ignore */ }
           const url = String(look.preview || '') + (String(look.preview || '').includes('?') ? '&' : '?') + 'v=' + Date.now()
-          patchAppearance({ customSpriteUrl: url })
+          patchAppearance({ customSpriteUrl: url, spriteIsUpload: false })
           patchPet({ skin: look.id, skinAuto: false })
           setSpriteNote('已切换：' + (look.label || look.id) + '（桌宠皮肤已同步）')
         } catch (err) {
@@ -476,13 +492,13 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
 
       // Dynamic layer card: sits under the static PNG card, never replaces it.
       const petDraft = draft.pet || { enabled: false, sizePx: 148, sleepAfterIdleSec: 300, skin: 'winterboy-chibi', skinAuto: true }
-      const spriteCardEl = spriteCard({
-        draft, spriteNote, fileInputRef, uploadSprite, restoreDefaultSprite,
+      const lookPetCardEl = lookPetCard({
+        draft, petDraft, patchPet, spriteNote, restoreDefaultSprite,
         selectBundledLook,
-        petSkin: petDraft.skin,
+        looks: skinList,
+        PetPreview,
         defaultSpriteUrl: draft.gender === 'male' ? DEFAULT_SPRITE_MALE_URL : DEFAULT_SPRITE_URL,
       })
-      const petCardEl = petCard({ draft, petDraft, patchPet, PetPreview })
 
       // Proactive scheduler draft: the rhythm tab binds to this mirror of config.
       const proDraft = draft.proactive || {
@@ -573,7 +589,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
         })],
         personality: [personaCardEl, traits, gateCard],
         neurons: [neuronCard],
-        identity: [identity, spriteCardEl, petCardEl],
+        identity: [identity, lookPetCardEl],
         rhythm: [rhythmCard],
         surf: [surfPage],
         usage: [usageCard({ usage, draft: usageDraft, busy: usageBusy, note: usageNote, h, onDraft: (patch) => setUsageDraft((prev) => ({ ...(prev || {}), ...patch })), onSave: saveUsage })],

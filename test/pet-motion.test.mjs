@@ -242,8 +242,8 @@ test('motion: clamp keeps an anchored pet inside the viewport on resize', async 
   state.W = 800; state.H = 500;
   root._rect.left = 1200; root._rect.top = 700;
   motion.clamp();
-  assert.ok(left(root) <= 800 - 148 - 8, 'clamped horizontally');
-  assert.ok(parseFloat(root.style.top) <= 500 - 148 - 8, 'clamped vertically');
+  assert.equal(left(root), 800 - 148, 'clamped flush to the right edge');
+  assert.equal(parseFloat(root.style.top), 500 - 148, 'clamped flush to the bottom edge');
 });
 
 test('motion: clamp leaves a right/bottom-anchored pet untouched', async () => {
