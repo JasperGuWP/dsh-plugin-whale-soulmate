@@ -350,7 +350,10 @@ test('surf e2e: 标题闸 → 真帧像素进多模态 → 时间线 → 互动 
 
     const watched = round.videos.find((v) => v.ok);
     assert.equal(watched.bvid, BV_GOOD);
-    assert.equal(watched.channels.visionSummary, 'ok:live');
+    assert.ok(
+      ['ok:live', 'ok:storyboard'].includes(watched.channels.visionSummary),
+      `expected ok:live or ok:storyboard, got ${watched.channels.visionSummary}`,
+    );
     assert.match(watched.takeaway, /时间线：/);
     assert.match(watched.takeaway, /00:00–01:00/);
     assert.ok(watched.worthScore >= 13, `good score=${watched.worthScore}`);

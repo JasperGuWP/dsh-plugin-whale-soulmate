@@ -128,6 +128,10 @@ test('self-update: pnpm failure surfaces error phase and retry is possible', asy
 });
 
 test('self-update: restart only self-restarts the desktop exe host', async () => {
+  if (process.platform !== 'win32') {
+    console.log(`skip: self-update restart requires win32 (got ${process.platform})`);
+    return;
+  }
   const { pkgRoot, conf } = await env();
   const { impl, calls } = fakeSpawn();
   const su = createSelfUpdate({
