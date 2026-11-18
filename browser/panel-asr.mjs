@@ -67,6 +67,11 @@ function AsrModelPicker({ endpoint, apiKey, value, onCommit }) {
 /** 无字幕视频的外部 ASR 设置；与画面理解总结互不依赖。 */
 function AsrSettings({ ext, patchExtensions }) {
   const enabled = ext.biliAsrEnabled !== false
+  const protocolValue = (() => {
+    const p = String(ext.biliAsrProtocol || '').trim().toLowerCase()
+    if (p === 'deepseek' || p === 'dashscope' || p === 'openai' || p === 'json') return p
+    return /aliyuncs\.com|dashscope/i.test(String(ext.biliAsrEndpoint || '')) ? 'dashscope' : 'deepseek'
+  })()
   return h('div', { key: 'asr-settings' }, [
     h('label', {
       key: 'asr-enabled',
@@ -93,14 +98,13 @@ function AsrSettings({ ext, patchExtensions }) {
         'ASR 协议',
         h('select', {
           key: 'control', className: 'sm-panel-input',
-          value: ext.biliAsrProtocol || 'auto',
+          value: protocolValue,
           onChange: (event) => patchExtensions({ biliAsrProtocol: event.target.value }),
         }, [
-          h('option', { key: 'auto', value: 'auto' }, '自动(推荐:阿里域名→DashScope,其余→OpenAI 转写)'),
-          h('option', { key: 'openai', value: 'openai' }, 'OpenAI 式转写(multipart 音频;火山/自建 whisper/兼容网关)'),
-          h('option', { key: 'dashscope', value: 'dashscope' }, '阿里 DashScope 多模态(qwen-audio-asr 系)'),
-          h('option', { key: 'deepseek', value: 'deepseek' }, 'Deepseek 原生(https://api.deepseek.com/v1/tools/asr)'),
-          h('option', { key: 'json', value: 'json' }, '自定义 JSON 契约({bvid,audioUrl,model})'),
+          h('option', { key: 'deepseek', value: 'deepseek' }, 'DeepSeek ASR'),
+          h('option', { key: 'dashscope', value: 'dashscope' }, 'Qwen ASR'),
+          h('option', { key: 'openai', value: 'openai' }, '其他 ASR'),
+          h('option', { key: 'json', value: 'json' }, '自定义 JSON'),
         ]),
       ),
       field(

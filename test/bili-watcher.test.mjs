@@ -336,7 +336,7 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     biliAsrApiKey: '',
     biliAsrModel: '',
     biliAsrEnabled: true,
-    biliAsrProtocol: 'auto',
+    biliAsrProtocol: 'deepseek',
     biliAutoSurfMaxAgeDays: 180,
     biliKeywordsAuto: true,
     biliKeywordsSeed: [],

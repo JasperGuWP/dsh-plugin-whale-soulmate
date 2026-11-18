@@ -197,8 +197,8 @@ export const DEFAULT_CONFIG = Object.freeze({
     /** External ASR endpoint URL; used only when official subtitles missing/mismatched. */
     biliAsrEndpoint: '',
     biliAsrEnabled: true,
-    // 协议族:auto(阿里域名→dashscope,其余→openai 转写)/ openai / dashscope / deepseek(Deepseek 原生) / json(旧自定义契约)
-    biliAsrProtocol: 'auto',
+    // 协议族:deepseek(DeepSeek ASR,推荐)/ dashscope(Qwen ASR)/ openai(其他 ASR)/ json(自定义 JSON 契约)
+    biliAsrProtocol: 'deepseek',
     /** Optional Bearer token for ASR endpoint (avoid logging). */
     biliAsrApiKey: '',
     biliAsrModel: '',

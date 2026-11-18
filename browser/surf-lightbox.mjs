@@ -95,8 +95,6 @@ function SurfLightbox({ shot, onClose, onDelete, actionLine }) {
     const entry = shot.entry || {}
     const url = String(entry.url || '').trim()
     const summary = String(entry.summary || '（无总结）')
-    const missingTimeline = /未看画面|未接通|未生成时间线|画面理解失败/.test(summary)
-      && !/时间线\s*[:：]/.test(summary)
     const allStills = Array.isArray(entry.stills) ? entry.stills.filter(Boolean) : []
     return h('div', {
       className: 'sm-surf-lightbox',
@@ -115,10 +113,6 @@ function SurfLightbox({ shot, onClose, onDelete, actionLine }) {
             [entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', entry.at ? String(entry.at).slice(0, 19).replace('T', ' ') : '']
               .filter(Boolean).join(' · ')),
         ]),
-        missingTimeline
-          ? h('p', { key: 'warn', className: 'sm-surf-detail-warn' },
-            '这条没有画面时间线（总结时没把截帧送给聊天多模态）。旧记录不会回填；请完全退出并重开 DSH 后再点「立刻冲浪」生成带「时间线：」的新条目。')
-          : null,
         h('pre', { key: 'sum', className: 'sm-surf-detail-summary' }, summary),
         h('p', { key: 'act', className: 'sm-surf-log-actions' }, actionLine(entry.actions)),
         allStills.length

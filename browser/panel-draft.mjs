@@ -225,7 +225,7 @@ function draftFromSummary(snap) {
       biliAsrEndpoint: (config.extensions && config.extensions.biliAsrEndpoint) || '',
       biliAsrApiKey: (config.extensions && config.extensions.biliAsrApiKey) || '',
       biliAsrModel: (config.extensions && config.extensions.biliAsrModel) || '',
-      biliAsrProtocol: (config.extensions && config.extensions.biliAsrProtocol) || 'auto',
+      biliAsrProtocol: (config.extensions && config.extensions.biliAsrProtocol) || 'deepseek',
       biliKeywordsAuto: !(config.extensions && config.extensions.biliKeywordsAuto === false),
       biliKeywordsSeed: (config.extensions && Array.isArray(config.extensions.biliKeywordsSeed))
         ? config.extensions.biliKeywordsSeed.slice()

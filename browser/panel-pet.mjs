@@ -98,10 +98,8 @@ function lookPetCard({
         }, '恢复默认'),
         h('p', { key: 'tip', className: 'sm-panel-muted' },
           spriteNote || '选已有形象会同步页内头像与桌面小伙伴皮肤；「恢复默认」按性别回到默认静图与皮肤。'),
-        h('p', { key: 'download-tip', className: 'sm-panel-muted' },
-          '其余皮肤首次选择时从 GitHub Releases 下载并缓存到本地；下载完成后可离线使用，也可在缓存目录手动导入。'),
-        h('p', { key: 'tip2', className: 'sm-panel-muted' },
-          '预览优先播皮肤 idle 透明视频；没有视频才轮播 PNG。开启后右下角会动：可拖动、甩出去弹跳、滚轮缩放。「桌面独立窗口」把同一只小伙伴放到桌面透明置顶窗里，两个形态各有开关、可同时开。切换性别会自动换上对应皮肤；手动选皮肤则固定不跟随。'),
+        null,
+        null,
       ]),
     ]),
   ])

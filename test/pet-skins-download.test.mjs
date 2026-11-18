@@ -187,7 +187,7 @@ test('pet skins: checksum, size and traversal checks reject a downloaded pack', 
 
 test('pet skins: client contains the first-download interaction', async () => {
   const src = await readFile(new URL('../client.js', import.meta.url), 'utf8');
-  for (const needle of ['pet/skins/install', '首次使用，正在从 GitHub Release 下载皮肤包', '首次下载', '从 GitHub Releases 下载并缓存']) {
+  for (const needle of ['pet/skins/install', '首次使用，正在从 GitHub Release 下载皮肤包', '首次下载']) {
     assert.ok(src.includes(needle), `client.js should contain ${needle}`);
   }
 });

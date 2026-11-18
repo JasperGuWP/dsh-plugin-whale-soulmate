@@ -247,12 +247,42 @@ function makeClient(options = {}) {
   const timeoutMs = num(options.timeoutMs, 15_000);
   const cookie = str(options.cookie);
   let mixinCache = { key: '', at: 0 };
+  // buvid 设备指纹罐:搜索等风控接口要求 buvid3/buvid4/_uuid;从响应 Set-Cookie 收集并回带。
+  const JAR_KEYS = new Set(['buvid3', 'buvid4', 'b_nut', 'b_lsid', '_uuid', 'buvid_fp']);
+  const jar = new Map();
+  for (const part of cookie.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx < 0) continue;
+    const name = part.slice(0, idx).trim();
+    if (JAR_KEYS.has(name)) jar.set(name, part.slice(idx + 1).trim());
+  }
+  const cookieHeader = () => {
+    const parts = [];
+    if (cookie) parts.push(cookie);
+    for (const [k, v] of jar) {
+      if (!new RegExp(`(^|;\\s*)${k}=`).test(cookie)) parts.push(`${k}=${v}`);
+    }
+    return parts.join('; ');
+  };
+  const absorbCookies = (res) => {
+    try {
+      const list = typeof res?.headers?.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
+      for (const raw of list) {
+        const first = String(raw).split(';')[0];
+        const idx = first.indexOf('=');
+        if (idx < 0) continue;
+        const name = first.slice(0, idx).trim();
+        if (!JAR_KEYS.has(name)) continue;
+        jar.set(name, first.slice(idx + 1).trim());
+      }
+    } catch { /* headers unavailable */ }
+  };
   const headers = (extra = {}) => ({
     'user-agent': UA,
     referer: 'https://www.bilibili.com/',
     origin: 'https://www.bilibili.com',
     accept: 'application/json, text/plain, */*',
-    ...(cookie ? { cookie } : {}),
+    ...(cookieHeader() ? { cookie: cookieHeader() } : {}),
     ...extra,
   });
   const request = async (url, init = {}) => {
@@ -262,6 +292,7 @@ function makeClient(options = {}) {
       signal: init.signal ?? (timeoutMs > 0 && typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined),
     });
     if (!res || typeof res.ok !== 'boolean') throw new Error('invalid fetch response');
+    absorbCookies(res);
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${urlPathOf(url)}`);
     return res;
   };
@@ -316,7 +347,18 @@ function makeClient(options = {}) {
     }
     return plain;
   };
-  return { baseUrl, fetchImpl, request, json, api, apiRaw, signParams, text, headers };
+  return {
+    baseUrl, fetchImpl, request, json, api, apiRaw, signParams, text, headers,
+    /** 拉取匿名设备指纹(buvid3/buvid4)并作废 WBI 缓存;风控 412 时调用后重试。 */
+    ensureBuvid: async () => {
+      const d = await apiRaw('/x/frontend/finger/spi');
+      const b3 = str(d?.b_3);
+      const b4 = str(d?.b_4);
+      if (b3) jar.set('buvid3', b3);
+      if (b4) jar.set('buvid4', b4);
+      mixinCache = { key: '', at: 0 };
+    },
+  };
 }
 
 function urlPathOf(url) {
@@ -907,9 +949,10 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
   if (transcriptEmpty && asrEndpoint && asrEnabled) {
     // OpenAI/DashScope 系协议要真实音频流:从 playurl 取最小码率音轨 URL
     let audioUrl = str(options.asrAudioUrl).trim();
-    if (!audioUrl && (asrProtocol === 'openai' || asrProtocol === 'dashscope') && bvid && cid) {
+    if (!audioUrl && (asrProtocol === 'openai' || asrProtocol === 'dashscope' || asrProtocol === 'deepseek') && digest.bvid && digest.cid) {
       try {
-        const play = await client.api('/x/player/playurl', { bvid, cid, qn: 0, fnval: 16 }, { wbi: true });
+        const asrClient = makeClient({ ...options, cookie });
+        const play = await asrClient.api('/x/player/playurl', { bvid: digest.bvid, cid: digest.cid, qn: 0, fnval: 16 }, { wbi: true });
         audioUrl = pickPlayurlAudio(play)?.url || '';
       } catch { /* soft-fail:转写会报 no-audio-url */ }
     }
@@ -925,6 +968,7 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
       audioUrl,
       durationSec: digest.durationSec,
       fetchImpl: options.fetchImpl,
+      ffmpegPath: options.ffmpegPath ?? confLive.extensions?.biliFfmpegPath,
     });
     digest.channels = { ...(digest.channels || {}), asr: asr.ok ? 'ok' : `${asr.channel}:${asr.error || ''}`.replace(/:$/, '') };
     if (asr.ok && asr.text) {
@@ -1116,12 +1160,23 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
 async function searchVideos(client, keyword, limit, { order = 'pubdate' } = {}) {
   // Default pubdate：避免永远冲到播放量榜上的过时爆款（装机圣经一类）。
   // WBI 签名：未签名时搜索常返回 code -412（风控），表现为「关键词全挂、只捡到零星结果」。
-  const data = await client.api('/x/web-interface/search/type', {
+  const params = {
     search_type: 'video',
     keyword,
     order: order === 'click' ? 'click' : 'pubdate',
     page: 1,
-  }, { wbi: true });
+    platform: 'pc',
+    web_location: '1430654',
+  };
+  let data;
+  try {
+    data = await client.api('/x/web-interface/search/type', params, { wbi: true });
+  } catch (err) {
+    if (!/412/.test(errMsg(err)) || typeof client.ensureBuvid !== 'function') throw err;
+    // 412 = 风控:补 buvid 设备指纹 + 刷新 WBI 键后重试一次
+    await client.ensureBuvid().catch(() => {});
+    data = await client.api('/x/web-interface/search/type', params, { wbi: true });
+  }
   const rows = Array.isArray(data?.result) ? data.result : [];
   return rows
     .map((r) => ({
@@ -1134,6 +1189,53 @@ async function searchVideos(client, keyword, limit, { order = 'pubdate' } = {}) 
       keyword,
       source: 'keyword',
     }))
+    .filter((r) => r.bvid)
+    .slice(0, limit);
+}
+
+async function fetchRankingVideos(client, limit = 12) {
+  const data = await client.api('/x/web-interface/ranking/v2', { rid: 0, type: 'all' }, { wbi: true });
+  const rows = Array.isArray(data?.list) ? data.list : [];
+  return rows
+    .map((r) => {
+      const owner = isObject(r.owner) ? r.owner : {};
+      return {
+        kind: 'video',
+        bvid: str(r.bvid),
+        title: decodeEntities(stripTags(r.title)),
+        author: str(owner.name || r.author),
+        play: num(r.stat?.view ?? r.play),
+        pubdate: num(r.pubdate),
+        keyword: '(排行榜)',
+        source: 'ranking',
+      };
+    })
+    .filter((r) => r.bvid)
+    .slice(0, limit);
+}
+
+/** 首页推荐流(需登录 cookie 的 buvid;未登录/风控时软失败)。 */
+async function fetchRcmdFeed(client, limit = 10) {
+  const data = await client.api('/x/web-interface/index/top/feed/rcmd', {
+    ps: clamp(limit, 1, 20),
+    fresh_type: 3,
+    fresh_idx: 1,
+  }, { wbi: true });
+  const rows = Array.isArray(data?.item) ? data.item : [];
+  return rows
+    .map((r) => {
+      const owner = isObject(r.owner) ? r.owner : {};
+      return {
+        kind: 'video',
+        bvid: str(r.bvid),
+        title: decodeEntities(stripTags(r.title)),
+        author: str(owner.name || r.author),
+        play: num(r.stat?.view ?? r.play),
+        pubdate: num(r.pubdate),
+        keyword: '(推荐)',
+        source: 'rcmd',
+      };
+    })
     .filter((r) => r.bvid)
     .slice(0, limit);
 }
@@ -1413,6 +1515,18 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
         for (const row of hot) pool.push(row);
       } catch (err) {
         errors.push(`热门: ${errMsg(err)}`);
+      }
+      try {
+        const ranked = await fetchRankingVideos(client, Math.max(8, maxPick * 3));
+        for (const row of ranked) pool.push(row);
+      } catch (err) {
+        errors.push(`排行榜: ${errMsg(err)}`);
+      }
+      try {
+        const feed = await fetchRcmdFeed(client, Math.max(6, maxPick * 2));
+        for (const row of feed) pool.push(row);
+      } catch (err) {
+        errors.push(`推荐流: ${errMsg(err)}`);
       }
     }
 

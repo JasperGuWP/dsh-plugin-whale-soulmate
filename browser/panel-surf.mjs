@@ -19,8 +19,7 @@ function engageSection({ draft, patchExtensions }) {
       h('span', { key: 'n', className: 'sm-eng-num' }, '互动'),
       h('div', { key: 't' }, [
         h('h3', { key: 'title' }, '按性格自动互动'),
-        h('p', { key: 's', className: 'sm-panel-muted' },
-          '看完片子后自行决定赞 / 藏 / 评 / 关注；别人回评时可跟帖（同楼最多几轮）。'),
+        null,
       ]),
     ]),
     h('label', { key: 'engage-on', className: 'sm-rhythm-check' }, [
@@ -410,7 +409,7 @@ function surfCard(view) {
       h('span', { key: 'n', className: 'sm-eng-num' }, '日志'),
       h('div', { key: 't', className: 'sm-surf-log-head-text' }, [
         h('h3', { key: 'title' }, 'B 站冲浪日志'),
-        h('p', { key: 's', className: 'sm-panel-muted' }, '封面与分镜可点开放大；点「查看全部分镜」可浏览该片消化过的帧。'),
+        null,
       ]),
       h('button', {
         key: 'now',
@@ -483,7 +482,7 @@ function surfCard(view) {
     platformBar,
     !openBili
       ? h('div', { key: 'gate', className: 'sm-eng-card sm-surf-gate' }, [
-        h('p', { key: 'lead', className: 'sm-panel-muted' }, '登录 B 站后可定时巡片、互动与查看冲浪日志。'),
+        null,
         h('button', {
           key: 'go',
           type: 'button',
@@ -503,7 +502,7 @@ function surfCard(view) {
             h('span', { key: 'n', className: 'sm-eng-num' }, '定时'),
             h('div', { key: 't' }, [
               h('h3', { key: 'title' }, '定时冲浪'),
-              h('p', { key: 's', className: 'sm-panel-muted' }, '按兴趣关键词巡片；免打扰时段不巡。'),
+              null,
             ]),
           ]),
           ...autoSurfSection({ draft, patchExtensions }),

@@ -13,7 +13,7 @@ const { paintBalloonMini } = require('./balloon-sprite.mjs')
 const { field, BUNDLED_LOOKS, skinFrameUrl, lookPetCard } = require('./panel-pet.mjs')
 const { AsrSettings } = require('./panel-asr.mjs')
 
-/** Hint under «真看抽帧»: login + ffmpeg readiness from bili/auth status. */
+/** Hint under «真看抽帧»: only surfaces blockers (login / missing ffmpeg with a download link). */
 function LiveFrameReadyHint() {
   const [status, setStatus] = React.useState(null)
   React.useEffect(() => {
@@ -21,17 +21,18 @@ function LiveFrameReadyHint() {
     api('bili/auth').then((s) => { if (alive && s && s.ok !== false) setStatus(s) }).catch(() => {})
     return () => { alive = false }
   }, [])
-  if (!status) return h('p', { className: 'sm-panel-muted' }, '正在检查 ffmpeg / 登录状态…')
+  if (!status) return null
   if (!status.loggedIn) {
-    return h('p', { className: 'sm-panel-muted' }, '真看抽帧需要先登录 B 站（上方扫码或 Cookie）。未登录时仍用字幕/分镜看片。')
+    return h('p', { className: 'sm-panel-muted' }, '登录 B 站后才能抽真实帧。')
   }
   if (!status.ffmpegReady) {
-    return h('p', { className: 'sm-panel-muted' },
-      '未检测到本机 ffmpeg，无法抽真实帧。请安装 ffmpeg 并加入 PATH（或在配置里填 biliFfmpegPath），然后刷新。当前仍用字幕/分镜看片。'
-        + (status.ffmpegError ? '（' + String(status.ffmpegError).slice(0, 80) + '）' : ''))
+    return h('p', { className: 'sm-panel-muted' }, [
+      h('span', { key: 't' }, '未检测到 ffmpeg，抽不了真实帧。'),
+      h('a', { key: 'd', href: 'https://www.gyan.dev/ffmpeg/builds/', target: '_blank', rel: 'noreferrer' }, '下载 ffmpeg'),
+      h('span', { key: 'n' }, '（解压后把 bin 加入 PATH 再刷新）'),
+    ])
   }
-  return h('p', { className: 'sm-panel-muted' },
-    '已就绪：登录 + ffmpeg' + (status.ffmpegVersion ? ' ' + status.ffmpegVersion : '') + '。开启后按上方密度从播放流抽帧。')
+  return null
 }
 
 /** Settings-page gender pick: same inflated ♂/♀ balloons as onboarding (not flat circles). */
@@ -160,7 +161,7 @@ function identityCard(view) {
       value: draft.customBody || '',
       onChange: (event) => patchPersona({ customBody: event.target.value }),
     })),
-    h('p', { key: 'hint', className: 'sm-panel-muted' }, '上面是当前预设说明；下面可自己改，改完自动保存。'),
+    null,
   ])
 }
 
@@ -226,7 +227,7 @@ function mbtiTraitPanel({ draft, setMbtiType, setMbtiAxis }) {
   const current = mbti.type || 'INFP'
   const blurb = MBTI_BLURBS[current] || ''
   return h('div', { key: 'mbti' }, [
-    h('p', { key: 'lead', className: 'sm-panel-muted' }, '点选 16 型；下面四条可微调倾向。也可直接回复四个字母。'),
+    null,
     h('div', { key: 'grid', className: 'sm-mbti-grid' }, MBTI_TYPES.map((type) => h('button', {
       key: type,
       type: 'button',
@@ -320,8 +321,7 @@ function chatHomeAutoMemoryChecks({ homeDraft, patchChatHome }) {
       }),
       h('span', { key: 't' }, '专属窗自动记星'),
     ]),
-    h('p', { key: 'automem-hint', className: 'sm-panel-muted' },
-      '只影响小海海消息文件夹；删对话框不会忘'),
+    null,
   ]
 }
 
@@ -476,10 +476,7 @@ function autoSurfSection({ draft, patchExtensions }) {
       ) : null,
       ext.biliLiveFrameWatch ? h(LiveFrameReadyHint, { key: 'live-hint' }) : null,
       h(AsrSettings, { key: 'asr-settings', ext, patchExtensions }),
-      ext.biliVisionSummary !== false ? h('p', {
-        key: 'vision-hint',
-        className: 'sm-panel-muted',
-      }, '画面总结走你平时聊天用的多模态模型（不是另装的专用视觉包）。失败时会标明原因并退回标题/字幕摘要；时间线需成功看图后才出现。') : null,
+      ext.biliVisionSummary !== false ? null : null,
       h('label', {
         key: 'autosurf-popular',
         className: 'sm-rhythm-check',
@@ -532,8 +529,7 @@ function autoSurfSection({ draft, patchExtensions }) {
         ? h('p', { key: 'autosurf-kw-at', className: 'sm-panel-muted' },
           '最近自动更新：' + String(ext.biliKeywordsUpdatedAt).slice(0, 19).replace('T', ' '))
         : null,
-      h('p', { key: 'autosurf-hint', className: 'sm-panel-muted' },
-        '免打扰时段不巡；看过的自动跳过。上面输入框是手填词，自动学习只追加、永不覆盖；没有聊天时不学习；周记润色时也会从近聊提炼兴趣追加。'),
+      null,
     ]) : null,
   ]
 }

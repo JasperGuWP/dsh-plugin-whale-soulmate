@@ -255,7 +255,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
                 biliAsrEndpoint: String(current.extensions.biliAsrEndpoint || ''),
                 biliAsrApiKey: String(current.extensions.biliAsrApiKey || ''),
                 biliAsrModel: String(current.extensions.biliAsrModel || ''),
-                biliAsrProtocol: String(current.extensions.biliAsrProtocol || 'auto'),
+                biliAsrProtocol: String(current.extensions.biliAsrProtocol || 'deepseek'),
                 biliKeywordsAuto: current.extensions.biliKeywordsAuto !== false,
                 biliKeywordsSeed: (current.extensions.biliKeywordsSeed || []).map((k) => String(k).trim()).filter(Boolean),
                 biliKeywords: (current.extensions.biliKeywords || []).map((k) => String(k).trim()).filter(Boolean),
@@ -409,7 +409,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
               sad: '有点失落', excited: '兴奋', grumpy: '别扭', neutral: '平常',
             })[state.mood] || state.mood || '平常')]),
           ]),
-          h('p', { key: 'hint', className: 'sm-panel-muted' }, '改完会自动保存，侧栏名字也会跟着变。'),
+          null,
         ]),
         h(UpdateBadge, { key: 'update' }),
       ])

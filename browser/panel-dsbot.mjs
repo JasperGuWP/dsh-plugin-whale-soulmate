@@ -344,7 +344,7 @@ function DsBotCard() {
             h('span', { key: 't', className: 'sm-dsbot-peer-time' }, formatTime(c.lastAt)),
             h('span', { key: 'p', className: 'sm-dsbot-peer-preview' }, c.lastText || ''),
           ]))
-          : h('p', { key: 'empty', className: 'sm-panel-muted' }, '还没有会话。用手机给 Bot 发一句，再点「拉取消息」。'),
+          : null,
       ]),
       h('section', { key: 'thread', className: 'sm-dsbot-thread' }, [
         h('div', { key: 'th', className: 'sm-dsbot-thread-head' },
@@ -394,7 +394,7 @@ function DsBotCard() {
   return h('div', { className: 'sm-eng-card sm-dsbot-card', 'data-testid': 'dsbot-card' }, [
     h('header', { key: 'top', className: 'sm-dsbot-top' }, [
       h('h3', { key: 'title', className: 'sm-dsbot-title' }, 'DsBot'),
-      h('p', { key: 'lead', className: 'sm-panel-muted' }, '跨端分身：点下方按钮进入对应通道。'),
+      null,
     ]),
     !openWx
       ? h('div', { key: 'gate', className: 'sm-dsbot-gate' }, [

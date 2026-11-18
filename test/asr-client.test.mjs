@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { transcribeViaEndpoint, fetchAsrModels, transcribeOpenAiAudio, transcribeDashScope, resolveAsrProtocol } from '../packages/soulmate-bili/asr-client.mjs';
+import { transcribeViaEndpoint, fetchAsrModels, transcribeOpenAiAudio, transcribeDashScope, transcribeDeepseek, resolveAsrProtocol } from '../packages/soulmate-bili/asr-client.mjs';
 
 test('ASR unconfigured skips', async () => {
   const r = await transcribeViaEndpoint({ endpoint: '' });
@@ -138,9 +138,10 @@ test('transcribe: base /v1 endpoint auto-completes /audio/transcriptions', async
   assert.equal(r.ok, true);
 });
 
-test('resolveAsrProtocol: aliyun hosts map to dashscope, others to openai', () => {
+test('resolveAsrProtocol: explicit families pass through, auto recommends deepseek', () => {
   assert.equal(resolveAsrProtocol('https://x.maas.aliyuncs.com/compatible-mode/v1', 'auto'), 'dashscope');
-  assert.equal(resolveAsrProtocol('https://api.openai.com/v1', 'auto'), 'openai');
+  assert.equal(resolveAsrProtocol('https://api.deepseek.com/v1', 'auto'), 'deepseek');
+  assert.equal(resolveAsrProtocol('https://api.openai.com/v1', 'auto'), 'deepseek');
   assert.equal(resolveAsrProtocol('https://x.aliyuncs.com/v1', 'json'), 'json');
   assert.equal(resolveAsrProtocol('https://x.ok.com/v1', 'dashscope'), 'dashscope');
 });
@@ -177,22 +178,76 @@ test('transcribeOpenAiAudio: missing audio url soft-fails before any request', a
   assert.equal(r.error, 'no-audio-url');
 });
 
-test('transcribeDashScope: posts multimodal-generation with audio url and parses output.text', async () => {
-  let seen = null;
+test('transcribeDashScope: downloads audio then posts base64 data URI via chat/completions', async () => {
+  const calls = [];
   const r = await transcribeDashScope({
     endpoint: 'https://x.maas.aliyuncs.com/compatible-mode/v1',
     apiKey: 'k',
     model: 'qwen-audio-asr',
     audioUrl: 'https://cdn.example/a.m4s',
     fetchImpl: async (url, init) => {
-      seen = { url: String(url), body: JSON.parse(init.body), auth: init.headers.authorization };
-      return { ok: true, json: async () => ({ output: { text: '阿里转写' } }) };
+      calls.push({ url: String(url), init });
+      if (String(url).includes('cdn.example')) {
+        return { ok: true, arrayBuffer: async () => new TextEncoder().encode('AUDIO').buffer };
+      }
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ choices: [{ message: { content: '阿里转写' } }] }),
+      };
     },
   });
-  assert.equal(seen.url, 'https://x.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation');
-  assert.equal(seen.body.model, 'qwen-audio-asr');
-  assert.equal(seen.body.input.messages[0].content[0].audio, 'https://cdn.example/a.m4s');
-  assert.equal(seen.auth, 'Bearer k');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].url, 'https://x.maas.aliyuncs.com/compatible-mode/v1/chat/completions');
+  assert.equal(calls[1].init.headers.authorization, 'Bearer k');
+  const body = JSON.parse(calls[1].init.body);
+  assert.equal(body.model, 'qwen-audio-asr');
+  const part = body.messages[0].content[0];
+  assert.equal(part.type, 'input_audio');
+  assert.match(part.input_audio.data, /^data:audio\/mp4;base64,/);
+  assert.equal(part.input_audio.data, 'data:audio/mp4;base64,' + Buffer.from('AUDIO').toString('base64'));
   assert.equal(r.ok, true);
   assert.match(r.text, /阿里转写/);
+});
+
+test('transcribeDashScope: 400 falls back to qwen3-asr-flash', async () => {
+  const models = [];
+  const r = await transcribeDashScope({
+    endpoint: 'https://x.maas.aliyuncs.com/compatible-mode/v1',
+    apiKey: 'k',
+    model: 'qwen-audio-3.0-asr-flash',
+    audioUrl: 'https://cdn.example/a.m4s',
+    fetchImpl: async (url, init) => {
+      if (String(url).includes('cdn.example')) {
+        return { ok: true, arrayBuffer: async () => new TextEncoder().encode('AUDIO').buffer };
+      }
+      const model = JSON.parse(init.body).model;
+      models.push(model);
+      if (model !== 'qwen3-asr-flash') return { ok: false, status: 400, text: async () => '{"error":"bad model"}' };
+      return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: '回退成功' } }] }) };
+    },
+  });
+  assert.deepEqual(models, ['qwen-audio-3.0-asr-flash', 'qwen3-asr-flash']);
+  assert.equal(r.ok, true);
+  assert.equal(r.text, '回退成功');
+});
+
+test('transcribeDeepseek: missing audio url soft-fails before any request', async () => {
+  const r = await transcribeDeepseek({ endpoint: 'https://api.deepseek.com/v1', audioUrl: '' });
+  assert.equal(r.ok, false);
+  assert.equal(r.error, 'no-audio-url');
+});
+
+test('transcribeDeepseek: reports no-ffmpeg instead of throwing when ffmpeg is missing', async () => {
+  const r = await transcribeDeepseek({
+    endpoint: 'https://api.deepseek.com/v1',
+    apiKey: 'k',
+    audioUrl: 'https://cdn.example/a.m4s',
+    ffmpegPath: 'definitely-not-a-real-ffmpeg-binary',
+    fetchImpl: async (url) => {
+      assert.match(String(url), /cdn\.example/);
+      return { ok: true, arrayBuffer: async () => new TextEncoder().encode('AUDIO').buffer };
+    },
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.error, 'no-ffmpeg');
 });
