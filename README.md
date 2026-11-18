@@ -6,7 +6,7 @@
 [![discussions](https://img.shields.io/github/discussions/JasperGuWP/dsh-plugin-whale-soulmate)](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/discussions)
 [![CI](https://img.shields.io/github/actions/workflow/status/JasperGuWP/dsh-plugin-whale-soulmate/test.yml?branch=main)](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/actions/workflows/test.yml)
 
-![Whale Soulmate · AI companion × transparent-video desktop pet](docs/readme-banner.png)
+![Whale Soulmate · 7 套透明视频桌宠皮肤](docs/readme-banner-v2.png)
 
 > **中文** · [English](#english)
 
@@ -22,9 +22,52 @@
 
 更完整的架构说明见 [`docs/DESIGN.md`](./docs/DESIGN.md)；版权与致谢见 [`NOTICE.md`](./NOTICE.md)。
 
+## 新版亮点 · v0.2.127
+
+- **7 套桌宠皮肤补齐阵容**：高冷眼镜执事、深海经典、海盐苏打、午夜星空、汉风襦裙、Q版冬装男孩、蓝色冬装，覆盖不同人设与动作风格。
+- **按需下载，不把安装包撑大**：汉风襦裙与 Q版冬装男孩随插件离线内置；其余 5 套首次选择时从 GitHub Releases 下载，按大小与 SHA-256 校验后缓存，之后可离线切换。
+- **透明视频修复**：统一使用 VP9-alpha WebM，并保留 PNG 回退；修复部分环境中透明帧裂图、绿底或首帧异常的问题。
+- **角色专属动作与情绪**：高冷执事保持克制冷脸，被拎起时会挣扎反击，日常会伏桌阅读、优雅吃牛排和靠桌小睡；其他桌宠也减少单一鼓脸表达，改用拒绝、侧身、跺脚等差异化动作。
+- **统一蓝金视觉**：动作特效与界面氛围使用蓝、金、深海军蓝配色，不使用绿色系特效。
+
+## 不止桌宠：完整陪伴能力
+
+### 陪伴与长期关系
+
+- **会主动，但不打扰**：按本地生物钟和你的作息决定早安、催饭、晚间、催睡等时机；免打扰与每日主动次数都可配置。
+- **真的记得你**：事实、Wiki、公开信与私密小本本组成混合记忆；会记住约定、处理信息冲突，也会按重要度与时间自然淡化。
+- **一起生活**：夜间会把零散记忆蒸馏进 Wiki；桌宠可拖拽、轻触、双击互动、滚轮缩放，并随聊天情绪切换动作。
+- **也是工作搭子**：闲聊之外仍保留 DSH 的完整工具链，可继续陪你写代码、读文档、处理办公任务。
+
+### B站冲浪与视频理解
+
+- **从分享链接开始看片**：支持 B 站链接、分享文本、BV / av 号；可“扫一眼”快速总结，也可认真看完再写长评。
+- **不是只看标题**：综合元数据、字幕、分镜画面、弹幕高峰、热门评论与结构化摘要；观看结果可写入给你的信、小本本、照片墙和记忆。
+- **会自己冲浪**：可根据聊天与记忆提炼兴趣关键词，定时巡游感兴趣的视频、热门内容与专栏文章，并维护去重记录。
+- **登录与写入都受控**：可扫码登录 B 站；点赞、收藏、评论、私信、投稿等写操作默认关闭，开启后仍有配额、冷却、隐私过滤与审计，也可先 `dryRun` 预览。
+
+### 微信 / QQ / 飞书 / 钉钉 Bot
+
+- **跨端还是同一个 TA**：个人微信、QQ、飞书和钉钉共用同一个人设、心情与长期记忆，不在每个平台重新“认识”你一次。
+- **微信扫码接入**：个人微信使用 iLink 官方 Bot 通道，可扫码登录、长轮询收消息并在聊天里按人设回复。
+- **QQ 双模式**：支持 OneBot v11 / NapCat，也支持 QQ 官方 Bot API；飞书和钉钉提供各自的原生 Webhook / OpenAPI 接入。
+- **密钥与记忆分开**：平台 Token、Cookie 等凭据单独保存在凭据文件，不写入人格或记忆；每条 IM 消息也会进入跨端对话时间线。
+
 ## 形象展示
 
-两套内置皮肤随插件离线提供；其余皮肤首次选择时从 **GitHub Releases** 按需下载并缓存在本地。以上皮肤均在「设置 → 称呼与形象」一键切换（静图与桌宠皮肤同步）：
+7 套皮肤均可在「设置 → 称呼与形象」一键切换，静图与桌宠皮肤保持同步：
+
+| 皮肤 | 角色定位 | 获取方式 |
+|---|---|---|
+| 高冷眼镜执事 | 半框眼镜与挂链，克制冷脸，包含挣扎反击、伏桌阅读、牛排用餐与靠桌小睡动作 | 首次选择下载 |
+| 深海经典 | 经典深海女仆，锚链、鲸鱼围裙与蓝发鲸尾 | 首次选择下载 |
+| 海盐苏打 | 白蓝水手女仆，轻快明亮的海盐系配色 | 首次选择下载 |
+| 午夜星空 | 星座披纱与月光配饰，强调静谧、梦幻的夜间氛围 | 首次选择下载 |
+| 汉风襦裙 | 蓝发鲸尾与海波襦裙，支持舞袖等国风动作 | 离线内置 |
+| Q版冬装男孩 | 白蓝冬装与滑雪动作，适合冬日桌面陪伴 | 离线内置 |
+| 蓝色冬装 | 鲸鱼连帽冬装，包含雪天与冬季趣味动作 | 首次选择下载 |
+
+### 动作预览
 
 | 汉风 · 襦裙 | Q版 · 冬装男孩 |
 |:---:|:---:|
@@ -48,11 +91,13 @@
 |---|---|
 | 零配置上手 | 装上重启后右下角冒出桌宠 + 引导；未授权云端时**零外网请求** |
 | 人设引擎 | 多套预设、五维滑块、MBTI 测验、性别声线、自我成长与三档安全重置 |
-| 混合记忆 | 事实 / Wiki / 双日记本；在场摘要、承诺、冲突裁决、语义遗忘 |
-| 桌宠 | `pet-winterboy-chibi`：PNG 回退 + VP9-alpha WebM；拖拽 / 点击 / 思考 / 走路 |
-| 主动开口 | 本地生物钟闸：早安 / 催饭 / 晚间 / 催睡；夜间做梦蒸馏；专属会话投递 |
+| 长期陪伴 | 生物钟主动开口、承诺与关系记忆、双日记本、夜间梦蒸馏、情绪动作联动 |
+| 混合记忆 | 事实 / Wiki / 日记；在场摘要、冲突裁决、语义遗忘，记忆可在 3D 星云中查看与维护 |
+| 桌宠 | 7 套 PNG 回退 + VP9-alpha WebM 皮肤；拖拽 / 点击 / 思考 / 走路 / 专属动作 |
+| 按需皮肤 | 首次选择从 GitHub Releases 下载，校验大小与 SHA-256，缓存后可离线使用 |
+| B站冲浪 | 视频 / 专栏理解、兴趣学习、定时巡游、照片墙与记忆沉淀；写操作默认关闭且受风控 |
+| 跨端 Bot | 个人微信 / QQ / 飞书 / 钉钉共用同一人设与记忆，支持回复、主动发送和对话时间线 |
 | 隐私 | 五道防线 + 审计账本；私密记忆永不进云同步 |
-| 扩展 | B 站理解与风控写操作；微信 / QQ / 飞书 / 钉钉 IM 分身 |
 | 副驾 | 双轨提示词 + 人设漂移重锚；完整调用宿主工具链 |
 
 ## 快速安装
@@ -155,7 +200,17 @@ Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./N
 
 ### Pet skins
 
-Two skins ship inside the plugin and work fully offline. Additional skins are downloaded on first use from **GitHub Releases**, verified by size and SHA-256, then cached locally. Switch any skin in Settings → Identity (static avatar and pet skin stay in sync):
+Seven skins share the same one-click picker in Settings → Identity. Static avatars and desktop pets switch together:
+
+| Skin | Character direction | Delivery |
+|---|---|---|
+| Cool Butler | Half-rim glasses with chain, restrained expressions, struggling counterattack, desk reading, steak dining, and desk-side nap motions | On first use |
+| Deepsea Classic | Classic deep-sea maid with anchors, whale apron, and blue whale tail | On first use |
+| Soda | Bright white-and-blue sailor maid with a lighter seaside mood | On first use |
+| Starnight | Constellation veil and moonlit accessories for a quiet nighttime presence | On first use |
+| Hanfu | Blue-haired whale companion in a wave-patterned ruqun with ribbon-dance motions | Bundled offline |
+| Winter Boy | Chibi white-and-blue winter outfit with skiing and seasonal motions | Bundled offline |
+| Blue Winter | Whale-hood winter outfit with playful snow-day actions | On first use |
 
 | Hanfu · Ruqun | Chibi · Winter Boy |
 |:---:|:---:|
@@ -167,17 +222,35 @@ Two skins ship inside the plugin and work fully offline. Additional skins are do
 
 Transparent video sprites: flick-throw with gravity bounces and a landing squash; tap to pet, double-tap to nuzzle, wheel to zoom.
 
+### What's new in v0.2.127
+
+- **Seven-skin lineup:** Cool Butler, Deepsea Classic, Soda, Starnight, Hanfu, Winter Boy, and Blue Winter.
+- **Smaller default install:** Hanfu and Winter Boy stay bundled offline; the other five skins download from GitHub Releases on first selection, are verified by size and SHA-256, and are then cached for offline use.
+- **Transparent-video fixes:** VP9-alpha WebM with PNG fallback, plus fixes for broken, green, or incorrect first frames in some environments.
+- **Character-specific motion:** the Cool Butler keeps a restrained expression while struggling when picked up, reading at his desk, dining on steak, or napping beside it; other pets use rejection, turn-away, and foot-stomp gestures instead of relying on one puffed-cheek reaction.
+- **Blue-and-gold visual language:** motion effects and UI accents use blue, gold, and deep navy rather than green effects.
+
+### More than a desktop pet
+
+- **Companionship that remembers:** local-time proactive greetings, relationship growth, promises, public letters, private diaries, nightly memory distillation, and emotion-linked pet motions.
+- **Bilibili surfing:** summarizes shared videos via metadata, subtitles, storyboard frames, danmaku peaks, and comments; learns interests and can patrol videos and articles on a schedule.
+- **Guard-railed Bilibili account:** QR login is optional, every write action is opt-in and off by default, and likes, comments, DMs, uploads, and live actions remain quota-limited, audited, and dry-run capable.
+- **Cross-platform IM presence:** the same persona and memory can answer on personal WeChat, QQ, Feishu, and DingTalk. WeChat uses iLink QR login; QQ supports OneBot/NapCat or the official Bot API.
+- **Still a full co-pilot:** companionship adds a persona track without hiding DSH's coding, research, or office tools.
+
 ### Features
 
 | Area | What you get |
 |---|---|
 | Zero-config | Pet + onboarding after install/restart; **no network** until cloud consent |
 | Persona | Presets, 5-axis sliders, MBTI quiz, voice/gender, safe 3-tier reset |
-| Memory | Facts / Wiki / dual diaries; presence, promises, conflicts, semantic decay |
-| Desktop pet | `pet-winterboy-chibi` PNG + VP9-alpha WebM; drag / tap / think / walk |
-| Proactive | Local circadian gate; night dream distill; dedicated chat-home delivery |
+| Companionship | Circadian proactive chat, promises, relationship growth, dual diaries, nightly dream distillation |
+| Memory | Facts / Wiki / diaries; presence, conflicts, semantic decay, 3D memory-nebula tools |
+| Desktop pet | Seven PNG + VP9-alpha WebM skins; drag / tap / think / walk / character-specific motions |
+| On-demand skins | First-use download from GitHub Releases with size + SHA-256 checks and an offline cache |
+| Bilibili | Video/article understanding, interest learning, scheduled surfing, memory/photo-wall capture, opt-in guarded writes |
+| IM bots | Personal WeChat / QQ / Feishu / DingTalk sharing one persona, memory, and conversation timeline |
 | Privacy | Five layers + audit ledger; private memories never sync |
-| Extensions | Bilibili watcher + gated writes; WeChat / QQ / Feishu / DingTalk |
 | Co-pilot | Dual-track prompts + drift anchor; full host tool access |
 
 ### Install

@@ -13,6 +13,7 @@ Source code and documentation in this repository are released under the [MIT Lic
 |---|---|---|
 | `assets/pet-winterboy-chibi/` | Q-version winter-boy desktop pet: PNG fallback frames + VP9-alpha WebM clips + `pet.json` | Original companion art shipped with this plugin. Please keep attribution when redistributing the skin pack. |
 | `assets/小鲸.png` / `assets/小鲸-male.jpg` | Static whale avatar stills used by the floating widget / onboarding | Original art for this project. |
+| `docs/readme-banner-v2.png` / `docs/social-preview-v2.png` | Seven-skin project cover composed from the original desktop-pet artwork | Original project artwork. Please keep attribution when redistributing. |
 
 重新分发皮肤包或形象素材时，请保留本 NOTICE 与作者署名。
 When redistributing skin packs or avatar stills, please keep this NOTICE and author credit.
