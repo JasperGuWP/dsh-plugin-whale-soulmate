@@ -27,7 +27,7 @@
 - **7 套桌宠皮肤补齐阵容**：高冷眼镜执事、深海经典、海盐苏打、午夜星空、汉风襦裙、Q版冬装男孩、蓝色冬装，覆盖不同人设与动作风格。
 - **按需下载，不把安装包撑大**：汉风襦裙与 Q版冬装男孩随插件离线内置；其余 5 套首次选择时从 GitHub Releases 下载，按大小与 SHA-256 校验后缓存，之后可离线切换。
 - **透明视频修复**：统一使用 VP9-alpha WebM，并保留 PNG 回退；修复部分环境中透明帧裂图、绿底或首帧异常的问题。
-- **角色专属动作与情绪**：高冷执事保持克制冷脸，被拎起时会挣扎反击，日常会伏桌阅读、优雅吃牛排和靠桌小睡；其他桌宠也减少单一鼓脸表达，改用拒绝、侧身、跺脚等差异化动作。
+- **角色专属动作与情绪**：高冷执事保持克制冷脸，被拎起时会挣扎反击，被靠近时会示意你走开；日常会伏桌阅读、优雅吃牛排和靠桌小睡。其他桌宠也减少单一鼓脸表达，改用拒绝、侧身、跺脚等差异化动作。
 - **统一蓝金视觉**：动作特效与界面氛围使用蓝、金、深海军蓝配色，不使用绿色系特效。
 
 ## 不止桌宠：完整陪伴能力
@@ -59,7 +59,7 @@
 
 | 皮肤 | 角色定位 | 获取方式 |
 |---|---|---|
-| 高冷眼镜执事 | 半框眼镜与挂链，克制冷脸，包含挣扎反击、伏桌阅读、牛排用餐与靠桌小睡动作 | 首次选择下载 |
+| 高冷眼镜执事 | 半框眼镜与挂链，克制冷脸，包含挣扎反击、拒绝靠近、伏桌阅读、牛排用餐与靠桌小睡动作 | 首次选择下载 |
 | 深海经典 | 经典深海女仆，锚链、鲸鱼围裙与蓝发鲸尾 | 首次选择下载 |
 | 海盐苏打 | 白蓝水手女仆，轻快明亮的海盐系配色 | 首次选择下载 |
 | 午夜星空 | 星座披纱与月光配饰，强调静谧、梦幻的夜间氛围 | 首次选择下载 |
@@ -204,7 +204,7 @@ Seven skins share the same one-click picker in Settings → Identity. Static ava
 
 | Skin | Character direction | Delivery |
 |---|---|---|
-| Cool Butler | Half-rim glasses with chain, restrained expressions, struggling counterattack, desk reading, steak dining, and desk-side nap motions | On first use |
+| Cool Butler | Half-rim glasses with chain, restrained expressions, struggling counterattack, keeping distance, desk reading, steak dining, and desk-side nap motions | On first use |
 | Deepsea Classic | Classic deep-sea maid with anchors, whale apron, and blue whale tail | On first use |
 | Soda | Bright white-and-blue sailor maid with a lighter seaside mood | On first use |
 | Starnight | Constellation veil and moonlit accessories for a quiet nighttime presence | On first use |
@@ -227,7 +227,7 @@ Transparent video sprites: flick-throw with gravity bounces and a landing squash
 - **Seven-skin lineup:** Cool Butler, Deepsea Classic, Soda, Starnight, Hanfu, Winter Boy, and Blue Winter.
 - **Smaller default install:** Hanfu and Winter Boy stay bundled offline; the other five skins download from GitHub Releases on first selection, are verified by size and SHA-256, and are then cached for offline use.
 - **Transparent-video fixes:** VP9-alpha WebM with PNG fallback, plus fixes for broken, green, or incorrect first frames in some environments.
-- **Character-specific motion:** the Cool Butler keeps a restrained expression while struggling when picked up, reading at his desk, dining on steak, or napping beside it; other pets use rejection, turn-away, and foot-stomp gestures instead of relying on one puffed-cheek reaction.
+- **Character-specific motion:** the Cool Butler keeps a restrained expression while struggling when picked up, telling you to keep your distance, reading at his desk, dining on steak, or napping beside it; other pets use rejection, turn-away, and foot-stomp gestures instead of relying on one puffed-cheek reaction.
 - **Blue-and-gold visual language:** motion effects and UI accents use blue, gold, and deep navy rather than green effects.
 
 ### More than a desktop pet
