@@ -151,7 +151,7 @@
       "frames": [
         "pet-eat"
       ],
-      "holdSec": 5,
+      "holdSec": 2,
       "next": {
         "idle": 1
       },
@@ -161,7 +161,7 @@
       "frames": [
         "pet-game"
       ],
-      "holdSec": 5,
+      "holdSec": 2,
       "next": {
         "idle": 1
       },
@@ -171,7 +171,7 @@
       "frames": [
         "pet-dance"
       ],
-      "holdSec": 5,
+      "holdSec": 1,
       "next": {
         "idle": 1
       },

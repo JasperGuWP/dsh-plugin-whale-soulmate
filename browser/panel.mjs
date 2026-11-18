@@ -72,6 +72,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       // React crashes on the first successful load and the settings page goes blank.
       const [spriteNote, setSpriteNote] = React.useState('')
       const [skinList, setSkinList] = React.useState(null)
+      const [skinBusy, setSkinBusy] = React.useState(false)
       const [proStatus, setProStatus] = React.useState(null)
       const savedSigRef = React.useRef('')
       const savingRef = React.useRef(false)
@@ -479,8 +480,21 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
 
       async function selectBundledLook(look) {
         if (!look || !look.id) return
+        if (skinBusy) return
+        setSkinBusy(true)
         setSpriteNote('切换形象…')
         try {
+          if (look.downloadable && look.installed === false) {
+            setSpriteNote('首次使用，正在从 GitHub Release 下载皮肤包…')
+            const installed = await api('pet/skins/install', { id: look.id })
+            if (!installed || installed.ok === false) {
+              throw new Error((installed && installed.error) || '皮肤包下载失败')
+            }
+            const catalog = await api('pet/skins')
+            if (catalog && catalog.ok !== false && Array.isArray(catalog.skins) && catalog.skins.length) {
+              setSkinList(catalog.skins)
+            }
+          }
           // Drop uploaded sticker so the bundled frame shows through.
           try { await deleteSprite(draft.gender) } catch (_) { /* ignore */ }
           const url = String(look.preview || '') + (String(look.preview || '').includes('?') ? '&' : '?') + 'v=' + Date.now()
@@ -489,6 +503,8 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
           setSpriteNote('已切换：' + (look.label || look.id) + '（桌宠皮肤已同步）')
         } catch (err) {
           setSpriteNote('切换失败：' + (err && err.message ? err.message : String(err)))
+        } finally {
+          setSkinBusy(false)
         }
       }
 
@@ -498,6 +514,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
         draft, petDraft, patchPet, spriteNote, restoreDefaultSprite,
         selectBundledLook,
         looks: skinList,
+        skinBusy,
         PetPreview,
         defaultSpriteUrl: draft.gender === 'male' ? DEFAULT_SPRITE_MALE_URL : DEFAULT_SPRITE_URL,
       })

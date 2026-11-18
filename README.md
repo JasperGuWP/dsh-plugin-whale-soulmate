@@ -24,7 +24,7 @@
 
 ## 形象展示
 
-四套内置皮肤，在「设置 → 称呼与形象」一键切换（静图与桌宠皮肤同步）：
+两套内置皮肤随插件离线提供；其余皮肤首次选择时从 **GitHub Releases** 按需下载并缓存在本地。以上皮肤均在「设置 → 称呼与形象」一键切换（静图与桌宠皮肤同步）：
 
 | 汉风 · 襦裙 | Q版 · 冬装男孩 |
 |:---:|:---:|
@@ -70,9 +70,13 @@ dsh plugin --profile desktop add ./dsh-plugin-whale-soulmate-<version>.tgz
 > **务必装 tarball，不要装目录。** 目录会记成 `link:`，容易触发 `ERR_MODULE_NOT_FOUND`。  
 > node 半侧**无热加载**：装完请重启 dsh 进程。
 
-### 安装新皮肤（v0.2.108+，免改代码 / 免重启）
+### 按需下载皮肤
 
-皮肤自动发现：插件每次请求时扫描 `assets/pet-*/pet.json`，面板下拉框自动列出新皮肤。
+默认内置「汉风 · 襦裙」和「Q版 · 冬装男孩」，不联网即可使用。面板里的其余皮肤标记为「首次下载」；选中后会从 [`pet-packs-v2` GitHub Release](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/releases/tag/pet-packs-v2) 下载经过大小与 SHA-256 校验的皮肤包，之后从本地缓存离线读取。
+
+缓存位置：`<soulmate home>/cache/pet-skins/pet-<皮肤id>`。
+
+网络不可用时可手动准备普通皮肤目录；插件每次请求时也会扫描 `assets/pet-*/pet.json`：
 
 ```bash
 # 一条命令：把素材文件夹（含 pet.json + pet-*.webm + pet-*.png）复制进已安装插件
@@ -151,7 +155,7 @@ Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./N
 
 ### Pet skins
 
-Four bundled skins — switch in Settings → Identity (static avatar and pet skin stay in sync):
+Two skins ship inside the plugin and work fully offline. Additional skins are downloaded on first use from **GitHub Releases**, verified by size and SHA-256, then cached locally. Switch any skin in Settings → Identity (static avatar and pet skin stay in sync):
 
 | Hanfu · Ruqun | Chibi · Winter Boy |
 |:---:|:---:|
@@ -185,7 +189,7 @@ dsh plugin --profile web add ./dsh-plugin-whale-soulmate-<version>.tgz
 
 Install the **tarball**, not a directory. Restart dsh (node half is not hot-reloadable).
 
-New skins (v0.2.108+) need no code change or restart: `node install-skin.mjs <asset-folder> --id <skin-id>` copies the pack into the installed plugin; skins are discovered per request and listed in the panel dropdowns.
+Optional skins are fetched from the [`pet-packs-v2` GitHub Release](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/releases/tag/pet-packs-v2) and cached at `<soulmate home>/cache/pet-skins/pet-<skin-id>`. For offline/manual installs, `node install-skin.mjs <asset-folder> --id <skin-id>` copies a normal pack into the installed plugin; skins are discovered per request and listed in the panel dropdowns.
 
 ```bash
 dsh plugin --profile web add github:JasperGuWP/dsh-plugin-whale-soulmate#<sha>

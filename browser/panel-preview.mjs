@@ -29,34 +29,41 @@ function SoulmatePanelIcon(props) {
 
 /** Live preview of the bundled skin (settings → identity tab). Prefer idle video when shipped. */
 function PetPreview(props) {
-  const [url, setUrl] = React.useState('')
+  const [url, setUrl] = React.useState(props.fallback || '')
   const [kind, setKind] = React.useState('img')
+  const [frames, setFrames] = React.useState([])
+  const [failed, setFailed] = React.useState(false)
   // The preview must show the pack the widget will actually play, so it follows the
   // draft's skin instead of always fetching the server default.
   const skin = props.skin || 'winterboy-chibi'
   React.useEffect(() => {
     let alive = true
     let timer = 0
-    setUrl('')
+    setUrl(props.fallback || '')
     setKind('img')
+    setFrames([])
+    setFailed(false)
     api('pet/manifest?skin=' + encodeURIComponent(skin)).then((m) => {
       if (!alive || !m || m.ok === false) return
       const videos = m.videoUrls || {}
       const videoSrc = videos.idle || Object.values(videos).find(Boolean) || null
+      const frameUrls = Object.keys(m.frameUrls || {}).sort().map((id) => m.frameUrls[id])
+      setFrames(frameUrls)
       if (videoSrc) {
         setKind('video')
         setUrl(videoSrc)
         return
       }
-      const frames = Object.keys(m.frameUrls || {}).sort().map((id) => m.frameUrls[id])
-      if (!frames.length) return
+      if (!frameUrls.length) return
       let idx = 0
       setKind('img')
-      setUrl(frames[0])
-      timer = setInterval(() => { idx = (idx + 1) % frames.length; setUrl(frames[idx]) }, 850)
+      setUrl(frameUrls[0])
+      timer = setInterval(() => { idx = (idx + 1) % frameUrls.length; setUrl(frameUrls[idx]) }, 850)
+    }).catch(() => {
+      if (alive) setFailed(true)
     })
     return () => { alive = false; clearInterval(timer) }
-  }, [skin])
+  }, [skin, props.fallback])
   if (kind === 'video' && url) {
     return h('video', {
       className: 'sm-sprite-preview',
@@ -66,9 +73,29 @@ function PetPreview(props) {
       loop: true,
       playsInline: true,
       'aria-label': '桌面宠物预览',
+      onError: () => {
+        setKind('img')
+        setUrl(frames[0] || props.fallback || '')
+        if (!frames[0] && !props.fallback) setFailed(true)
+      },
     })
   }
-  return h('img', { className: 'sm-sprite-preview', src: url || props.fallback || '', alt: '桌面宠物预览' })
+  if (!url) {
+    return h('div', {
+      className: 'sm-sprite-preview empty',
+      role: 'img',
+      'aria-label': failed ? '皮肤预览加载失败' : '正在加载皮肤预览',
+    }, failed ? '预览加载失败' : '加载中…')
+  }
+  return h('img', {
+    className: 'sm-sprite-preview',
+    src: url,
+    alt: '桌面宠物预览',
+    onError: () => {
+      if (url !== props.fallback && props.fallback) setUrl(props.fallback)
+      else setFailed(true)
+    },
+  })
 }
 
 module.exports = { SoulmatePanelIcon, PetPreview }

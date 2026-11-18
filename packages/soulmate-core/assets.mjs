@@ -23,6 +23,46 @@ export const PET_HANFU_DIR = fileURLToPath(new URL('../../assets/pet-hanfu/', im
 export const PET_SKINS = { 'winterboy-chibi': PET_WINTERBOY_CHIBI_DIR, hanfu: PET_HANFU_DIR };
 /** Assets root: extra pet-<id>/ packs copied here are discovered at request time. */
 export const PET_ASSETS_ROOT = fileURLToPath(new URL('../../assets/', import.meta.url));
+/** Optional packs are published as GitHub Release assets, never as npm payload. */
+export const PET_PACK_RELEASE_TAG = 'pet-packs-v2';
+export const PET_PACK_BASE_URL = 'https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/releases/download/' + PET_PACK_RELEASE_TAG + '/';
+/**
+ * Downloadable skin registry. `bytes` and `sha256` are filled by
+ * `node scripts/pack-pet-skins.mjs` after the release archives are built.
+ * Keep the ids/labels in sync with the source folders in assets/.
+ */
+export const PET_DOWNLOADABLE_SKINS = Object.freeze({
+  'blue-winter': {
+    label: '蓝色冬装',
+    filename: 'pet-blue-winter.tar.gz',
+    bytes: 8504827,
+    sha256: 'f9a0bacff7c39634aacdaedcd521cb167a4e64ac1688514744935e4236c6cefe',
+  },
+  'butler-cool': {
+    label: '高冷眼镜执事',
+    filename: 'pet-butler-cool.tar.gz',
+    bytes: 9738605,
+    sha256: 'e609fc7d3e5b7d2da82fb8c7f78861ca4591a1dba79ac5ad5dd643540fda4a77',
+  },
+  'maid-deepsea': {
+    label: '深海经典',
+    filename: 'pet-maid-deepsea.tar.gz',
+    bytes: 13643680,
+    sha256: '26d8178473d1b993056c8ef751c109ad3ecaf634c7863707aff8c70f5cee9d88',
+  },
+  'maid-soda': {
+    label: '海盐苏打',
+    filename: 'pet-maid-soda.tar.gz',
+    bytes: 14217790,
+    sha256: 'd599018b993c785ab01ef6547e9d8fbdab57baf008eced7146cae4203daef57e',
+  },
+  'maid-starnight': {
+    label: '午夜星空',
+    filename: 'pet-maid-starnight.tar.gz',
+    bytes: 15826592,
+    sha256: '83440d8dbac8c49577c119eb026adde3cb36480aa763fb715f1e5a7fe998f4df',
+  },
+});
 /** Skin id whitelist for discovered packs (folder name must be 'pet-' + id). */
 export const PET_SKIN_ID = /^[a-z0-9][a-z0-9-]*$/;
 export const PET_FRAME_ID = /^pet-[a-z0-9-]+$/;
