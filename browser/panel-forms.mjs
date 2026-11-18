@@ -11,6 +11,7 @@ const {
 const { companionPronoun, api } = require('./util.mjs')
 const { paintBalloonMini } = require('./balloon-sprite.mjs')
 const { field, BUNDLED_LOOKS, skinFrameUrl, lookPetCard } = require('./panel-pet.mjs')
+const { AsrSettings } = require('./panel-asr.mjs')
 
 /** Hint under «真看抽帧»: login + ffmpeg readiness from bili/auth status. */
 function LiveFrameReadyHint() {
@@ -342,7 +343,7 @@ function AutoSurfKeywords({ keywords, onCommit }) {
     h('input', {
       key: 'i', type: 'text', className: 'sm-input', style: { width: '100%', marginTop: 4 },
       value: text,
-      placeholder: '例如：AI，编程，科技',
+      placeholder: '例如：AI、科技、编程、数码、生活（中英文逗号、顿号或空格均可）',
       onFocus: () => setFocused(true),
       onChange: (event) => setText(event.target.value),
       onBlur: () => {
@@ -474,30 +475,7 @@ function autoSurfSection({ draft, patchExtensions }) {
         }),
       ) : null,
       ext.biliLiveFrameWatch ? h(LiveFrameReadyHint, { key: 'live-hint' }) : null,
-      ext.biliVisionSummary !== false ? field(
-        'asr-endpoint',
-        'ASR 接口地址（无字幕时才用；留空则跳过）'
-          + (String(ext.biliAsrEndpoint || '').trim() ? ' · 已配置' : ' · 未配置'),
-        h('input', {
-          key: 'control',
-          type: 'url',
-          placeholder: 'https://your-asr.example/v1/transcribe',
-          value: ext.biliAsrEndpoint || '',
-          onChange: (event) => patchExtensions({ biliAsrEndpoint: event.target.value }),
-        }),
-      ) : null,
-      ext.biliVisionSummary !== false ? field(
-        'asr-key',
-        'ASR API Key（可选，请求头 Bearer）',
-        h('input', {
-          key: 'control',
-          type: 'password',
-          autoComplete: 'off',
-          placeholder: '填服务商发给你的 Key；不需要可留空',
-          value: ext.biliAsrApiKey || '',
-          onChange: (event) => patchExtensions({ biliAsrApiKey: event.target.value }),
-        }),
-      ) : null,
+      h(AsrSettings, { key: 'asr-settings', ext, patchExtensions }),
       ext.biliVisionSummary !== false ? h('p', {
         key: 'vision-hint',
         className: 'sm-panel-muted',
@@ -536,7 +514,7 @@ function autoSurfSection({ draft, patchExtensions }) {
           checked: ext.biliKeywordsAuto !== false,
           onChange: (event) => patchExtensions({ biliKeywordsAuto: event.target.checked }),
         }),
-        h('span', { key: 't' }, '随聊天自动调整兴趣关键词'),
+        h('span', { key: 't' }, '随聊天自动追加兴趣关键词（不动手填词，最多 20 个）'),
       ]),
       h(AutoSurfKeywords, {
         key: 'autosurf-kw',
@@ -546,12 +524,16 @@ function autoSurfSection({ draft, patchExtensions }) {
           biliKeywordsSeed: next,
         }),
       }),
+      Array.isArray(ext.biliLearnedKeywords) && ext.biliLearnedKeywords.length
+        ? h('p', { key: 'autosurf-learned', className: 'sm-panel-muted' },
+          '自动学习（' + ext.biliLearnedKeywords.length + '/20）：' + ext.biliLearnedKeywords.join('、'))
+        : null,
       ext.biliKeywordsUpdatedAt
         ? h('p', { key: 'autosurf-kw-at', className: 'sm-panel-muted' },
           '最近自动更新：' + String(ext.biliKeywordsUpdatedAt).slice(0, 19).replace('T', ' '))
         : null,
       h('p', { key: 'autosurf-hint', className: 'sm-panel-muted' },
-        '免打扰时段不巡；看过的自动跳过；看完会弹系统通知（若开启）。手改关键词会记成底线，自动学习在其上加减。'),
+        '免打扰时段不巡；看过的自动跳过。上面输入框是手填词，自动学习只追加、永不覆盖；没有聊天时不学习；周记润色时也会从近聊提炼兴趣追加。'),
     ]) : null,
   ]
 }

@@ -1,6 +1,7 @@
 // Bilibili + IM extension routes (auth, status, config, send, platform webhooks).
 
 import { getBiliAuthStatus } from '../../soulmate-bili/index.mjs';
+import { fetchAsrModels } from '../../soulmate-bili/asr-client.mjs';
 import { getImStatus, handleImWebhook, manageIm, normalizePlatform, sendImMessage } from '../../soulmate-im/index.mjs';
 import { jsonOut, statusOf } from '../http-plumbing.mjs';
 import { loadConfig } from '../state.mjs';
@@ -26,6 +27,18 @@ export function extensionRoutes({ home, service, pushEvent, eventSeq, video, imN
           res = { ok: false, error: errMsg(err) };
         }
         return jsonOut(statusOf(res), { ...res, eventSeq: eventSeq() });
+      },
+    },
+    {
+      method: 'POST',
+      paths: ['/dsh-soulmate/api/asr-models'],
+      // 面板「获取模型列表」:从 ASR 服务(OpenAI 兼容 GET /v1/models)拉模型 ID。
+      handler: async ({ body }) => {
+        const conf = await loadConfig(home).catch(() => null);
+        const endpoint = String(body?.endpoint || conf?.extensions?.biliAsrEndpoint || '').trim();
+        const apiKey = String(body?.apiKey || conf?.extensions?.biliAsrApiKey || '').trim();
+        const res = await fetchAsrModels({ endpoint, apiKey });
+        return jsonOut(200, res);
       },
     },
     {

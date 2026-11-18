@@ -224,6 +224,8 @@ function draftFromSummary(snap) {
       biliVisionModel: (config.extensions && config.extensions.biliVisionModel) || '',
       biliAsrEndpoint: (config.extensions && config.extensions.biliAsrEndpoint) || '',
       biliAsrApiKey: (config.extensions && config.extensions.biliAsrApiKey) || '',
+      biliAsrModel: (config.extensions && config.extensions.biliAsrModel) || '',
+      biliAsrProtocol: (config.extensions && config.extensions.biliAsrProtocol) || 'auto',
       biliKeywordsAuto: !(config.extensions && config.extensions.biliKeywordsAuto === false),
       biliKeywordsSeed: (config.extensions && Array.isArray(config.extensions.biliKeywordsSeed))
         ? config.extensions.biliKeywordsSeed.slice()

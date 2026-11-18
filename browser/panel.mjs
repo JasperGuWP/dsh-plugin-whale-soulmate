@@ -254,6 +254,8 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
                 biliVisionModel: String(current.extensions.biliVisionModel || ''),
                 biliAsrEndpoint: String(current.extensions.biliAsrEndpoint || ''),
                 biliAsrApiKey: String(current.extensions.biliAsrApiKey || ''),
+                biliAsrModel: String(current.extensions.biliAsrModel || ''),
+                biliAsrProtocol: String(current.extensions.biliAsrProtocol || 'auto'),
                 biliKeywordsAuto: current.extensions.biliKeywordsAuto !== false,
                 biliKeywordsSeed: (current.extensions.biliKeywordsSeed || []).map((k) => String(k).trim()).filter(Boolean),
                 biliKeywords: (current.extensions.biliKeywords || []).map((k) => String(k).trim()).filter(Boolean),

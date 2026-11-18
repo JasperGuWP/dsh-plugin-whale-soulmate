@@ -1,6 +1,6 @@
 // Learn / refresh Bilibili surf interest keywords from recent chat + memory.
 import { loadConfig, saveConfigAuto } from '../soulmate-core/state.mjs';
-import { loadFacts, listSessionEpisodes } from '../soulmate-core/memory-engine.mjs';
+import { listSessionEpisodes } from '../soulmate-core/memory-engine.mjs';
 import { listImChat } from '../soulmate-core/im-chat.mjs';
 import { measureFromRecords, normalizeChatHome } from '../soulmate-core/chat-home.mjs';
 import { sessionIdsToWatch } from '../soulmate-core/session-star.mjs';
@@ -14,7 +14,14 @@ const STOP = new Set([
   '不是', '就是', '然后', '因为', '所以', '如果', '已经', '没有', '真的', '好的',
   '哈哈', '嘿嘿', '谢谢', '你好', '在干嘛', '干嘛', '怎么样', '自己', '对方',
   'the', 'and', 'for', 'with', 'you', 'are', 'this', 'that', 'from', 'have',
+  // 内部字段/系统词:曾被误学进关键词,永久屏蔽
+  'identity', 'following', 'system-reminder', 'system', 'reminder', 'video', 'bvid',
+  'worthscore', 'https', 'http', 'www', 'bilibili', 'skill', 'tool', 'json', 'dsh',
+  'soulmate', 'session', 'token', 'api', 'prompt', 'assistant', 'user', 'model',
 ]);
+
+/** 明显是内部字段/URL 片段的 token 直接丢弃。 */
+const JUNK = /(system-reminder|worthscore|bvid|^https?:?$|www\.|\.com\b|\.cn\b|\/)/i;
 
 const INTEREST_CUE = /想看|想了解|感兴趣|最近在看|推荐(?:个|几个|一下)?|搜一下|关于|讲讲|聊聊|关注|学习|入门|教程|新闻|科技|编程|AI|装机|硬件|数码/;
 
@@ -25,10 +32,30 @@ export function normalizeKeywordList(list, max = 8) {
     const k = str(raw).replace(/\s+/g, ' ').trim();
     if (!k || k.length > 24) continue;
     const key = k.toLowerCase();
-    if (seen.has(key) || STOP.has(k) || STOP.has(key)) continue;
+    if (seen.has(key) || STOP.has(k) || STOP.has(key) || JUNK.test(k)) continue;
     seen.add(key);
     out.push(k);
     if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** 自动学习只追加、不覆盖:已有学习词在前,新候选去重追加,最多 max 个。 */
+export function appendLearnedKeywords(existing, candidates, max = 20) {
+  return normalizeKeywordList([...(Array.isArray(existing) ? existing : []), ...(Array.isArray(candidates) ? candidates : [])], max);
+}
+
+/** 冲浪实际使用的手动 + 学习并集:手填的永远在,学习词追加去重。 */
+export function mergeSurfKeywords(manual, learned) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of [...(Array.isArray(manual) ? manual : []), ...(Array.isArray(learned) ? learned : [])]) {
+    const k = str(raw).replace(/\s+/g, ' ').trim();
+    if (!k) continue;
+    const key = k.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(k);
   }
   return out;
 }
@@ -161,7 +188,7 @@ export async function refreshSurfKeywords(home, options = {}) {
   const conf = await loadConfig(home);
   const ext = conf.extensions ?? {};
   if (ext.biliKeywordsAuto === false) {
-    return { ok: true, skipped: true, reason: 'disabled', keywords: normalizeKeywordList(ext.biliKeywords, 8) };
+    return { ok: true, skipped: true, reason: 'disabled', keywords: mergeSurfKeywords(ext.biliKeywords, ext.biliLearnedKeywords) };
   }
 
   const chatTexts = [];
@@ -194,26 +221,19 @@ export async function refreshSurfKeywords(home, options = {}) {
     // optional
   }
 
-  let factSnippets = [];
-  try {
-    const { pub = [], priv = [] } = await loadFacts(home);
-    const rows = [...pub, ...priv]
-      .filter((f) => f && !f.invalidatedAt && !f.deletedAt)
-      .slice(-40);
-    factSnippets = rows.map((f) => [str(f.topic), str(f.content || f.text)].filter(Boolean).join(' '));
-  } catch {
-    factSnippets = [];
+  // 只在真的有聊天内容时学习:没聊天 = 不总结、不写任何东西
+  const chatSample = chatTexts.filter(Boolean).slice(0, 60);
+  if (!chatSample.length) {
+    return { ok: true, ran: false, reason: 'no-chat', keywords: mergeSurfKeywords(ext.biliKeywords, ext.biliLearnedKeywords) };
   }
 
-  const seed = Array.isArray(ext.biliKeywordsSeed) && ext.biliKeywordsSeed.length
-    ? ext.biliKeywordsSeed
-    : (ext.biliKeywords || []);
-  const chatSample = chatTexts.filter(Boolean).slice(0, 60);
-  let proposed = proposeSurfKeywords({
-    current: ext.biliKeywords || [],
-    seed,
+  const manual = Array.isArray(ext.biliKeywords) ? ext.biliKeywords : [];
+  const learnedPrev = Array.isArray(ext.biliLearnedKeywords) ? ext.biliLearnedKeywords : [];
+  let candidates = proposeSurfKeywords({
+    current: learnedPrev,
+    seed: manual,
     chatTexts: chatSample,
-    factSnippets,
+    factSnippets: [],
     max: Math.min(8, Math.max(3, Math.floor(Number(options.max) || 6))),
   });
 
@@ -223,42 +243,37 @@ export async function refreshSurfKeywords(home, options = {}) {
       const picked = resolveLlmModel({ models, preferredId: str(options.modelId) });
       if (picked?.id) {
         const prompt = [
-          '根据搭档在各处近聊（DSH 对话窗、各 IM 平台）与记忆要点，提炼 3～6 个适合 B 站搜索的兴趣关键词。',
-          '要求：短词/短语，适合搜索；不要句子；不要解释；只输出 JSON 字符串数组。',
-          `当前关键词：${JSON.stringify(normalizeKeywordList(ext.biliKeywords, 8))}`,
-          `近聊摘录：\n${chatSample.slice(0, 16).map((t) => `- ${t.slice(0, 80)}`).join('\n') || '（暂无）'}`,
-          `记忆摘录：\n${factSnippets.slice(0, 8).map((t) => `- ${t.slice(0, 80)}`).join('\n') || '（暂无）'}`,
+          '根据搭档在 DSH 对话窗与各 IM 平台的近聊，提炼 3～6 个适合 B 站搜索的兴趣关键词。',
+          '要求：短词/短语，适合搜索；不要句子；不要解释；只输出 JSON 字符串数组；不要改写手填词。',
+          `手填关键词（保持不动）：${JSON.stringify(manual)}`,
+          `已学习关键词：${JSON.stringify(learnedPrev)}`,
+          `近聊摘录：\n${chatSample.slice(0, 16).map((t) => `- ${t.slice(0, 80)}`).join('\n')}`,
         ].join('\n');
         const out = await options.oneShotLlm({ prompt, modelId: picked.id, kind: 'surf-keywords' });
         const parsed = parseKeywordReply(out);
-        if (parsed.length >= 2) {
-          proposed = proposeSurfKeywords({
-            current: parsed,
-            seed,
-            chatTexts: [],
-            factSnippets: [],
-            max: 6,
-          });
-        }
+        if (parsed.length >= 2) candidates = parsed;
       }
     } catch {
       // heuristic result stands
     }
   }
 
-  if (!proposed.length) {
-    return { ok: true, changed: false, reason: 'empty', keywords: normalizeKeywordList(ext.biliKeywords, 8) };
+  // 追加式:手填词永不改写;学习词去重后追加,总量封顶 20
+  const learnedNext = appendLearnedKeywords(learnedPrev, candidates, 20);
+  const merged = mergeSurfKeywords(manual, learnedNext);
+  if (!learnedNext.length) {
+    return { ok: true, changed: false, reason: 'empty', keywords: merged };
   }
-  if (sameList(proposed, ext.biliKeywords)) {
-    return { ok: true, changed: false, keywords: proposed };
+  if (sameList(learnedNext, learnedPrev)) {
+    return { ok: true, changed: false, keywords: merged };
   }
 
   const at = new Date(options.nowMs ?? Date.now()).toISOString();
   await saveConfigAuto(home, {
     extensions: {
-      biliKeywords: proposed,
+      biliLearnedKeywords: learnedNext,
       biliKeywordsUpdatedAt: at,
     },
   });
-  return { ok: true, changed: true, keywords: proposed, at };
+  return { ok: true, changed: true, keywords: merged, learned: learnedNext, at };
 }

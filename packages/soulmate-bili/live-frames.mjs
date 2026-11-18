@@ -83,6 +83,17 @@ export async function probeFfmpeg(options = {}) {
   }
 }
 
+/** Pick the smallest usable VIDEO URL from playurl payload. */
+export function pickPlayurlAudio(data) {
+  const audio = Array.isArray(data?.dash?.audio) ? data.dash.audio : [];
+  const sorted = [...audio].sort((a, b) => num(a.bandwidth, 9e9) - num(b.bandwidth, 9e9));
+  for (const a of sorted) {
+    const url = str(a.baseUrl || a.base_url || (Array.isArray(a.backupUrl) ? a.backupUrl[0] : '') || (Array.isArray(a.backup_url) ? a.backup_url[0] : ''));
+    if (url) return { url, bandwidth: num(a.bandwidth) };
+  }
+  return null;
+}
+
 /** Pick the smallest usable video URL from playurl payload. */
 export function pickPlayurlStream(data) {
   const dash = data?.dash;

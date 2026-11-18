@@ -199,6 +199,7 @@ const { CSS_KEY } = require('./util.mjs')
 .sm-panel-row{display:flex;gap:12px;flex-wrap:wrap}
 .sm-panel-field{display:flex;flex-direction:column;gap:6px;flex:1 1 190px;min-width:150px}
 .sm-panel-field>span{font-size:12px;color:var(--dsw-alias-label-tertiary,#8a8f99)}
+.sm-asr-model{display:flex;flex-direction:column;gap:6px;width:100%}
 .sm-panel-input{width:100%;height:32px;padding:0 10px;border-radius:var(--dsw-radius-md,8px);border:1px solid var(--dsw-alias-border-l2,#e3e5e8);background:var(--dsw-alias-bg-base,#fff);color:inherit;font:inherit;font-size:13px;outline:none;transition:border-color .15s}
 .sm-panel-input:hover{border-color:var(--dsw-alias-border-l3,#d0d3d9)}
 .sm-panel-input:focus{border-color:var(--dsw-alias-brand-primary,#4d6bfe)}

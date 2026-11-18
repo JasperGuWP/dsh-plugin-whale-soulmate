@@ -26,13 +26,14 @@ import { afterSurfWatch } from './engage.mjs';
 import {
   extractLiveFrames,
   LIVE_FRAME_DEFAULT_EVERY_SEC,
+  pickPlayurlAudio,
 } from './live-frames.mjs';
 import {
   composeVideoTakeaway,
   scrubTranscriptNoise,
   transcriptAlignedWithMeta,
 } from './subtitle-align.mjs';
-import { transcribeViaEndpoint } from './asr-client.mjs';
+import { transcribeViaEndpoint, transcribeOpenAiAudio, transcribeDashScope, transcribeDeepseek, resolveAsrProtocol } from './asr-client.mjs';
 import {
   appendEngagePhrase,
   composeVisionTimelineSummary,
@@ -901,16 +902,31 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
   const transcriptEmpty = !str(digest.transcript || digest.subtitle?.text).trim()
     || digest.subtitle?.source === 'discarded-mismatch';
   const asrEndpoint = str(options.asrEndpoint ?? confLive.extensions?.biliAsrEndpoint).trim();
-  if (transcriptEmpty && asrEndpoint) {
-    const asr = await transcribeViaEndpoint({
+  const asrEnabled = confLive.extensions?.biliAsrEnabled !== false;
+  const asrProtocol = resolveAsrProtocol(asrEndpoint, options.asrProtocol ?? confLive.extensions?.biliAsrProtocol);
+  if (transcriptEmpty && asrEndpoint && asrEnabled) {
+    // OpenAI/DashScope 系协议要真实音频流:从 playurl 取最小码率音轨 URL
+    let audioUrl = str(options.asrAudioUrl).trim();
+    if (!audioUrl && (asrProtocol === 'openai' || asrProtocol === 'dashscope') && bvid && cid) {
+      try {
+        const play = await client.api('/x/player/playurl', { bvid, cid, qn: 0, fnval: 16 }, { wbi: true });
+        audioUrl = pickPlayurlAudio(play)?.url || '';
+      } catch { /* soft-fail:转写会报 no-audio-url */ }
+    }
+    const runAsr = asrProtocol === 'openai' ? transcribeOpenAiAudio
+      : asrProtocol === 'dashscope' ? transcribeDashScope
+        : asrProtocol === 'deepseek' ? transcribeDeepseek
+          : transcribeViaEndpoint;
+    const asr = await runAsr({
       endpoint: asrEndpoint,
       apiKey: options.asrApiKey ?? confLive.extensions?.biliAsrApiKey ?? '',
+      model: options.asrModel ?? confLive.extensions?.biliAsrModel ?? '',
       bvid: digest.bvid,
-      audioUrl: options.asrAudioUrl || '',
+      audioUrl,
       durationSec: digest.durationSec,
       fetchImpl: options.fetchImpl,
     });
-    digest.channels = { ...(digest.channels || {}), asr: asr.channel };
+    digest.channels = { ...(digest.channels || {}), asr: asr.ok ? 'ok' : `${asr.channel}:${asr.error || ''}`.replace(/:$/, '') };
     if (asr.ok && asr.text) {
       digest.transcript = asr.text;
       digest.subtitle = {

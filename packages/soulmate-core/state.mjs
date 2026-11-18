@@ -168,15 +168,15 @@ export const DEFAULT_CONFIG = Object.freeze({
   extensions: {
     biliEnabled: true,
     // Scheduled Bilibili patrol (auto surf). Read-only watching: notes + seen ledger,
-    // never writes to B 站. Off by default; the rhythm tab opts in.
-    biliAutoSurfEnabled: false,
+    // never writes to B 站. On by default; the rhythm tab can disable per-user.
+    biliAutoSurfEnabled: true,
     /** Legacy hours field (still accepted). Prefer biliAutoSurfEveryMinutes. */
     biliAutoSurfEveryHours: 6,
     /** Discrete minutes: 10 / 30 / 60 / 90 / 120 / 180 / 240 / 360 / 480 / 720 / 1440 */
     biliAutoSurfEveryMinutes: 360,
     biliAutoSurfMaxPick: 2,
     /** When true, timed patrol digests more storyboard/transcript and reports coverage depth. */
-    biliAutoSurfDeepWatch: false,
+    biliAutoSurfDeepWatch: true,
     /** Also pull B 站综合热门 into each surf round (fills slots when keyword search is thin / 412). */
     biliSurfIncludePopular: true,
     /** Also read B 站专栏文章（关键词 + 推荐）。 */
@@ -196,13 +196,18 @@ export const DEFAULT_CONFIG = Object.freeze({
     biliVisionModel: '',
     /** External ASR endpoint URL; used only when official subtitles missing/mismatched. */
     biliAsrEndpoint: '',
+    biliAsrEnabled: true,
+    // 协议族:auto(阿里域名→dashscope,其余→openai 转写)/ openai / dashscope / deepseek(Deepseek 原生) / json(旧自定义契约)
+    biliAsrProtocol: 'auto',
     /** Optional Bearer token for ASR endpoint (avoid logging). */
     biliAsrApiKey: '',
+    biliAsrModel: '',
     /** Skip search hits older than this many days (default 180). */
     biliAutoSurfMaxAgeDays: 180,
-    /** Learn / refresh biliKeywords from chat + memory before each patrol. */
+    /** Learn / append biliLearnedKeywords from chat; biliKeywords is the manual list, never overwritten. */
     biliKeywordsAuto: true,
     biliKeywordsSeed: [],
+    biliLearnedKeywords: [],
     biliKeywordsUpdatedAt: '',
     lastAutoSurfAt: '',
     // Built-in IM hub (soulmate-im). Only on/off switches live here; tokens/secrets go to
@@ -216,7 +221,7 @@ export const DEFAULT_CONFIG = Object.freeze({
     },
     // Non-empty -> only these sender / group ids (or "platform:id") are answered.
     imWhitelist: [],
-    biliKeywords: ['AI', '编程', '科技'],
+    biliKeywords: ['AI', '科技', '编程', '数码', '生活'],
     // Public/DM sharing is opt-in: it needs this flag AND Bilibili credentials in credentials.json.
     biliShareEnabled: false,
     biliShareVia: 'dm',

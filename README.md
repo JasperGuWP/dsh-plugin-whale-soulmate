@@ -22,13 +22,16 @@
 
 更完整的架构说明见 [`docs/DESIGN.md`](./docs/DESIGN.md)；版权与致谢见 [`NOTICE.md`](./NOTICE.md)。
 
-## 新版亮点 · v0.2.127
+## 新版亮点 · v0.2.131
 
+- **无字幕也能听懂视频**：B 站官方字幕缺失或不匹配时，可从 playurl 提取音轨并调用外部 ASR；支持 OpenAI 兼容、阿里 DashScope、DeepSeek 原生和自定义 JSON 协议，并可从服务端拉取模型列表。
+- **兴趣关键词只追加不覆盖**：手填关键词永久保留，自动学习词单独存储、去重后追加，最多 20 个；过滤系统字段与 URL 噪声，没有聊天内容时不学习。
+- **定时冲浪更主动**：自动冲浪与深度观看默认开启，定时轮询会使用手填与学习关键词的并集；每周记忆蒸馏时也会从近聊补充兴趣词。
 - **7 套桌宠皮肤补齐阵容**：高冷眼镜执事、深海经典、海盐苏打、午夜星空、汉风襦裙、Q版冬装男孩、蓝色冬装，覆盖不同人设与动作风格。
 - **按需下载，不把安装包撑大**：汉风襦裙与 Q版冬装男孩随插件离线内置；其余 5 套首次选择时从 GitHub Releases 下载，按大小与 SHA-256 校验后缓存，之后可离线切换。
 - **透明视频修复**：统一使用 VP9-alpha WebM，并保留 PNG 回退；修复部分环境中透明帧裂图、绿底或首帧异常的问题。
 - **角色专属动作与情绪**：高冷执事保持克制冷脸，被拎起时会挣扎反击，被靠近时会示意你走开；日常会伏桌阅读、优雅吃牛排和靠桌小睡。其他桌宠也减少单一鼓脸表达，改用拒绝、侧身、跺脚等差异化动作。
-- **统一蓝金视觉**：动作特效与界面氛围使用蓝、金、深海军蓝配色，不使用绿色系特效。
+- **统一蓝金视觉**：动作特效与界面氛围使用蓝、金、深海军蓝配色；新版介绍封面换成正确的 DeepSeek 标志，并以虚化标志作为背景。
 
 ## 不止桌宠：完整陪伴能力
 
@@ -102,17 +105,32 @@
 
 ## 快速安装
 
-```bash
-# 在本仓库根目录
-npm pack
-# → dsh-plugin-whale-soulmate-<version>.tgz
+三种方式都装**最新发布版**；已装过的再执行一次同样命令即升级到最新版。
 
-dsh plugin --profile web add ./dsh-plugin-whale-soulmate-<version>.tgz
-# 或 desktop profile
+```bash
+# 方式一（推荐）：从 npm 拉最新版
+dsh plugin --profile desktop add dsh-plugin-whale-soulmate
+# web profile 同理：dsh plugin --profile web add dsh-plugin-whale-soulmate
+```
+
+```bash
+# 方式二：从 GitHub Release 下载 tarball 安装（离线 / 指定渠道时用）
+# https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/releases/latest
 dsh plugin --profile desktop add ./dsh-plugin-whale-soulmate-<version>.tgz
 ```
 
-> **务必装 tarball，不要装目录。** 目录会记成 `link:`，容易触发 `ERR_MODULE_NOT_FOUND`。  
+```bash
+# 方式三：直接用仓库源码（构建脚本随包，安装时自动生成 client.js）
+dsh plugin --profile desktop add github:JasperGuWP/dsh-plugin-whale-soulmate
+```
+
+```bash
+# 本地开发：仓库根目录打包安装
+npm pack
+dsh plugin --profile desktop add ./dsh-plugin-whale-soulmate-<version>.tgz
+```
+
+> **务必装 tarball 或包名，不要装目录。** 目录会记成 `link:`，容易触发 `ERR_MODULE_NOT_FOUND`。  
 > node 半侧**无热加载**：装完请重启 dsh 进程。
 
 ### 按需下载皮肤
@@ -222,13 +240,16 @@ Seven skins share the same one-click picker in Settings → Identity. Static ava
 
 Transparent video sprites: flick-throw with gravity bounces and a landing squash; tap to pet, double-tap to nuzzle, wheel to zoom.
 
-### What's new in v0.2.127
+### What's new in v0.2.131
 
+- **Understand videos without subtitles:** when official Bilibili subtitles are missing or mismatched, the plugin extracts audio from the play URL and calls external ASR. It supports OpenAI-compatible, Alibaba DashScope, native DeepSeek, and custom JSON protocols, including server-side model discovery.
+- **Interest keywords are append-only:** manually entered keywords are never overwritten. Learned keywords live separately, are deduplicated, append up to 20 entries, filter system-field and URL noise, and are not generated when there is no chat context.
+- **More proactive scheduled surfing:** auto-surf and deep watch are enabled by default, scheduled rounds use the union of manual and learned keywords, and weekly memory distillation can contribute additional interests from recent chats.
 - **Seven-skin lineup:** Cool Butler, Deepsea Classic, Soda, Starnight, Hanfu, Winter Boy, and Blue Winter.
 - **Smaller default install:** Hanfu and Winter Boy stay bundled offline; the other five skins download from GitHub Releases on first selection, are verified by size and SHA-256, and are then cached for offline use.
 - **Transparent-video fixes:** VP9-alpha WebM with PNG fallback, plus fixes for broken, green, or incorrect first frames in some environments.
 - **Character-specific motion:** the Cool Butler keeps a restrained expression while struggling when picked up, telling you to keep your distance, reading at his desk, dining on steak, or napping beside it; other pets use rejection, turn-away, and foot-stomp gestures instead of relying on one puffed-cheek reaction.
-- **Blue-and-gold visual language:** motion effects and UI accents use blue, gold, and deep navy rather than green effects.
+- **Blue-and-gold visual language:** motion effects and UI accents use blue, gold, and deep navy. The refreshed cover uses the correct DeepSeek mark with a blurred version in the background.
 
 ### More than a desktop pet
 
@@ -255,12 +276,21 @@ Transparent video sprites: flick-throw with gravity bounces and a landing squash
 
 ### Install
 
+All three channels install the **latest** release; re-running the same command upgrades an existing install.
+
 ```bash
-npm pack
-dsh plugin --profile web add ./dsh-plugin-whale-soulmate-<version>.tgz
+# 1) from npm (recommended)
+dsh plugin --profile desktop add dsh-plugin-whale-soulmate
+
+# 2) from the latest GitHub Release tarball
+# https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/releases/latest
+dsh plugin --profile desktop add ./dsh-plugin-whale-soulmate-<version>.tgz
+
+# 3) straight from the repository (prepare builds client.js at install time)
+dsh plugin --profile desktop add github:JasperGuWP/dsh-plugin-whale-soulmate
 ```
 
-Install the **tarball**, not a directory. Restart dsh (node half is not hot-reloadable).
+Install the **tarball or package name**, not a directory. Restart dsh (node half is not hot-reloadable).
 
 Optional skins are fetched from the [`pet-packs-v2` GitHub Release](https://github.com/JasperGuWP/dsh-plugin-whale-soulmate/releases/tag/pet-packs-v2) and cached at `<soulmate home>/cache/pet-skins/pet-<skin-id>`. For offline/manual installs, `node install-skin.mjs <asset-folder> --id <skin-id>` copies a normal pack into the installed plugin; skins are discovered per request and listed in the panel dropdowns.
 

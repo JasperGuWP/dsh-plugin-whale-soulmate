@@ -26,7 +26,7 @@ import {
 } from '../proactive.mjs';
 import { runAutonomousSurfRound } from '../../soulmate-bili/index.mjs';
 import { createHostVisionSummarize } from '../../soulmate-bili/host-vision.mjs';
-import { refreshSurfKeywords } from '../../soulmate-bili/keyword-learn.mjs';
+import { refreshSurfKeywords, mergeSurfKeywords } from '../../soulmate-bili/keyword-learn.mjs';
 import { runAutoReplyPatrol } from '../../soulmate-bili/reply-patrol.mjs';
 import { resolveLlmModel } from '../llm-model-pick.mjs';
 import { clampSurfMaxPick, resolveSurfIntervalMinutes } from '../surf-schedule.mjs';
@@ -416,7 +416,8 @@ export function createProactiveRuntime({
       keywordsRefresh = { ok: false, error: errMsg(err) };
     }
     const live = await loadConfig(home).catch(() => conf);
-    const keywords = Array.isArray(live?.extensions?.biliKeywords) ? live.extensions.biliKeywords : ext.biliKeywords;
+    const kwExt = live?.extensions ?? ext;
+    const keywords = mergeSurfKeywords(kwExt.biliKeywords, kwExt.biliLearnedKeywords);
     let res;
     try {
       const llmController = typeof chatHome.getSessionController === 'function'
@@ -550,6 +551,17 @@ export function createProactiveRuntime({
       warn('auto-reply patrol failed', err);
     }
     const distill = gate.ran ? await runDistillationCheck({ cfg, at }) : { ok: true, ran: false, reason: 'weekly-gate-not-due' };
+    // 周记润色顺带提炼本周兴趣关键词(追加式,不动手填词)
+    if (gate.ran) {
+      try {
+        await refreshSurfKeywords(home, {
+          nowMs: at,
+          oneShotLlm,
+          listHostModels,
+          sessionController: typeof chatHome.getSessionController === 'function' ? chatHome.getSessionController : undefined,
+        });
+      } catch (err) { warn('weekly keyword refresh failed', err); }
+    }
     // Session stars: poll watch list (+ discover) at the same tick level as dream.
     const sessionStars = await maybeCaptureSessionStars({ at }).catch((err) => {
       warn('maybeCaptureSessionStars failed', err);
