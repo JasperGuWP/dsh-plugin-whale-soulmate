@@ -33,6 +33,7 @@ import { createPromptEngine } from './runtime/prompt-engine.mjs';
 import { createMemoryService } from './runtime/memory-service.mjs';
 import { createUsageRuntime } from './runtime/usage-runtime.mjs';
 import { createChatHomeRuntime } from './runtime/chat-home-runtime.mjs';
+import { deliverViaPrompt } from './chat-home.mjs';
 import { createProactiveRuntime } from './runtime/proactive-runtime.mjs';
 import { createSummaryProvider } from './runtime/summary.mjs';
 import { bootstrapHome } from './runtime/bootstrap.mjs';
@@ -110,6 +111,28 @@ export function apply(ctx, config = {}) {
     home, ctx, sessionController, promptEngine, pushEvent, warn,
     meteredCall: usage.meteredCall,
   });
+
+  /** Put a request into the home DSH conversation; the agent there runs its own tools. */
+  const askHomeAgent = async (text) => {
+    const controller = sessionController();
+    if (!controller || typeof controller.prompt !== 'function') {
+      return { ok: false, error: 'no-prompt-api' };
+    }
+    const ensured = await chatHome.ensureHomeSession({
+      seedAfterRotate: false,
+      forceRotate: false,
+      rotateIfFull: false,
+    }).catch((err) => ({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+    if (!ensured || !ensured.ok || !ensured.sessionId) {
+      return { ok: false, error: (ensured && ensured.error) || 'no-chat-home' };
+    }
+    const res = await deliverViaPrompt(controller, {
+      sessionId: ensured.sessionId,
+      kind: 'user-request',
+      visibleText: text,
+    });
+    return res && res.ok ? { ok: true, via: res.via || 'prompt' } : { ok: false, error: (res && res.reason) || 'prompt-rejected' };
+  };
   // Mirror EVERY DSH conversation reply → activity feed → Windows toast.
   track(() => chatHome.startReplyToastWatch());
 
@@ -292,6 +315,7 @@ export function apply(ctx, config = {}) {
     usage,
     proactive,
     chatHome,
+    askHomeAgent,
     evolvePersona: memory.evolvePersona,
     video: { videoWatch: toolSet.videoWatch, videoSurf: toolSet.videoSurf, videoShare: toolSet.videoShare, biliAuthManage: toolSet.biliAuthManage },
     imNet: toolSet.imNet,

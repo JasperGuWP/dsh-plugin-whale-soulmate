@@ -12,6 +12,7 @@ import { eventRoutes } from './event-routes.mjs';
 import { surfRoutes } from './surf-routes.mjs';
 import { imChatRoutes } from './im-chat-routes.mjs';
 import { updateRoutes } from './update-routes.mjs';
+import { chatRoutes } from './chat-routes.mjs';
 
 export function buildRoutes(deps) {
   return [
@@ -26,5 +27,6 @@ export function buildRoutes(deps) {
     ...surfRoutes(deps),
     ...imChatRoutes(deps),
     ...updateRoutes(deps),
+    ...chatRoutes(deps),
   ];
 }

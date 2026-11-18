@@ -16,20 +16,39 @@ const { AsrSettings } = require('./panel-asr.mjs')
 /** Hint under «真看抽帧»: only surfaces blockers (login / missing ffmpeg with a download link). */
 function LiveFrameReadyHint() {
   const [status, setStatus] = React.useState(null)
+  const [asking, setAsking] = React.useState(false)
+  const [askHint, setAskHint] = React.useState('')
   React.useEffect(() => {
     let alive = true
     api('bili/auth').then((s) => { if (alive && s && s.ok !== false) setStatus(s) }).catch(() => {})
     return () => { alive = false }
   }, [])
+  const askDownload = React.useCallback(async () => {
+    if (asking) return
+    setAsking(true)
+    setAskHint('')
+    try {
+      const res = await api('ffmpeg-download', {})
+      if (!res || res.ok === false) setAskHint((res && res.error) || '请求发送失败')
+      else setAskHint('已请 DSH 在对话里下载 ffmpeg，装好后把路径填到下面。')
+    } catch (err) {
+      setAskHint(err && err.message ? err.message : '请求发送失败')
+    } finally {
+      setAsking(false)
+    }
+  }, [asking])
   if (!status) return null
   if (!status.loggedIn) {
     return h('p', { className: 'sm-panel-muted' }, '登录 B 站后才能抽真实帧。')
   }
   if (!status.ffmpegReady) {
     return h('p', { className: 'sm-panel-muted' }, [
-      h('span', { key: 't' }, '未检测到 ffmpeg，抽不了真实帧。'),
-      h('a', { key: 'd', href: 'https://www.gyan.dev/ffmpeg/builds/', target: '_blank', rel: 'noreferrer' }, '下载 ffmpeg'),
-      h('span', { key: 'n' }, '（解压后把 bin 加入 PATH 再刷新）'),
+      h('span', { key: 't' }, '未检测到 ffmpeg'),
+      h('button', {
+        key: 'd', type: 'button', className: 'sm-link', disabled: asking,
+        onClick: askDownload,
+      }, asking ? '正在请求…' : '下载 ffmpeg'),
+      askHint ? h('span', { key: 'h', style: { marginLeft: 6, opacity: 0.85 } }, askHint) : null,
     ])
   }
   return null
