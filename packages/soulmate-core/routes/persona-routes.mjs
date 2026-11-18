@@ -8,12 +8,17 @@ import { GENDER_PET_SKIN } from '../assets.mjs';
 import { jsonOut, statusOf } from '../http-plumbing.mjs';
 import { errMsg } from '../small-utils.mjs';
 
-export function personaRoutes({ home, service, memory, getSummary, evolveOrReset, startPersonaQuiz, runBootGreetingWithRetry, refreshPresence, warn }) {
+export function personaRoutes({ home, service, memory, getSummary, evolveOrReset, startPersonaQuiz, runBootGreetingWithRetry, refreshPresence, warn, petWindowStatus }) {
   // enrichSafe lives on the memory runtime, not on the public ctx.soulmate surface.
   const { interact, evolvePersona } = service;
   const { enrichSafe } = memory;
+  const stateOut = async () => {
+    const summary = await getSummary();
+    const petWindow = typeof petWindowStatus === 'function' ? petWindowStatus() : null;
+    return petWindow ? { ...summary, petWindow } : summary;
+  };
   return [
-    { method: 'GET', paths: ['/dsh-soulmate/api/state'], handler: async () => jsonOut(200, await getSummary()) },
+    { method: 'GET', paths: ['/dsh-soulmate/api/state'], handler: async () => jsonOut(200, await stateOut()) },
     { method: 'GET', paths: ['/dsh-soulmate/api/config'], handler: async () => jsonOut(200, (await getSummary()).config) },
     {
       method: 'POST',

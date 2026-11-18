@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { transcribeViaEndpoint, fetchAsrModels, transcribeOpenAiAudio, transcribeDashScope, transcribeDeepseek, resolveAsrProtocol } from '../packages/soulmate-bili/asr-client.mjs';
+import { transcribeViaEndpoint, fetchAsrModels, transcribeOpenAiAudio, transcribeDashScope, transcribeDeepseek, resolveAsrProtocol, preferAsrTranscript } from '../packages/soulmate-bili/asr-client.mjs';
 
 test('ASR unconfigured skips', async () => {
   const r = await transcribeViaEndpoint({ endpoint: '' });
@@ -250,4 +250,14 @@ test('transcribeDeepseek: reports no-ffmpeg instead of throwing when ffmpeg is m
   });
   assert.equal(r.ok, false);
   assert.equal(r.error, 'no-ffmpeg');
+});
+
+test('preferAsrTranscript: replaces missing/mismatched subtitles, needs 30% coverage otherwise', () => {
+  assert.equal(preferAsrTranscript({ official: '', asrText: 'x', transcriptEmpty: false }), true);
+  assert.equal(preferAsrTranscript({ official: 'a'.repeat(500), asrText: 'b'.repeat(200), transcriptEmpty: true }), true);
+  assert.equal(preferAsrTranscript({ official: 'a'.repeat(1000), asrText: 'b'.repeat(500), transcriptEmpty: false }), true);
+  assert.equal(preferAsrTranscript({ official: 'a'.repeat(1000), asrText: 'b'.repeat(100), transcriptEmpty: false }), false);
+  assert.equal(preferAsrTranscript({ official: 'a'.repeat(100), asrText: 'b'.repeat(39), transcriptEmpty: false }), false);
+  assert.equal(preferAsrTranscript({ official: 'a'.repeat(100), asrText: 'b'.repeat(40), transcriptEmpty: false }), true);
+  assert.equal(preferAsrTranscript({ official: 'a'.repeat(100), asrText: '   ', transcriptEmpty: true }), false);
 });

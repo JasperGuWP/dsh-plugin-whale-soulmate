@@ -316,6 +316,7 @@ export function apply(ctx, config = {}) {
     proactive,
     chatHome,
     askHomeAgent,
+    petWindowStatus: () => (petWindow ? petWindow.status() : null),
     evolvePersona: memory.evolvePersona,
     video: { videoWatch: toolSet.videoWatch, videoSurf: toolSet.videoSurf, videoShare: toolSet.videoShare, biliAuthManage: toolSet.biliAuthManage },
     imNet: toolSet.imNet,

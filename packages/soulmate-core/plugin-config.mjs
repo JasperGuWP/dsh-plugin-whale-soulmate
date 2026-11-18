@@ -109,6 +109,7 @@ export const CONFIG_PATCH_KEYS = {
     biliVisionModel: 'string',
     biliAsrEndpoint: 'string',
     biliAsrEnabled: 'boolean',
+    biliAsrAlways: 'boolean',
     biliAsrProtocol: 'string',
     biliAsrApiKey: 'string',
     biliAsrModel: 'string',

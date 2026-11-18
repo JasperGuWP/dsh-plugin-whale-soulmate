@@ -196,7 +196,10 @@ export const DEFAULT_CONFIG = Object.freeze({
     biliVisionModel: '',
     /** External ASR endpoint URL; used only when official subtitles missing/mismatched. */
     biliAsrEndpoint: '',
-    biliAsrEnabled: true,
+    /** External ASR is opt-in: off by default, and only runs when an endpoint is configured. */
+    biliAsrEnabled: false,
+    /** Run ASR even when Bilibili returned a subtitle track; off by default (per-video cost). */
+    biliAsrAlways: false,
     // 协议族:deepseek(DeepSeek ASR,推荐)/ dashscope(Qwen ASR)/ openai(其他 ASR)/ json(自定义 JSON 契约)
     biliAsrProtocol: 'deepseek',
     /** Optional Bearer token for ASR endpoint (avoid logging). */

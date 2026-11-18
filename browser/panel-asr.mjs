@@ -66,7 +66,7 @@ function AsrModelPicker({ endpoint, apiKey, value, onCommit }) {
 
 /** 无字幕视频的外部 ASR 设置；与画面理解总结互不依赖。 */
 function AsrSettings({ ext, patchExtensions }) {
-  const enabled = ext.biliAsrEnabled !== false
+  const enabled = ext.biliAsrEnabled === true
   const protocolValue = (() => {
     const p = String(ext.biliAsrProtocol || '').trim().toLowerCase()
     if (p === 'deepseek' || p === 'dashscope' || p === 'openai' || p === 'json') return p
@@ -76,15 +76,27 @@ function AsrSettings({ ext, patchExtensions }) {
     h('label', {
       key: 'asr-enabled',
       className: 'sm-rhythm-check',
-      title: '官方没有字幕时,用外部 ASR 接口把音频转成文字(需要先填接口地址);与「画面理解总结」互不影响。',
+      title: '官方字幕缺失或疑似错配时,用外部 ASR 接口把音频转成文字(需要先填接口地址);与「画面理解总结」互不影响。',
     }, [
       h('input', {
         key: 'i', type: 'checkbox',
         checked: enabled,
         onChange: (event) => patchExtensions({ biliAsrEnabled: event.target.checked }),
       }),
-      h('span', { key: 't' }, '无字幕 ASR 转写（外部接口）'),
+      h('span', { key: 't' }, 'ASR 转写（外部接口）'),
     ]),
+    enabled ? h('label', {
+      key: 'asr-always',
+      className: 'sm-rhythm-check',
+      title: '官方字幕有时会抓错或漏内容；开启后每片都跑一次 ASR，成功且覆盖足够就替换官方字幕，失败仍用官方字幕。',
+    }, [
+      h('input', {
+        key: 'i', type: 'checkbox',
+        checked: ext.biliAsrAlways === true,
+        onChange: (event) => patchExtensions({ biliAsrAlways: event.target.checked }),
+      }),
+      h('span', { key: 't' }, '有字幕也跑 ASR（更准，每片多几秒）'),
+    ]) : null,
     enabled ? h('fieldset', {
       key: 'asr-group',
       style: { margin: '12px 0 0', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--dsw-alias-border-l2,#e3e5e8)', background: 'var(--dsw-alias-bg-layer-1,#fafbfc)' },

@@ -180,10 +180,24 @@ function draftFromSummary(snap) {
       enabled: !!(config.pet && config.pet.enabled),
       sizePx: clampNum(Number(config.pet && config.pet.sizePx) || 148, 96, 320),
       sleepAfterIdleSec: clampNum(Number(config.pet && config.pet.sleepAfterIdleSec) || 300, 30, 3600),
+      thinkQuietSec: (Number.isFinite(Number(config.pet && config.pet.thinkQuietSec)) ? Number(config.pet.thinkQuietSec) : 1.5),
       skin: (config.pet && typeof config.pet.skin === 'string' && config.pet.skin.trim())
         ? config.pet.skin.trim()
         : ((config.persona && config.persona.gender === 'male') ? 'winterboy-chibi' : 'hanfu'),
       skinAuto: !(config.pet && config.pet.skinAuto === false),
+      // Window form + physics + idle walk: keep every pet key in the draft, otherwise the
+      // switch appears to flip back after any reload/autosave round-trip.
+      windowEnabled: !!(config.pet && config.pet.windowEnabled),
+      windowElectronPath: (config.pet && typeof config.pet.windowElectronPath === 'string') ? config.pet.windowElectronPath : '',
+      physics: {
+        gravity: (Number.isFinite(Number(config.pet && config.pet.physics && config.pet.physics.gravity)) ? Number(config.pet.physics.gravity) : 1400),
+        restitution: (Number.isFinite(Number(config.pet && config.pet.physics && config.pet.physics.restitution)) ? Number(config.pet.physics.restitution) : 0.78),
+        groundFriction: (Number.isFinite(Number(config.pet && config.pet.physics && config.pet.physics.groundFriction)) ? Number(config.pet.physics.groundFriction) : 2.5),
+        throwPower: (Number.isFinite(Number(config.pet && config.pet.physics && config.pet.physics.throwPower)) ? Number(config.pet.physics.throwPower) : 1),
+      },
+      ambientWalk: !(config.pet && config.pet.ambientWalk === false),
+      ambientWalkAfterSec: (Number.isFinite(Number(config.pet && config.pet.ambientWalkAfterSec)) ? Number(config.pet.ambientWalkAfterSec) : 15),
+      ambientWalkChance: (Number.isFinite(Number(config.pet && config.pet.ambientWalkChance)) ? Number(config.pet.ambientWalkChance) : 0.35),
     },
     notify: { enabled: !(config.notify && config.notify.enabled === false) },
     extensions: {
@@ -226,6 +240,7 @@ function draftFromSummary(snap) {
       biliAsrApiKey: (config.extensions && config.extensions.biliAsrApiKey) || '',
       biliAsrModel: (config.extensions && config.extensions.biliAsrModel) || '',
       biliAsrProtocol: (config.extensions && config.extensions.biliAsrProtocol) || 'deepseek',
+      biliAsrAlways: !!(config.extensions && config.extensions.biliAsrAlways === true),
       biliKeywordsAuto: !(config.extensions && config.extensions.biliKeywordsAuto === false),
       biliKeywordsSeed: (config.extensions && Array.isArray(config.extensions.biliKeywordsSeed))
         ? config.extensions.biliKeywordsSeed.slice()

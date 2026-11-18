@@ -256,6 +256,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
                 biliAsrApiKey: String(current.extensions.biliAsrApiKey || ''),
                 biliAsrModel: String(current.extensions.biliAsrModel || ''),
                 biliAsrProtocol: String(current.extensions.biliAsrProtocol || 'deepseek'),
+                biliAsrAlways: current.extensions.biliAsrAlways === true,
                 biliKeywordsAuto: current.extensions.biliKeywordsAuto !== false,
                 biliKeywordsSeed: (current.extensions.biliKeywordsSeed || []).map((k) => String(k).trim()).filter(Boolean),
                 biliKeywords: (current.extensions.biliKeywords || []).map((k) => String(k).trim()).filter(Boolean),
@@ -518,6 +519,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
         looks: skinList,
         skinBusy,
         PetPreview,
+        windowStatus: snap && snap.petWindow,
         defaultSpriteUrl: draft.gender === 'male' ? DEFAULT_SPRITE_MALE_URL : DEFAULT_SPRITE_URL,
       })
 

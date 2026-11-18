@@ -49,6 +49,16 @@ export async function fetchAsrModels({
   }
 }
 
+/** 有官方字幕时是否改用 ASR 文本:官方为空/被判错配必用;否则仅当 ASR 覆盖足够(≥30%)
+ *  才替换,避免长片 ASR 截断反而比官方字幕少。 */
+export function preferAsrTranscript({ official = '', asrText = '', transcriptEmpty = false } = {}) {
+  const a = str(asrText).trim();
+  if (!a) return false;
+  const o = str(official).trim();
+  if (transcriptEmpty || !o) return true;
+  return a.length >= Math.max(40, Math.floor(o.length * 0.3));
+}
+
 /** 协议族解析:显式四类(deepseek / dashscope / openai / json)按配置走;
  *  旧配置的 auto / 空值 → 推荐 DeepSeek ASR(阿里域名仍走 Qwen DashScope)。 */
 export function resolveAsrProtocol(endpoint, protocol) {

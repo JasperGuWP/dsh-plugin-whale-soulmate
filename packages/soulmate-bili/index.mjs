@@ -33,7 +33,7 @@ import {
   scrubTranscriptNoise,
   transcriptAlignedWithMeta,
 } from './subtitle-align.mjs';
-import { transcribeViaEndpoint, transcribeOpenAiAudio, transcribeDashScope, transcribeDeepseek, resolveAsrProtocol } from './asr-client.mjs';
+import { transcribeViaEndpoint, transcribeOpenAiAudio, transcribeDashScope, transcribeDeepseek, resolveAsrProtocol, preferAsrTranscript } from './asr-client.mjs';
 import {
   appendEngagePhrase,
   composeVisionTimelineSummary,
@@ -945,8 +945,13 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
     || digest.subtitle?.source === 'discarded-mismatch';
   const asrEndpoint = str(options.asrEndpoint ?? confLive.extensions?.biliAsrEndpoint).trim();
   const asrEnabled = confLive.extensions?.biliAsrEnabled !== false;
+  // 默认只在无字幕/字幕错配时跑;开了 biliAsrAlways 则每片都跑(覆盖足够才替换官方字幕)。
+  const asrAlways = options.asrAlways ?? (confLive.extensions?.biliAsrAlways === true);
   const asrProtocol = resolveAsrProtocol(asrEndpoint, options.asrProtocol ?? confLive.extensions?.biliAsrProtocol);
-  if (transcriptEmpty && asrEndpoint && asrEnabled) {
+  const wantAsr = asrAlways
+    ? !!(asrEndpoint && asrEnabled)
+    : !!(transcriptEmpty && asrEndpoint && asrEnabled);
+  if (wantAsr) {
     // OpenAI/DashScope 系协议要真实音频流:从 playurl 取最小码率音轨 URL
     let audioUrl = str(options.asrAudioUrl).trim();
     if (!audioUrl && (asrProtocol === 'openai' || asrProtocol === 'dashscope' || asrProtocol === 'deepseek') && digest.bvid && digest.cid) {
@@ -970,8 +975,11 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
       fetchImpl: options.fetchImpl,
       ffmpegPath: options.ffmpegPath ?? confLive.extensions?.biliFfmpegPath,
     });
-    digest.channels = { ...(digest.channels || {}), asr: asr.ok ? 'ok' : `${asr.channel}:${asr.error || ''}`.replace(/:$/, '') };
-    if (asr.ok && asr.text) {
+    const official = str(digest.transcript || digest.subtitle?.text);
+    const useAsr = asr.ok && preferAsrTranscript({ official, asrText: asr.text, transcriptEmpty });
+    const asrState = asr.ok ? (useAsr ? 'ok' : 'ok:kept-subtitle') : `${asr.channel}:${asr.error || ''}`.replace(/:$/, '');
+    digest.channels = { ...(digest.channels || {}), asr: asrState };
+    if (asr.ok && useAsr) {
       digest.transcript = asr.text;
       digest.subtitle = {
         ...(digest.subtitle || {}),

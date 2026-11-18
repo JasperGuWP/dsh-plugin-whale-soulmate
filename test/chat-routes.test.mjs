@@ -33,3 +33,14 @@ test('ffmpeg-download: 502 when the ask throws, 503 when unwired', async () => {
   assert.equal(b.status, 503);
   assert.equal(JSON.parse(b.body).error, 'chat-home-unavailable');
 });
+test('pet-electron-install: asks the home conversation to install Electron', async () => {
+  let seen = '';
+  const r = chatRoutes({ askHomeAgent: async (text) => { seen = text; return { ok: true }; } })
+    .find((x) => x.paths.includes('/dsh-soulmate/api/pet-electron-install'));
+  assert.equal(r.method, 'POST');
+  const out = await r.handler({ body: {} });
+  assert.equal(out.status, 200);
+  assert.match(seen, /Electron/);
+  assert.match(seen, /electron\.exe/);
+  assert.match(seen, /\.dsh\/electron/);
+});

@@ -45,6 +45,8 @@ export function createPetWindowRuntime(deps) {
   let wantOn = false;
   let missingWarned = false;
   let cooldownUntil = 0;
+  let lastElectronPath = '';
+  let lastElectronExists = null;
 
   const log = (msg) => { if (typeof warn === 'function') warn(`[pet-window] ${msg}`); };
 
@@ -87,7 +89,9 @@ export function createPetWindowRuntime(deps) {
     if (disposed || child) return;
     const conf = await loadConfig(home);
     const exe = String(deps.electronPath || conf?.pet?.windowElectronPath || '').trim() || defaultElectronPath();
-    if (!existsSync(exe)) {
+    lastElectronPath = exe;
+    lastElectronExists = existsSync(exe);
+    if (!lastElectronExists) {
       if (!missingWarned) {
         missingWarned = true;
         log(`Electron 运行时不存在(${exe})——桌面窗口形态不可用;可在 pet.windowElectronPath 指定,或安装桌面端。页内形象不受影响。`);
@@ -150,5 +154,13 @@ export function createPetWindowRuntime(deps) {
     begin, sync, dispose,
     port: () => (server ? server.address().port : null),
     alive: () => !!child,
+    /** Panel status: is the window form wanted/running, and is an Electron runtime on disk? */
+    status: () => ({
+      enabled: wantOn,
+      running: !!child,
+      port: server ? server.address().port : null,
+      electronPath: lastElectronPath || defaultElectronPath(),
+      electronExists: lastElectronExists === null ? existsSync(lastElectronPath || defaultElectronPath()) : lastElectronExists,
+    }),
   };
 }

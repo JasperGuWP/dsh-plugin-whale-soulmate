@@ -13,6 +13,7 @@ import { surfRoutes } from './surf-routes.mjs';
 import { imChatRoutes } from './im-chat-routes.mjs';
 import { updateRoutes } from './update-routes.mjs';
 import { chatRoutes } from './chat-routes.mjs';
+import { petRoutes } from './pet-routes.mjs';
 
 export function buildRoutes(deps) {
   return [
@@ -28,5 +29,6 @@ export function buildRoutes(deps) {
     ...imChatRoutes(deps),
     ...updateRoutes(deps),
     ...chatRoutes(deps),
+    ...petRoutes(deps),
   ];
 }
