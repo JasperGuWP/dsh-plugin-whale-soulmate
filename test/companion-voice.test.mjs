@@ -296,3 +296,50 @@ test('notify: toast projection covers the meaningful moments only', async () => 
   assert.ok(clipped.body.length < long.length);
   assert.equal(clipped.fullText, long);
 });
+
+test('notify/focus: electron direct focus preferred, protocol fallback, bounded retries', async () => {
+  const { focusHarnessForToast, clearFocusRetryTimers } = await import('../packages/soulmate-core/routes/event-routes.mjs');
+  try {
+    const directCalls = [];
+    const protoCalls = [];
+    const out = focusHarnessForToast({
+      directImpl: () => { directCalls.push(Date.now()); return 2; },
+      protocolImpl: () => { protoCalls.push(Date.now()); return true; },
+    });
+    assert.equal(out.via, 'electron');
+    assert.equal(out.windows, 2);
+    assert.equal(out.protocol, true);
+    assert.equal(directCalls.length, 1);
+    assert.equal(protoCalls.length, 1, '协议始终补一发（覆盖未进工作区等状态）');
+    await new Promise((r) => setTimeout(r, 2500));
+    assert.equal(directCalls.length, 3, '0.9s/2.2s 两次重试');
+    assert.equal(protoCalls.length, 3);
+
+    // 非 Electron（direct=0）→ via protocol，仍然工作
+    const fallback = focusHarnessForToast({ directImpl: () => 0, protocolImpl: () => true });
+    assert.equal(fallback.via, 'protocol');
+    assert.equal(fallback.windows, 0);
+
+    // direct 抛错不致命
+    const thrown = focusHarnessForToast({ directImpl: () => { throw new Error('no electron'); }, protocolImpl: () => true });
+    assert.equal(thrown.via, 'protocol');
+  } finally {
+    clearFocusRetryTimers();
+  }
+});
+
+test('notify/focus route reports via/windows and stays ok', async () => {
+  const { eventRoutes, clearFocusRetryTimers } = await import('../packages/soulmate-core/routes/event-routes.mjs');
+  try {
+    const routes = eventRoutes({ events: [], eventSeq: () => 0, pushEvent: () => 1 });
+    const focus = routes.find((r) => r.paths.includes('/dsh-soulmate/api/notify/focus'));
+    const out = await focus.handler({ body: { sessionId: 's-1' } });
+    const payload = JSON.parse(out.body);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.sessionId, 's-1');
+    assert.ok(['electron', 'protocol'].includes(payload.via));
+    assert.equal(typeof payload.focused, 'boolean');
+  } finally {
+    clearFocusRetryTimers();
+  }
+});

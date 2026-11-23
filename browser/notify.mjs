@@ -402,6 +402,9 @@ function installNotifications() {
         retainNotification(note)
         lastToastForRestore = { toast, at: Date.now() }
         const onClick = () => {
+          // 同一 toast 的 onclick + click 双通道 / 双击只处理一次，避免重复 focus 重试。
+          if (note.__smClicked) return
+          note.__smClicked = true
           lastToastForRestore = null
           openToastTarget(toast)
           try { note.close() } catch (_) { /* ignore */ }
