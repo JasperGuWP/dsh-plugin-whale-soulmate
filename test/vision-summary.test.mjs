@@ -191,3 +191,42 @@ test('composeVisionTimelineSummary: vision rejection falls back to text-infer ti
   assert.equal(res.fallback, 'text-infer');
   assert.match(res.takeaway, /铺垫|00:30/);
 });
+
+test('vision prompts carry persona voice and ask for a whole-video opinionated 观感', async () => {
+  const { buildVisionPrompt, buildTextFallbackPrompt } = await import('../packages/soulmate-bili/vision-summary.mjs');
+  const voice = '戏谑、带点压迫感，护短带刺。分寸：吐槽犀利。口吻参考：「敢动你？先过我这关。」';
+  const p = buildVisionPrompt({ title: 'T', frames: [{ tSec: 0, label: '00:00' }], persona: voice });
+  assert.ok(!p.includes('视频内容分析助手'), '不再自报中性助手身份');
+  assert.ok(p.includes('以当前人设的身份'));
+  assert.ok(p.includes('【你的性格（只影响观感措辞）】'));
+  assert.ok(p.includes('吐槽犀利'));
+  assert.match(p, /观感：<2–3 句/);
+  assert.match(p, /总结并评价整个视频/);
+  const plain = buildVisionPrompt({ title: 'T', frames: [] });
+  assert.ok(!plain.includes('【你的性格'), '无人设时不加性格块');
+  const f = buildTextFallbackPrompt({ title: 'T' }, { persona: voice });
+  assert.ok(f.includes('【你的性格（只影响观感措辞）】'));
+  assert.match(f, /观感:<2–3 句/);
+});
+
+test('parseVisionTimelineText keeps multi-line 观感 and compose passes persona through', async () => {
+  const raw = '总览：一期讲透 X\n时间线：\n· 00:00–00:30 开场：点题\n· 00:30–01:00 论证：给证据\n观感：这片子有点东西，节奏紧、没废话。\n槽点是结尾恰饭太硬——但整体值得你看一遍。';
+  const parsed = parseVisionTimelineText(raw);
+  assert.match(parsed.opinion, /有点东西/);
+  assert.match(parsed.opinion, /恰饭太硬/, '第二句不丢');
+  assert.equal(parsed.chapters.length, 2);
+  const take = formatVisionTakeaway({ ...parsed, worthScore: 15 });
+  assert.match(take, /观感：这片子有点东西.*恰饭太硬/);
+
+  let seenPrompt = '';
+  const res = await composeVisionTimelineSummary({
+    digest: { title: 'X', durationSec: 60, worthScore: 15, liveFrameStills: [{ tSec: 0, url: 'u0' }] },
+    persona: '嘴硬心软，吐槽犀利',
+    visionSummarize: async ({ prompt }) => {
+      seenPrompt = prompt;
+      return { text: raw };
+    },
+  });
+  assert.equal(res.ok, true);
+  assert.ok(seenPrompt.includes('嘴硬心软'), 'persona 传进视觉 prompt');
+});

@@ -1036,11 +1036,21 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
       };
     }
     if (typeof visionSummarize === 'function') {
+      // 观感要带人设腔：把性格小传随 prompt 传给视觉总结（总览/时间线仍客观）。
+      let voiceBrief = str(options.personaVoice);
+      if (!voiceBrief) {
+        try {
+          const { personaVoiceBrief } = await import('../soulmate-core/persona-voice.mjs');
+          const { loadSoulmateState } = await import('../soulmate-core/persona.mjs');
+          voiceBrief = personaVoiceBrief(confLive.persona, await loadSoulmateState(home));
+        } catch { /* soft:中性观感兜底 */ }
+      }
       const vision = await composeVisionTimelineSummary({
         digest,
         everySec,
         visionSummarize,
         model: options.visionModel ?? confLive.extensions?.biliVisionModel ?? '',
+        persona: voiceBrief,
       });
       const visionChannel = vision.ok && vision.textOnly ? 'ok:text-only' : vision.channel;
       digest.channels = { ...(digest.channels || {}), visionSummary: visionChannel };

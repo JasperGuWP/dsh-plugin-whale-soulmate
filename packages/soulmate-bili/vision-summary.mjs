@@ -138,21 +138,25 @@ export function pickVisionFrames({
   };
 }
 
-export function buildVisionPrompt({ title = '', desc = '', transcript = '', frames = [], worthScore = 0 } = {}) {
+export function buildVisionPrompt({ title = '', desc = '', transcript = '', frames = [], worthScore = 0, persona = '' } = {}) {
+  const voice = str(persona).trim();
   const lines = [
-    '你是视频内容分析助手。请根据【标题】【简介】【可选字幕】以及按时间顺序给出的画面帧，写出能让读者完整了解本片内容的中文总结。',
-    '要求：以画面为准；字幕仅在与标题相符时参考；不要编造与画面无关的情节。',
+    '请以当前人设的身份看这支视频：根据【标题】【简介】【可选字幕】以及按时间顺序给出的画面帧，写出能让读者完整了解本片内容的中文总结。',
+    '要求：以画面为准；字幕仅在与标题相符时参考；不要编造与画面无关的情节。总览与时间线保持客观准确，性格只体现在「观感」里。',
     '输出格式（严格）：',
-    '总览：<一句话>',
+    '总览：<一句话，这片子整体讲了什么>',
     '时间线：',
     '· mm:ss–mm:ss <章标题>：<要点>',
     '· …（3–6 段）',
-    '观感：<一句话，结合信息密度>',
-    '',
-    `标题：${clip(title, 120)}`,
-    `简介：${clip(desc, 400) || '（无）'}`,
-    `评分参考：${num(worthScore, 0)}/20`,
+    voice
+      ? '观感：<2–3 句，用你的口吻总结并评价整个视频：内容值不值、亮点或槽点在哪、推不推荐对方看。必须带当前性格的措辞与态度，不是中性分析报告。>'
+      : '观感：<2–3 句，总结并评价整个视频：内容值不值、亮点或槽点、推不推荐看，结合信息密度给出态度。>',
   ];
+  if (voice) lines.push(`【你的性格（只影响观感措辞）】${clip(voice, 300)}`);
+  lines.push('');
+  lines.push(`标题：${clip(title, 120)}`);
+  lines.push(`简介：${clip(desc, 400) || '（无）'}`);
+  lines.push(`评分参考：${num(worthScore, 0)}/20`);
   const tx = str(transcript).trim();
   if (tx) lines.push(`字幕摘录：${clip(tx, 800)}`);
   lines.push('画面帧（按时间）：');
@@ -175,8 +179,9 @@ export function parseVisionTimelineText(raw) {
   const overviewM = text.match(/(?:总览|一句话总览|讲了什么)\s*[:：]\s*(.+)/);
   if (overviewM) overview = overviewM[1].trim().split('\n')[0];
 
-  const opinionM = text.match(/观感\s*[:：]\s*(.+)/);
-  if (opinionM) opinion = opinionM[1].trim().split('\n')[0];
+  // 观感取到下一个字段头或空行为止，允许 2–3 句跨行；兼容旧格式单行。
+  const opinionM = text.match(/观感\s*[:：]\s*([\s\S]+?)(?=\n\s*\n|\n\s*(?:总览|时间线|标题|简介|字幕摘录|画面帧)\s*[:：]|$)/);
+  if (opinionM) opinion = opinionM[1].split('\n').map((l) => l.replace(/^[\s·\-•*]+/, '').trim()).filter(Boolean).join(' ');
 
   const body = text.includes('时间线') ? text.split(/时间线\s*[:：]?\s*/)[1] || '' : text;
   const chapterPart = opinionM ? body.slice(0, body.indexOf(opinionM[0])) : body;
@@ -236,27 +241,32 @@ export function appendEngagePhrase(summary, actions = {}) {
 }
 
 /** 无画面模型时的纯文本推断 prompt:字幕/热评/弹幕高峰做时间锚点,明示未看画面。 */
-export function buildTextFallbackPrompt(digest = {}) {
+export function buildTextFallbackPrompt(digest = {}, { persona = '' } = {}) {
   const comments = (Array.isArray(digest.hotComments) ? digest.hotComments : [])
     .slice(0, 5).map((c) => str(c?.text ?? c)).filter(Boolean).join(' / ');
   const peaks = (Array.isArray(digest.peaks) ? digest.peaks : [])
     .slice(0, 8).map((p) => `${formatClock(p?.tSec ?? p?.sec ?? p?.t ?? 0)}(${p?.count ?? p?.text ?? ''})`).join(' / ');
-  return [
-    '你是视频内容分析助手。当前没有可用的画面模型,请仅根据下列文本信息推断本片内容与章节时间线。',
-    '要求:以"按文案/弹幕推断,未看画面"为前提;时间线用字幕/弹幕高峰的时间锚点,不得编造具体画面细节。',
+  const voice = str(persona).trim();
+  const lines = [
+    '请以当前人设的身份看这支视频。当前没有可用的画面模型,请仅根据下列文本信息推断本片内容与章节时间线。',
+    '要求:以"按文案/弹幕推断,未看画面"为前提;时间线用字幕/弹幕高峰的时间锚点,不得编造具体画面细节。总览与时间线客观准确,性格只体现在「观感」里。',
     '输出格式(严格):',
-    '总览:<一句话>',
+    '总览:<一句话,这片子整体讲了什么>',
     '时间线:',
     '· mm:ss–mm:ss <章标题>:<要点>',
     '· …(3–6 段)',
-    '观感:<一句话>',
-    '',
-    `标题:${clip(digest.title, 120)}`,
-    `简介:${clip(digest.desc, 400) || '(无)'}`,
-    `字幕摘录:${clip(digest.transcript, 800) || '(无)'}`,
-    `热评:${clip(comments, 400) || '(无)'}`,
-    `弹幕高峰:${peaks || '(无)'}`,
-  ].join('\n');
+    voice
+      ? '观感:<2–3 句,用你的口吻总结并评价整个视频:内容值不值、亮点或槽点、推不推荐对方看,带当前性格的态度。>'
+      : '观感:<2–3 句,总结并评价整个视频:内容值不值、亮点或槽点、推不推荐看。>',
+  ];
+  if (voice) lines.push(`【你的性格（只影响观感措辞）】${clip(voice, 300)}`);
+  lines.push('');
+  lines.push(`标题:${clip(digest.title, 120)}`);
+  lines.push(`简介:${clip(digest.desc, 400) || '(无)'}`);
+  lines.push(`字幕摘录:${clip(digest.transcript, 800) || '(无)'}`);
+  lines.push(`热评:${clip(comments, 400) || '(无)'}`);
+  lines.push(`弹幕高峰:${peaks || '(无)'}`);
+  return lines.join('\n');
 }
 
 /**
@@ -269,6 +279,7 @@ export async function composeVisionTimelineSummary({
   visionSummarize,
   model = '',
   maxFrames = VISION_FRAME_MAX,
+  persona = '',
 } = {}) {
   if (typeof visionSummarize !== 'function') {
     return { ok: false, channel: 'skip:no-vision-model', takeaway: '', error: 'no-vision-callback' };
@@ -292,6 +303,7 @@ export async function composeVisionTimelineSummary({
     transcript: digest.transcript || digest.subtitle?.text || '',
     frames: picked.frames,
     worthScore: digest.worthScore,
+    persona,
   });
 
   try {
@@ -350,7 +362,7 @@ export async function composeVisionTimelineSummary({
       try {
         const out2 = await visionSummarize({
           model: str(model).trim() || undefined,
-          prompt: buildTextFallbackPrompt(digest),
+          prompt: buildTextFallbackPrompt(digest, { persona }),
           images: [],
         });
         const raw2 = str(out2?.text ?? out2?.content ?? out2).trim();

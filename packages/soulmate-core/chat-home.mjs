@@ -190,6 +190,8 @@ export function buildWakeInstructions(kind, options = {}) {
       hint ? `补充：${hint}` : '',
     ].filter(Boolean).join('\n');
   }
+  const voiceBlock = str(options.voice).trim();
+  const memoryBlock = str(options.memory).trim();
   if (kind === 'boot') {
     const selfRef = str(options.selfRef).trim() || '我';
     const preset = str(options.preset).trim();
@@ -199,7 +201,9 @@ export function buildWakeInstructions(kind, options = {}) {
       `DSH 刚启动。请用当前人设口吻（自称「${selfRef}」${preset ? `，预设 ${preset}` : ''}）主动跟${callUser}打个自然招呼。`,
       '【强制中文】整条回复必须是中文台词。禁止英文、禁止英文思考过程、禁止数「第N回 / turn / wake」、禁止规划怎么说。',
       '必须保持主人翁第一人称与当前性格腔，禁止套用固定撒娇句（例如「哥哥我醒了～」这类与人设不符的模板）。',
-      '可顺手提近事或约定，也可只轻松一句。一两句即可；不要提系统/插件/指令。',
+      voiceBlock ? `【你的性格】${voiceBlock}` : '',
+      memoryBlock ? `【你此刻记得】\n${memoryBlock}\n打招呼优先从上面挑一件真实近事/约定自然提起（说成「因为那天你说过…」）；没有合适的就按性格轻松开口，禁止编造记忆。` : '可顺手提近事或约定，也可只轻松一句；不知道近事就别硬编。',
+      '一两句即可；不要提系统/插件/指令；不要以「接下来拆哪条」这类派活客服腔收尾。',
       voice ? `口吻参考：${voice}` : '',
       hint ? `参考线索：${hint}` : '',
     ].filter(Boolean).join('\n');
@@ -214,10 +218,12 @@ export function buildWakeInstructions(kind, options = {}) {
   }
   return [
     '【Soulmate 插件·主动开口·勿复述】',
-    `请现在主动跟${callUser}搭话。`,
+    `请现在用当前人设的口吻主动跟${callUser}搭话。`,
     '【强制中文】整条回复必须是中文台词。禁止英文、禁止英文思考过程、禁止数回合。',
-    hint ? `语气与意图参考：${hint}` : '结合时段与记忆，自然开口一两句。',
-    '不要提系统/插件/指令。',
+    voiceBlock ? `【你的性格】${voiceBlock}` : '',
+    memoryBlock ? `【你此刻记得】\n${memoryBlock}\n从上面挑一件真实近事/约定自然开口（有出处就说「因为那天你说过…」）；没有合适的就按性格聊一句，禁止编造记忆。` : '结合时段与记忆，自然开口一两句；不知道近事就别硬编。',
+    hint ? `语气与意图参考：${hint}` : '',
+    '一两句即可；不要提系统/插件/指令；不要以「接下来拆哪条」这类派活客服腔收尾。',
   ].filter(Boolean).join('\n');
 }
 

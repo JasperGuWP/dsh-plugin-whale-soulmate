@@ -597,3 +597,32 @@ test('chatHome: persona change rotates a fresh window when enabled, stays when d
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('chatHome: wake instructions carry persona voice + memory, ban assistant-task tone', () => {
+  const voice = '戏谑、带点压迫感，护短带刺。分寸：吐槽犀利';
+  const memory = '# 他此刻记得\n- 承诺：周五一起复盘\n- 最近经历：2026-11-23 看了老谢评Mate90';
+  const boot = buildWakeInstructions('boot', { callUser: '你', voice, memory });
+  assert.match(boot, /【你的性格】戏谑/);
+  assert.match(boot, /【你此刻记得】/);
+  assert.match(boot, /周五一起复盘/);
+  assert.match(boot, /禁止编造记忆/);
+  assert.match(boot, /派活客服腔/);
+  const pro = buildWakeInstructions('proactive', { callUser: '你', voice, memory, hint: '晚间了' });
+  assert.match(pro, /当前人设的口吻/);
+  assert.match(pro, /【你此刻记得】/);
+  assert.match(pro, /晚间了/);
+  // 无 voice/memory 时退回旧行为，不出现空块
+  const bare = buildWakeInstructions('proactive', { hint: '该吃饭了' });
+  assert.doesNotMatch(bare, /【你的性格】/);
+  assert.doesNotMatch(bare, /【你此刻记得】/);
+});
+
+test('personaVoiceBrief: preset description + trait register + mood', async () => {
+  const { personaVoiceBrief } = await import('../packages/soulmate-core/persona-voice.mjs');
+  const brief = personaVoiceBrief({ preset: 'dark-hunter', traits: { sassiness: 80, tsundere: 45, clinginess: 50, brevity: 60 } }, { mood: 'focused' });
+  assert.match(brief, /戏谑/);
+  assert.match(brief, /吐槽犀利/);
+  assert.match(brief, /口吻参考/);
+  assert.match(brief, /专注/);
+  assert.equal(personaVoiceBrief({}, {}), '', '未知预设返回空串');
+});

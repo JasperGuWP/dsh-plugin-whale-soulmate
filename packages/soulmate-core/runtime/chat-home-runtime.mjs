@@ -3,7 +3,9 @@
 // once-per-process boot greeting. Session stars live in session-star-runtime.
 
 import { appendJsonl, loadConfig, saveConfigAuto } from '../state.mjs';
-import { PRESETS, getDisplayName } from '../persona.mjs';
+import { PRESETS, getDisplayName, loadSoulmateState } from '../persona.mjs';
+import { personaVoiceBrief } from '../persona-voice.mjs';
+import { composePresenceDigest } from '../memory-engine.mjs';
 import { createChatHomeWorkspace } from './chat-home-workspace.mjs';
 
 import { companionSpokenText, extractLatestAssistantUsage, isToastWorthyReply, waitForSessionUsage } from '../usage.mjs';
@@ -183,12 +185,30 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
           const voiceHint = Array.isArray(PRESETS[preset]?.catchphrases)
             ? PRESETS[preset].catchphrases.slice(0, 2).join(' / ')
             : '';
+          // 性格小传 + 此刻记得：喂进 wake 指令，让开口有据可依，而不是自由发挥成助手腔。
+          let voice = '';
+          let memory = '';
+          if (deliveryKind === 'boot' || deliveryKind === 'proactive') {
+            try {
+              const st = await loadSoulmateState(home);
+              voice = personaVoiceBrief(conf.persona, st);
+              const digest = await composePresenceDigest(home, {
+                maxChars: 500,
+                gender: conf.persona?.gender ?? PRESETS[preset]?.gender ?? null,
+              });
+              memory = digest.ok ? String(digest.text || '') : '';
+            } catch (err) {
+              warn('wake persona/memory brief failed', err);
+            }
+          }
           const instructions = buildWakeInstructions(deliveryKind, {
             callUser,
             hint: text,
             selfRef,
             preset,
             voiceHint,
+            voice,
+            memory,
           });
           const visible = buildWakeVisibleNotice(deliveryKind, { callUser, hint: text, name });
           const petLine = buildPetSay(deliveryKind, {
