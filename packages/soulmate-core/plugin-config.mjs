@@ -101,6 +101,7 @@ export const CONFIG_PATCH_KEYS = {
     biliAutoSurfDeepWatch: 'boolean',
     biliAutoSurfMaxAgeDays: 'number',
     biliSurfIncludePopular: 'boolean',
+    biliSurfSearchOrder: 'string',
     biliSurfIncludeArticles: 'boolean',
     biliLiveFrameWatch: 'boolean',
     biliLiveFrameEverySec: 'number',

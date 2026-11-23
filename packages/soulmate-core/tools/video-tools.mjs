@@ -186,6 +186,7 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatH
       ...(Number.isFinite(args.maxPick) ? { maxPick: args.maxPick } : {}),
       ...(args.includePopular === false || args.includePopular === true ? { includePopular: args.includePopular } : {}),
       ...(args.includeArticles === false || args.includeArticles === true ? { includeArticles: args.includeArticles } : {}),
+      ...(['totalrank', 'pubdate', 'click'].includes(args.searchOrder) ? { searchOrder: args.searchOrder } : {}),
     });
     if (res.ok) {
       pushEvent('video-surf', {
@@ -251,16 +252,18 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatH
       name: 'soulmate_video_surf',
       timeoutMs: 180_000,
       description:
-        'Run an autonomous Bilibili surfing round (interest keywords + latest popular videos + 专栏 articles by default; ' +
-        'dedup ledger), or share a top-rated video (@ user via DM/comment with strict daily quota). ' +
+        'Run an autonomous Bilibili surfing round: first the top items of 综合热门/首页推荐/排行榜 (up to half the slots), ' +
+        'then the top search results per interest keyword (综合排序 by default), plus 专栏 articles; ' +
+        'dedup ledger, or share a top-rated video (@ user via DM/comment with strict daily quota). ' +
         'action "surf" (default) patrols; action "share" needs target + reason. ' +
         'When maxPick is omitted, uses the user\'s panel setting extensions.biliAutoSurfMaxPick (not a hard-coded 2).',
       parameters: {
         action: { type: 'string', enum: ['surf', 'share'], description: 'surf (default) | share' },
         keywords: { type: 'array', items: { type: 'string' }, description: 'surf: interest keywords (default: config.extensions.biliKeywords).' },
         maxPick: { type: 'number', description: 'surf: how many new items to watch (1–5). Default = panel biliAutoSurfMaxPick.' },
-        includePopular: { type: 'boolean', description: 'surf: also pull 综合热门 videos (default true).' },
+        includePopular: { type: 'boolean', description: 'surf: also pull 综合热门/首页推荐/排行榜 top items first (default true, up to half the slots).' },
         includeArticles: { type: 'boolean', description: 'surf: also read 专栏 articles (default true).' },
+        searchOrder: { type: 'string', enum: ['totalrank', 'pubdate', 'click'], description: 'surf: keyword search order. Default = panel biliSurfSearchOrder (totalrank 综合排序).' },
         target: { type: 'string', description: 'share: video URL or BV id.' },
         reason: { type: 'string', description: 'share: why it is worth the user\'s attention (>= 8 chars).' },
         via: { type: 'string', enum: ['dm', 'comment'], description: 'share: dm (default) or comment.' },

@@ -417,7 +417,10 @@ export function createProactiveRuntime({
     }
     const live = await loadConfig(home).catch(() => conf);
     const kwExt = live?.extensions ?? ext;
-    const keywords = mergeSurfKeywords(kwExt.biliKeywords, kwExt.biliLearnedKeywords);
+    const keywords = mergeSurfKeywords(
+      kwExt.biliKeywordsSeed?.length ? kwExt.biliKeywordsSeed : kwExt.biliKeywords,
+      kwExt.biliLearnedKeywords,
+    );
     let res;
     try {
       const llmController = typeof chatHome.getSessionController === 'function'

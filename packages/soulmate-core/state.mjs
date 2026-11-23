@@ -179,6 +179,8 @@ export const DEFAULT_CONFIG = Object.freeze({
     biliAutoSurfDeepWatch: true,
     /** Also pull B 站综合热门 into each surf round (fills slots when keyword search is thin / 412). */
     biliSurfIncludePopular: true,
+    /** 搜索排序：totalrank=综合（网页默认，头部相关）/ pubdate=最新 / click=最多播放。 */
+    biliSurfSearchOrder: 'totalrank',
     /** Also read B 站专栏文章（关键词 + 推荐）。 */
     biliSurfIncludeArticles: true,
     /**

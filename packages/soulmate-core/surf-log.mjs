@@ -75,6 +75,8 @@ export function normalizeSurfEntry(raw = {}, platform = 'bilibili') {
       : [],
     worthScore: Number.isFinite(Number(raw.worthScore)) ? Number(raw.worthScore) : null,
     summary: str(raw.summary),
+    source: str(raw.source),
+    keyword: str(raw.keyword),
     actions,
     replies: Array.isArray(raw.replies) ? raw.replies : [],
   };

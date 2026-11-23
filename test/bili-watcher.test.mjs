@@ -86,7 +86,7 @@ function makeVideo(bvid, aid, overrides = {}) {
   };
 }
 
-async function startMockBili(videos, { search = [] } = {}) {
+async function startMockBili(videos, { search = [], popular = [], ranking = [], rcmd = [], searchStatus = 200 } = {}) {
   const requests = [];
   const byBvid = new Map(videos.map((v) => [v.bvid, v]));
   const byAid = new Map(videos.map((v) => [String(v.aid), v]));
@@ -159,11 +159,19 @@ async function startMockBili(videos, { search = [] } = {}) {
           },
         });
       case '/x/web-interface/popular':
-        return json({ list: [] });
+        return json({ list: popular.map((s) => ({ bvid: s.bvid, title: s.title, owner: { name: 'UP热门' }, pubdate: Math.floor(Date.now() / 1000) - 86400, stat: { view: 900_000 } })) });
+      case '/x/web-interface/ranking/v2':
+        return json({ list: ranking.map((s) => ({ bvid: s.bvid, title: s.title, owner: { name: 'UP排行' }, pubdate: Math.floor(Date.now() / 1000) - 86400, stat: { view: 800_000 } })) });
+      case '/x/web-interface/index/top/feed/rcmd':
+        return json({ item: rcmd.map((s) => ({ bvid: s.bvid, title: s.title, owner: { name: 'UP推荐' }, pubdate: Math.floor(Date.now() / 1000) - 86400, stat: { view: 700_000 } })) });
       case '/x/article/recommends':
         return json({ articles: [] });
       case '/x/web-interface/search/type':
         if (q('search_type') === 'article') return json({ result: [] });
+        if (searchStatus !== 200) {
+          res.writeHead(searchStatus);
+          return res.end('risk control');
+        }
         return json({
           result: search.map((s, i) => ({ bvid: s.bvid, title: `<em class="keyword">${q('keyword')}</em> ${s.title}`, author: 'UP小明', play: 1000 - i })),
         });
@@ -326,6 +334,7 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     biliAutoSurfMaxPick: 2,
     biliAutoSurfDeepWatch: true,
     biliSurfIncludePopular: true,
+    biliSurfSearchOrder: 'totalrank',
     biliSurfIncludeArticles: true,
     biliLiveFrameWatch: false,
     biliLiveFrameEverySec: 30,
@@ -750,6 +759,63 @@ test('runAutonomousSurfRound: default keywords come from config, can be switched
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('runAutonomousSurfRound: hot/rcmd/ranking heads take the first slots, keyword search defaults to 综合排序, quota leaves room for interests', async () => {
+  const search = [
+    { bvid: BV_GOOD, title: '视频A' },
+    { bvid: BV_B, title: '视频B' },
+    { bvid: BV_C, title: '视频C' },
+  ];
+  const popular = [{ bvid: BV_GOOD2, title: '热门第一：全站都在看' }, { bvid: BV_SPAM, title: '热门第二' }];
+  const rcmd = [{ bvid: BV_GOOD3, title: '首页推荐第一' }];
+  const ranking = [{ bvid: BV_LOW, title: '排行榜第一' }];
+  await withEnv(allVideos(), { search, popular, rcmd, ranking }, async ({ mock, service, net }) => {
+    // maxPick=2：热门/推荐/排行头部优先，但配额 ceil(2/2)=1 给兴趣前几留一个位。
+    const r = await runAutonomousSurfRound(service, {
+      ...net, keywords: ['AI'], maxPick: 2, includeArticles: false,
+    });
+    assert.equal(r.ok, true, JSON.stringify(r.errors || r));
+    assert.equal(r.searchOrder, 'totalrank', 'keyword search uses 综合排序 by default');
+    const searched = mock.requests.filter((x) => x.path === '/x/web-interface/search/type' && x.query.search_type === 'video');
+    assert.equal(searched[0].query.order, 'totalrank');
+    assert.equal(r.pickedCount, 2);
+    assert.equal(r.hotWatched, 1, 'hot quota = ceil(maxPick/2)');
+    assert.deepEqual(r.videos.filter((v) => v.ok).map((v) => v.bvid), [BV_GOOD2, BV_GOOD], '热门第一 + 兴趣搜索第一');
+    assert.deepEqual(r.videos.filter((v) => v.ok).map((v) => v.source), ['popular', 'keyword']);
+
+    // maxPick=4：热门/推荐/排行按名次交错（热门1/推荐1/排行1/热门2），配额 2，剩余给关键词。
+    const r2 = await runAutonomousSurfRound(service, {
+      ...net, keywords: ['AI'], maxPick: 4, includeArticles: false,
+    });
+    assert.equal(r2.pickedCount, 4);
+    assert.equal(r2.hotWatched, 2);
+    const okRows = r2.videos.filter((v) => v.ok);
+    assert.deepEqual(okRows.map((v) => v.bvid), [BV_GOOD3, BV_LOW, BV_B, BV_C], '推荐1 → 排行1 → 搜索第2、3（热门1/搜索1 上一轮已看）');
+
+    // 冲浪日志带来源，面板可显示「综合热门 / 首页推荐 / 搜索」。
+    const { listSurfLog } = await import('../packages/soulmate-core/surf-log.mjs');
+    const entries = await listSurfLog(service.home, { platform: 'bilibili', limit: 50 });
+    const byId = new Map(entries.map((e) => [e.videoId, e]));
+    assert.equal(byId.get(BV_GOOD2).source, 'popular');
+    assert.equal(byId.get(BV_GOOD3).source, 'rcmd');
+    assert.equal(byId.get(BV_GOOD).source, 'keyword');
+    assert.equal(byId.get(BV_GOOD).keyword, 'AI');
+  });
+});
+
+test('runAutonomousSurfRound: keyword 412 still fills every slot from hot heads; explicit pubdate/click order is respected', async () => {
+  const popular = [{ bvid: BV_GOOD2, title: '热门第一：全站都在看' }, { bvid: BV_GOOD3, title: '热门第二：也值得看' }];
+  await withEnv(allVideos(), { search: [], popular, searchStatus: 412 }, async ({ service, net }) => {
+    const r = await runAutonomousSurfRound(service, {
+      ...net, keywords: ['AI', '编程'], maxPick: 2, includeArticles: false, searchOrder: 'pubdate',
+    });
+    assert.equal(r.ok, true, 'popular rescues the round when every keyword search is 412');
+    assert.equal(r.searchOrder, 'pubdate');
+    assert.equal(r.pickedCount, 2, 'hot quota lifts when no keyword candidates exist');
+    assert.deepEqual(r.videos.filter((v) => v.ok).map((v) => v.bvid), [BV_GOOD2, BV_GOOD3]);
+    assert.ok((r.errors || []).some((e) => /412/.test(e)), 'search failures stay loud');
+  });
 });
 
 // ---------------------------------------------------------------------------

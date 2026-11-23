@@ -131,6 +131,10 @@ const clip = (s, n) => {
 };
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 const pad2 = (n) => String(Math.floor(n)).padStart(2, '0');
+
+/** 搜索排序：totalrank=综合（同网页默认）/ pubdate=最新 / click=最多播放。 */
+export const SURF_SEARCH_ORDERS = Object.freeze(['totalrank', 'pubdate', 'click']);
+export const resolveSurfSearchOrder = (v) => (SURF_SEARCH_ORDERS.includes(v) ? v : 'totalrank');
 export const formatClock = (sec) => {
   const s = Math.max(0, Math.floor(num(sec)));
   const h = Math.floor(s / 3600);
@@ -1144,7 +1148,7 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
   try {
     const confSurf = await loadConfig(home);
     recorded.surf = await afterSurfWatch(home, {
-      digest,
+      digest: { ...digest, source: str(input.source), keyword: str(input.keyword) },
       persona: options.persona ?? confSurf.persona,
       options: {
         nowMs: options.nowMs,
@@ -1165,13 +1169,14 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
 // 4. Autonomous surf round
 // ---------------------------------------------------------------------------
 
-async function searchVideos(client, keyword, limit, { order = 'pubdate' } = {}) {
-  // Default pubdate：避免永远冲到播放量榜上的过时爆款（装机圣经一类）。
+async function searchVideos(client, keyword, limit, { order = 'totalrank' } = {}) {
+  // Default totalrank（综合排序，同网页搜索默认 tab）：最相关的头部结果，而不是刚发布的长尾。
+  // pubdate 会把每个兴趣词的「前几」变成刚上传的零播放教程；click 会冲上过时爆款。
   // WBI 签名：未签名时搜索常返回 code -412（风控），表现为「关键词全挂、只捡到零星结果」。
   const params = {
     search_type: 'video',
     keyword,
-    order: order === 'click' ? 'click' : 'pubdate',
+    order: order === 'click' || order === 'pubdate' ? order : 'totalrank',
     page: 1,
     platform: 'pc',
     web_location: '1430654',
@@ -1409,6 +1414,8 @@ export async function watchAndRecordArticle(soulmateService, input = {}, options
       coverUrl: digest.coverUrl,
       worthScore: digest.worthScore,
       summary: digest.takeaway,
+      source: str(input.source),
+      keyword: str(input.keyword),
       actions: { like: false, favorite: false, comment: false, follow: false, skippedReasons: ['article'] },
       at: new Date(options.nowMs ?? Date.now()).toISOString(),
     });
@@ -1459,7 +1466,7 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     3650,
   );
   const minPubSec = Math.floor(Date.now() / 1000) - maxAgeDays * 86400;
-  const searchOrder = options.searchOrder === 'click' ? 'click' : 'pubdate';
+  const searchOrder = resolveSurfSearchOrder(options.searchOrder ?? conf.extensions?.biliSurfSearchOrder);
   const frameCap = Number.isFinite(options.maxStoryboardFrames)
     ? Math.floor(options.maxStoryboardFrames)
     : (deepWatch ? 36 : 8);
@@ -1503,6 +1510,30 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     }
   } else {
     const client = makeClient(net);
+    const hotLists = [];
+    if (includePopular) {
+      try {
+        const hot = await fetchPopularVideos(client, Math.max(8, maxPick * 3));
+        popularCount = hot.length;
+        hotLists.push(hot);
+      } catch (err) {
+        errors.push(`热门: ${errMsg(err)}`);
+      }
+      try {
+        hotLists.push(await fetchRcmdFeed(client, Math.max(6, maxPick * 2)));
+      } catch (err) {
+        errors.push(`推荐流: ${errMsg(err)}`);
+      }
+      try {
+        hotLists.push(await fetchRankingVideos(client, Math.max(8, maxPick * 3)));
+      } catch (err) {
+        errors.push(`排行榜: ${errMsg(err)}`);
+      }
+    }
+    // 热门/首页推荐/排行榜的头部优先占坑：每轮先看它们的第 1、2、3…名（三源按名次交错），
+    // 关键词结果再按名次轮转补位。否则 maxPick=2 永远被关键词最新长尾吃满，热门一条都轮不到。
+    for (let i = 0; i < 64; i++) for (const l of hotLists) if (l[i]) pool.push(l[i]);
+
     const lists = [];
     for (const kw of keywords) {
       try {
@@ -1515,28 +1546,6 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     }
     // round-robin so every interest gets a chance at the top slots
     for (let i = 0; i < perKeyword; i++) for (const l of lists) if (l[i]) pool.push(l[i]);
-
-    if (includePopular) {
-      try {
-        const hot = await fetchPopularVideos(client, Math.max(8, maxPick * 3));
-        popularCount = hot.length;
-        for (const row of hot) pool.push(row);
-      } catch (err) {
-        errors.push(`热门: ${errMsg(err)}`);
-      }
-      try {
-        const ranked = await fetchRankingVideos(client, Math.max(8, maxPick * 3));
-        for (const row of ranked) pool.push(row);
-      } catch (err) {
-        errors.push(`排行榜: ${errMsg(err)}`);
-      }
-      try {
-        const feed = await fetchRcmdFeed(client, Math.max(6, maxPick * 2));
-        for (const row of feed) pool.push(row);
-      } catch (err) {
-        errors.push(`推荐流: ${errMsg(err)}`);
-      }
-    }
 
     if (includeArticles) {
       const articleLists = [];
@@ -1588,116 +1597,139 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     picked.push({ ...c, id });
   }
 
+  // 名额配额：热门/推荐/排行最多占一半（向上取整），另一半留给兴趣搜索前几；
+  // 某一侧被风控/看光时另一侧可以补满，绝不空手而归。专栏单独 ≤1/3，不挤占视频位。
+  const HOT_SOURCES = new Set(['popular', 'ranking', 'rcmd']);
+  const hotQuota = includePopular ? Math.max(1, Math.ceil(maxPick / 2)) : 0;
+  const articleQuota = includeArticles ? Math.max(1, Math.floor(maxPick / 3)) : 0;
+  const isHot = (c) => HOT_SOURCES.has(c.source);
+  const keywordCandidates = picked.filter((c) => c.kind !== 'article' && !isHot(c));
+
   const videos = [];
+  const tried = new Set();
   let watched = 0;
+  let hotWatched = 0;
+  let articleWatched = 0;
   let skippedTitleCount = 0;
-  for (const c of picked) {
-    if (watched >= maxPick) break;
-    try {
-      // 1) Title gate before frames / multimodal / engage.
-      if (c.kind !== 'article') {
-        const gate = assessTitleWatchWorth(c.title, { desc: c.desc || c.description || '' });
-        if (!gate.ok) {
-          skippedTitleCount += 1;
-          await markVideoSeen(home, c.bvid, {
-            title: c.title,
-            skipped: 'title-gate',
-            reason: gate.reason,
-            kind: gate.kind,
-          }, options.nowMs);
-          videos.push({
-            ok: false,
-            skipped: true,
-            skipKind: 'title-gate',
-            kind: 'video',
-            bvid: c.bvid,
-            title: c.title,
-            reason: gate.reason,
-            keyword: c.keyword,
-            source: c.source,
-          });
-          continue;
-        }
-      }
+  // pass 1：热门受配额约束（给兴趣前几留位）；pass 2：配额放开，谁剩谁补满。
+  for (const respectHotQuota of [true, false]) {
+    for (const c of picked) {
+      if (watched >= maxPick) break;
+      if (tried.has(c.id)) continue;
       if (c.kind === 'article') {
-        const res = await watchAndRecordArticle(soulmateService, { target: c.cvid }, net);
-        if (res.ok) {
-          watched += 1;
-          videos.push({
-            ok: true,
-            kind: 'article',
-            cvid: res.cvid,
-            id: res.id,
-            title: res.title,
-            author: res.digest.author,
-            worthScore: res.worthScore,
-            url: res.digest.url,
-            keyword: c.keyword,
-            source: c.source,
-            takeaway: res.digest.takeaway,
-            coverage: res.digest.coverage,
-            howIWatched: res.digest.coverage?.report || '',
-          });
-        } else {
-          videos.push({ ok: false, kind: 'article', cvid: c.cvid, error: res.error });
-          errors.push(`cv${c.cvid}: ${res.error}`);
-          await markVideoSeen(home, `cv${c.cvid}`, { failed: true, kind: 'article' }, options.nowMs);
-        }
+        if (articleWatched >= articleQuota) continue;
+      } else if (respectHotQuota && isHot(c) && hotWatched >= hotQuota && keywordCandidates.some((x) => !tried.has(x.id))) {
         continue;
       }
-      const res = await watchAndRecordVideo(soulmateService, { target: c.bvid }, { ...net, maxStoryboardFrames: frameCap });
-      if (res.ok) {
-        watched += 1;
-        const d = res.digest;
-        const noSub = !(d.coverage && d.coverage.subtitle);
-        if (deepWatch) {
-          videos.push({
-            ok: true,
-            kind: 'video',
-            deepWatch: true,
-            bvid: res.bvid,
-            title: res.title,
-            author: d.author,
-            worthScore: res.worthScore,
-            url: d.url,
-            keyword: c.keyword,
-            source: c.source,
-            desc: d.desc,
-            takeaway: d.takeaway,
-            summary: d.summary,
-            coverage: d.coverage,
-            howIWatched: d.coverage?.report || '',
-            transcriptExcerpt: clip(d.transcript || '', noSub ? 8000 : 16000),
-            storyboardFrames: (d.storyboardFrames || []).slice(0, noSub ? 28 : 20),
-            highEnergyPeaks: d.highEnergyPeaks,
-            tags: d.tags,
-            channels: d.channels,
-          });
-        } else {
-          videos.push({
-            ok: true,
-            kind: 'video',
-            deepWatch: false,
-            bvid: res.bvid,
-            title: res.title,
-            author: d.author,
-            worthScore: res.worthScore,
-            url: d.url,
-            keyword: c.keyword,
-            source: c.source,
-            takeaway: d.takeaway,
-            coverage: d.coverage ? { depth: d.coverage.depth, report: d.coverage.report } : undefined,
-            howIWatched: d.coverage?.report || '',
-          });
+      tried.add(c.id);
+      try {
+        // 1) Title gate before frames / multimodal / engage.
+        if (c.kind !== 'article') {
+          const gate = assessTitleWatchWorth(c.title, { desc: c.desc || c.description || '' });
+          if (!gate.ok) {
+            skippedTitleCount += 1;
+            await markVideoSeen(home, c.bvid, {
+              title: c.title,
+              skipped: 'title-gate',
+              reason: gate.reason,
+              kind: gate.kind,
+            }, options.nowMs);
+            videos.push({
+              ok: false,
+              skipped: true,
+              skipKind: 'title-gate',
+              kind: 'video',
+              bvid: c.bvid,
+              title: c.title,
+              reason: gate.reason,
+              keyword: c.keyword,
+              source: c.source,
+            });
+            continue;
+          }
         }
-      } else {
-        videos.push({ ok: false, kind: 'video', bvid: c.bvid, error: res.error });
-        errors.push(`${c.bvid}: ${res.error}`);
-        await markVideoSeen(home, c.bvid, { failed: true }, options.nowMs);
+        if (c.kind === 'article') {
+          const res = await watchAndRecordArticle(soulmateService, { target: c.cvid, source: c.source, keyword: c.keyword }, net);
+          if (res.ok) {
+            watched += 1;
+            articleWatched += 1;
+            videos.push({
+              ok: true,
+              kind: 'article',
+              cvid: res.cvid,
+              id: res.id,
+              title: res.title,
+              author: res.digest.author,
+              worthScore: res.worthScore,
+              url: res.digest.url,
+              keyword: c.keyword,
+              source: c.source,
+              takeaway: res.digest.takeaway,
+              coverage: res.digest.coverage,
+              howIWatched: res.digest.coverage?.report || '',
+            });
+          } else {
+            videos.push({ ok: false, kind: 'article', cvid: c.cvid, error: res.error });
+            errors.push(`cv${c.cvid}: ${res.error}`);
+            await markVideoSeen(home, `cv${c.cvid}`, { failed: true, kind: 'article' }, options.nowMs);
+          }
+          continue;
+        }
+        const res = await watchAndRecordVideo(soulmateService, { target: c.bvid, source: c.source, keyword: c.keyword }, { ...net, maxStoryboardFrames: frameCap });
+        if (res.ok) {
+          watched += 1;
+          if (isHot(c)) hotWatched += 1;
+          const d = res.digest;
+          const noSub = !(d.coverage && d.coverage.subtitle);
+          if (deepWatch) {
+            videos.push({
+              ok: true,
+              kind: 'video',
+              deepWatch: true,
+              bvid: res.bvid,
+              title: res.title,
+              author: d.author,
+              worthScore: res.worthScore,
+              url: d.url,
+              keyword: c.keyword,
+              source: c.source,
+              desc: d.desc,
+              takeaway: d.takeaway,
+              summary: d.summary,
+              coverage: d.coverage,
+              howIWatched: d.coverage?.report || '',
+              transcriptExcerpt: clip(d.transcript || '', noSub ? 8000 : 16000),
+              storyboardFrames: (d.storyboardFrames || []).slice(0, noSub ? 28 : 20),
+              highEnergyPeaks: d.highEnergyPeaks,
+              tags: d.tags,
+              channels: d.channels,
+            });
+          } else {
+            videos.push({
+              ok: true,
+              kind: 'video',
+              deepWatch: false,
+              bvid: res.bvid,
+              title: res.title,
+              author: d.author,
+              worthScore: res.worthScore,
+              url: d.url,
+              keyword: c.keyword,
+              source: c.source,
+              takeaway: d.takeaway,
+              coverage: d.coverage ? { depth: d.coverage.depth, report: d.coverage.report } : undefined,
+              howIWatched: d.coverage?.report || '',
+            });
+          }
+        } else {
+          videos.push({ ok: false, kind: 'video', bvid: c.bvid, error: res.error });
+          errors.push(`${c.bvid}: ${res.error}`);
+          await markVideoSeen(home, c.bvid, { failed: true }, options.nowMs);
+        }
+      } catch (err) {
+        videos.push({ ok: false, kind: c.kind || 'video', bvid: c.bvid, cvid: c.cvid, error: errMsg(err) });
+        errors.push(`${c.id || c.bvid}: ${errMsg(err)}`);
       }
-    } catch (err) {
-      videos.push({ ok: false, kind: c.kind || 'video', bvid: c.bvid, cvid: c.cvid, error: errMsg(err) });
-      errors.push(`${c.id || c.bvid}: ${errMsg(err)}`);
     }
   }
   return {
@@ -1705,6 +1737,8 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     deepWatch,
     searchedKeywords: keywords,
     pickedCount: watched,
+    hotWatched,
+    articleWatched,
     skippedSeenCount,
     skippedOldCount,
     skippedTitleCount,

@@ -52,6 +52,16 @@ test('mergeSurfKeywords keeps manual first and never drops it', () => {
   assert.deepEqual(merged, ['编程', '科技', 'AI', '数码']);
 });
 
+test('mergeSurfKeywords scrubs legacy polluted config (system words on both sides)', () => {
+  const merged = mergeSurfKeywords(
+    ['AI', '科技', '编程'],
+    ['soulmate-wake', 'current', 'describes', 'information', 'of', 'your', 'system-reminder', 'GTA6'],
+  );
+  assert.deepEqual(merged, ['AI', '科技', '编程', 'GTA6']);
+  const seeded = mergeSurfKeywords(['编程', 'identity', 'following', 'system-reminder'], ['of', 'your']);
+  assert.deepEqual(seeded, ['编程']);
+});
+
 test('refreshSurfKeywords: no chat → no learning, manual untouched', async () => {
   const { mkdtemp } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');

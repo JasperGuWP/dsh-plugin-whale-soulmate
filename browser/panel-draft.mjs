@@ -220,6 +220,9 @@ function draftFromSummary(snap) {
       })(),
       biliAutoSurfDeepWatch: !!(config.extensions && config.extensions.biliAutoSurfDeepWatch),
       biliSurfIncludePopular: !(config.extensions && config.extensions.biliSurfIncludePopular === false),
+      biliSurfSearchOrder: ['totalrank', 'pubdate', 'click'].includes(config.extensions && config.extensions.biliSurfSearchOrder)
+        ? config.extensions.biliSurfSearchOrder
+        : 'totalrank',
       biliSurfIncludeArticles: !(config.extensions && config.extensions.biliSurfIncludeArticles === false),
       biliLiveFrameWatch: !!(config.extensions && config.extensions.biliLiveFrameWatch),
       biliLiveFrameEverySec: (() => {

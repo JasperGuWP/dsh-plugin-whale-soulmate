@@ -13,6 +13,22 @@ function cssUrl(u) {
   return 'url("' + String(u || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '")'
 }
 
+/** 来源徽标：热门/推荐/排行/兴趣搜索，旧记录无 source 则不显示。 */
+function surfSourceLabel(entry) {
+  const src = String((entry && entry.source) || '')
+  const kw = String((entry && entry.keyword) || '')
+  const map = {
+    popular: '综合热门',
+    rcmd: '首页推荐',
+    ranking: '排行榜',
+    keyword: kw ? '搜索「' + kw + '」' : '兴趣搜索',
+    'article-keyword': kw ? '专栏搜索「' + kw + '」' : '专栏搜索',
+    'article-popular': '热门专栏',
+    candidates: '指定视频',
+  }
+  return map[src] || ''
+}
+
 function openShotFromStill(still) {
   if (!still) return null
   if (typeof still === 'string') return { kind: 'image', url: still }
@@ -110,7 +126,7 @@ function SurfLightbox({ shot, onClose, onDelete, actionLine }) {
         h('header', { key: 'h', className: 'sm-surf-detail-head' }, [
           h('strong', { key: 't' }, entry.title || entry.videoId || '冲浪详情'),
           h('span', { key: 'm', className: 'sm-panel-muted' },
-            [entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', entry.at ? String(entry.at).slice(0, 19).replace('T', ' ') : '']
+            [surfSourceLabel(entry), entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', entry.at ? String(entry.at).slice(0, 19).replace('T', ' ') : '']
               .filter(Boolean).join(' · ')),
         ]),
         h('pre', { key: 'sum', className: 'sm-surf-detail-summary' }, summary),
@@ -242,4 +258,4 @@ function SurfLightbox({ shot, onClose, onDelete, actionLine }) {
   ])
 }
 
-module.exports = { SurfLightbox, StillThumb, stillUrl, cssUrl, openShotFromStill }
+module.exports = { SurfLightbox, StillThumb, stillUrl, cssUrl, openShotFromStill, surfSourceLabel }

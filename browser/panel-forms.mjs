@@ -499,15 +499,25 @@ function autoSurfSection({ draft, patchExtensions }) {
       h('label', {
         key: 'autosurf-popular',
         className: 'sm-rhythm-check',
-        title: '每轮除兴趣搜索外，再拉综合热门；关键词被风控（412）时也能凑满「每次看 N 个」。',
+        title: '每轮先看综合热门/首页推荐/排行榜的头部（最多占一半名额），再按兴趣搜索前几补位；关键词被风控（412）时热门也能凑满「每次看 N 个」。',
       }, [
         h('input', {
           key: 'i', type: 'checkbox',
           checked: ext.biliSurfIncludePopular !== false,
           onChange: (event) => patchExtensions({ biliSurfIncludePopular: event.target.checked }),
         }),
-        h('span', { key: 't' }, '看最新热门视频'),
+        h('span', { key: 't' }, '看热门/首页推荐前几（每轮优先，占一半名额）'),
       ]),
+      field('autosurf-search-order', '兴趣搜索排序（取每个词的前几条）', h('select', {
+        key: 'control',
+        className: 'sm-panel-input',
+        value: ['totalrank', 'pubdate', 'click'].includes(ext.biliSurfSearchOrder) ? ext.biliSurfSearchOrder : 'totalrank',
+        onChange: (event) => patchExtensions({ biliSurfSearchOrder: event.target.value }),
+      }, [
+        h('option', { key: 'totalrank', value: 'totalrank' }, '综合排序（同网页搜索，最相关）'),
+        h('option', { key: 'pubdate', value: 'pubdate' }, '最新发布（容易全是刚上传的长尾）'),
+        h('option', { key: 'click', value: 'click' }, '最多播放（容易冲上过时老爆款）'),
+      ])),
       h('label', {
         key: 'autosurf-articles',
         className: 'sm-rhythm-check',

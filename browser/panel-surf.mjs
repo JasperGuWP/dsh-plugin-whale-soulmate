@@ -5,7 +5,7 @@ const h = React.createElement
 const { api } = require('./util.mjs')
 const { autoSurfSection } = require('./panel-forms.mjs')
 const { biliAuthCard } = require('./panel-bili.mjs')
-const { SurfLightbox, StillThumb, stillUrl } = require('./surf-lightbox.mjs')
+const { SurfLightbox, StillThumb, stillUrl, surfSourceLabel } = require('./surf-lightbox.mjs')
 
 const PLATFORMS = [
   { id: 'bilibili', label: 'B站' },
@@ -116,7 +116,7 @@ function surfLogCard(entry, onOpen, onDelete) {
           : h('span', { key: 't' }, entry.title || entry.videoId || '视频'),
       ]),
       h('p', { key: 'meta', className: 'sm-panel-muted' },
-        [entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', entry.at ? String(entry.at).slice(0, 19).replace('T', ' ') : '']
+        [surfSourceLabel(entry), entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', entry.at ? String(entry.at).slice(0, 19).replace('T', ' ') : '']
           .filter(Boolean).join(' · ')),
       h('p', {
         key: 'sum',

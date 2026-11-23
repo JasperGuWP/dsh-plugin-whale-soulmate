@@ -18,6 +18,8 @@ const STOP = new Set([
   'identity', 'following', 'system-reminder', 'system', 'reminder', 'video', 'bvid',
   'worthscore', 'https', 'http', 'www', 'bilibili', 'skill', 'tool', 'json', 'dsh',
   'soulmate', 'session', 'token', 'api', 'prompt', 'assistant', 'user', 'model',
+  'soulmate-wake', 'wake', 'current', 'describes', 'information', 'of', 'your',
+  'null', 'true', 'false', 'undefined', 'todo', 'task', 'context', 'message',
 ]);
 
 /** 明显是内部字段/URL 片段的 token 直接丢弃。 */
@@ -45,15 +47,15 @@ export function appendLearnedKeywords(existing, candidates, max = 20) {
   return normalizeKeywordList([...(Array.isArray(existing) ? existing : []), ...(Array.isArray(candidates) ? candidates : [])], max);
 }
 
-/** 冲浪实际使用的手动 + 学习并集:手填的永远在,学习词追加去重。 */
+/** 冲浪实际使用的手动 + 学习并集:手填的永远在,学习词追加去重;两侧都过垃圾词闸,防止旧配置里的污染词继续搜出去。 */
 export function mergeSurfKeywords(manual, learned) {
   const out = [];
   const seen = new Set();
   for (const raw of [...(Array.isArray(manual) ? manual : []), ...(Array.isArray(learned) ? learned : [])]) {
     const k = str(raw).replace(/\s+/g, ' ').trim();
-    if (!k) continue;
+    if (!k || k.length > 24) continue;
     const key = k.toLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key) || STOP.has(k) || STOP.has(key) || JUNK.test(k)) continue;
     seen.add(key);
     out.push(k);
   }

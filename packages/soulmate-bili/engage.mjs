@@ -296,6 +296,8 @@ export async function afterSurfWatch(home, { digest, persona, options = {} } = {
     stills,
     worthScore: num(digest?.worthScore, 0),
     summary,
+    source: str(digest?.source),
+    keyword: str(digest?.keyword),
     actions: {
       like: false,
       favorite: false,
