@@ -881,6 +881,15 @@ function composeNotes(digest, conf) {
   return { toYou, inner };
 }
 
+/** 把细看裁决理由缀到 takeaway/summary 末尾（日志与面板可见）。 */
+function appendJudgeNote(digest, verdict, secondPass) {
+  if (!verdict?.reason || !str(digest.takeaway)) return;
+  const note = `\n细看裁决：${verdict.reason}${secondPass ? '（已按人设认真看完第二遍）' : ''}`;
+  if (digest.takeaway.includes('细看裁决：')) return;
+  digest.takeaway += note;
+  if (str(digest.summary)) digest.summary += note;
+}
+
 /**
  * Digest one video and write everything Soulmate should remember about it.
  * input: { target, toYouNote?, innerNote?, innerVisibility? ('private' default | 'syncable') }
@@ -1051,6 +1060,7 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
         visionSummarize,
         model: options.visionModel ?? confLive.extensions?.biliVisionModel ?? '',
         persona: voiceBrief,
+        ...(Number.isFinite(options.visionMaxFrames) ? { maxFrames: Math.floor(options.visionMaxFrames) } : {}),
       });
       const visionChannel = vision.ok && vision.textOnly ? 'ok:text-only' : vision.channel;
       digest.channels = { ...(digest.channels || {}), visionSummary: visionChannel };
@@ -1080,6 +1090,61 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
   const visionOk = /^ok:/.test(visionCh);
   if (wantVision && visionCh && !visionOk) {
     digest.worthScore = Math.min(Number(digest.worthScore) || 0, 5);
+  }
+
+  // 细看裁决（Agent 按人设判断）：初扫完成后问一次「值不值得认真看完」，
+  // 判 deep 且初扫不够深 → 在 DSH 里用更密帧 + 更长字幕做第二遍人设化深看，替换 takeaway。
+  // 每片至多一次二刷（input.deepJudged 防递归）；裁决失败落启发式，绝不丢片。
+  const wantJudge = options.deepJudge === true
+    || (options.deepJudge !== false && confLive.extensions?.biliSurfDeepJudge !== false);
+  if (wantJudge && input.deepJudged !== true && !options.digest) {
+    try {
+      const { judgeDeepWatch } = await import('./deep-judge.mjs');
+      const { personaVoiceBrief } = await import('../soulmate-core/persona-voice.mjs');
+      const { loadSoulmateState } = await import('../soulmate-core/persona.mjs');
+      const voice = str(options.personaVoice) || personaVoiceBrief(confLive.persona, await loadSoulmateState(home));
+      const ctrl = options.llmController;
+      const generateText = typeof ctrl?.generateReply === 'function'
+        ? async (prompt) => {
+          const out = await ctrl.generateReply({ text: prompt, purpose: 'bili-deep-judge' });
+          return str(out?.text ?? out?.reply ?? out?.content ?? out?.message?.content ?? '').trim();
+        }
+        : undefined;
+      const verdict = await judgeDeepWatch(digest, {
+        persona: voice,
+        interests: confLive.extensions?.biliKeywords || [],
+        callUser: confLive.persona?.callUser,
+        generateText,
+      });
+      digest.deepJudge = verdict;
+      // 二刷条件：初扫没读到足量字幕，或帧没喂饱（真帧 <12 / 分镜 <24）。
+      // coverage.depth 的 deep 只看字幕存在，不代表看够了，不能单独作跳过依据。
+      const subChars = str(digest.transcript).length;
+      const liveCount = (digest.liveFrameStills || []).length;
+      const boardCount = (digest.storyboardFrames || []).length;
+      const thin = subChars < 800 || (liveCount > 0 ? liveCount < 12 : boardCount < 24);
+      if (verdict.deep && thin) {
+        const deeper = await watchAndRecordVideo(soulmateService, { ...input, deepJudged: true }, {
+          ...options,
+          deepWatch: true,
+          deepJudge: false,
+          maxStoryboardFrames: Math.max(36, num(options.maxStoryboardFrames, 0)),
+          visionMaxFrames: Math.max(24, num(options.visionMaxFrames, 0)),
+          liveFrameEverySec: Math.min(num(options.liveFrameEverySec ?? confLive.extensions?.biliLiveFrameEverySec, 30), 15),
+          personaVoice: voice,
+        });
+        if (deeper.ok) {
+          deeper.digest.deepJudge = { ...verdict, secondPass: true };
+          deeper.digest.channels = { ...(deeper.digest.channels || {}), deepJudge: `ok:${verdict.via}` };
+          appendJudgeNote(deeper.digest, verdict, true);
+          return deeper;
+        }
+      }
+      digest.channels = { ...(digest.channels || {}), deepJudge: `${verdict.deep ? 'deep' : 'skim'}:${verdict.via}` };
+      appendJudgeNote(digest, verdict, false);
+    } catch (err) {
+      digest.channels = { ...(digest.channels || {}), deepJudge: `skip:${clip(errMsg(err), 40)}` };
+    }
   }
 
   const notes = composeNotes(digest, conf);

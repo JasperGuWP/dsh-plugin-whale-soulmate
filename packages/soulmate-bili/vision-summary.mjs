@@ -138,7 +138,7 @@ export function pickVisionFrames({
   };
 }
 
-export function buildVisionPrompt({ title = '', desc = '', transcript = '', frames = [], worthScore = 0, persona = '' } = {}) {
+export function buildVisionPrompt({ title = '', desc = '', transcript = '', frames = [], worthScore = 0, persona = '', transcriptChars = 800 } = {}) {
   const voice = str(persona).trim();
   const lines = [
     '请以当前人设的身份看这支视频：根据【标题】【简介】【可选字幕】以及按时间顺序给出的画面帧，写出能让读者完整了解本片内容的中文总结。',
@@ -158,7 +158,7 @@ export function buildVisionPrompt({ title = '', desc = '', transcript = '', fram
   lines.push(`简介：${clip(desc, 400) || '（无）'}`);
   lines.push(`评分参考：${num(worthScore, 0)}/20`);
   const tx = str(transcript).trim();
-  if (tx) lines.push(`字幕摘录：${clip(tx, 800)}`);
+  if (tx) lines.push(`字幕摘录：${clip(tx, Math.max(800, Math.floor(num(transcriptChars, 800))))}`);
   lines.push('画面帧（按时间）：');
   for (const f of frames) {
     lines.push(`- ${formatClock(f.tSec)} ${f.label || ''}`.trim());
@@ -284,6 +284,8 @@ export async function composeVisionTimelineSummary({
   if (typeof visionSummarize !== 'function') {
     return { ok: false, channel: 'skip:no-vision-model', takeaway: '', error: 'no-vision-callback' };
   }
+  // 深看二刷可放宽到 24 帧；常规 16。
+  maxFrames = Math.min(24, Math.max(4, Math.floor(num(maxFrames, VISION_FRAME_MAX))));
 
   const live = digest.liveFrameStills
     || digest.liveFrames?.frames
@@ -304,6 +306,7 @@ export async function composeVisionTimelineSummary({
     frames: picked.frames,
     worthScore: digest.worthScore,
     persona,
+    transcriptChars: maxFrames > VISION_FRAME_MAX ? 2400 : 800,
   });
 
   try {

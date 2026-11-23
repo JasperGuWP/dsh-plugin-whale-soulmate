@@ -63,13 +63,13 @@ export function createHostVisionSummarize({
     && typeof chatHome.ensureHomeSession === 'function';
   if (!canGenerate && !canPrompt) return null;
 
-  return async ({ model: modelOverride, prompt, images }) => {
+  return async ({ model: modelOverride, prompt, images, purpose = 'bili-vision-summary' }) => {
     const textPrompt = str(prompt).trim();
     if (!textPrompt) throw new Error('empty-prompt');
     // 无帧（雪碧图也没有）时退化为纯文本通道：字幕+元数据仍可读，诚实标注 ok:text-only。
     if (!Array.isArray(images) || !images.length) {
       if (canGenerate) {
-        const out = await controller.generateReply({ text: textPrompt, purpose: 'bili-vision-summary' });
+        const out = await controller.generateReply({ text: textPrompt, purpose });
         const text = extractText(out);
         if (text) return { text, textOnly: true };
       }
@@ -96,10 +96,10 @@ export function createHostVisionSummarize({
     // A) Silent generateReply (preferred — never touches the dedicated chat UI).
     if (canGenerate) {
       const attempts = [
-        { text: textPrompt, content: openAiContent, images: ready, model: modelId, purpose: 'bili-vision-summary' },
-        { text: textPrompt, content: harnessContent, images: ready, model: modelId, purpose: 'bili-vision-summary' },
-        { text: textPrompt, messages: [{ role: 'user', content: openAiContent }], model: modelId, purpose: 'bili-vision-summary' },
-        { prompt: textPrompt, content: openAiContent, model: modelId, purpose: 'bili-vision-summary' },
+        { text: textPrompt, content: openAiContent, images: ready, model: modelId, purpose },
+        { text: textPrompt, content: harnessContent, images: ready, model: modelId, purpose },
+        { text: textPrompt, messages: [{ role: 'user', content: openAiContent }], model: modelId, purpose },
+        { prompt: textPrompt, content: openAiContent, model: modelId, purpose },
       ];
       for (const args of attempts) {
         try {

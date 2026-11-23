@@ -249,6 +249,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
                 biliSurfSearchOrder: ['totalrank', 'pubdate', 'click'].includes(current.extensions.biliSurfSearchOrder)
                   ? current.extensions.biliSurfSearchOrder
                   : 'totalrank',
+                biliSurfDeepJudge: current.extensions.biliSurfDeepJudge !== false,
                 biliSurfIncludeArticles: current.extensions.biliSurfIncludeArticles !== false,
                 biliLiveFrameWatch: !!current.extensions.biliLiveFrameWatch,
                 biliLiveFrameEverySec: Number(current.extensions.biliLiveFrameEverySec) || 30,

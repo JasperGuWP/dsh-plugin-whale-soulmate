@@ -223,6 +223,7 @@ function draftFromSummary(snap) {
       biliSurfSearchOrder: ['totalrank', 'pubdate', 'click'].includes(config.extensions && config.extensions.biliSurfSearchOrder)
         ? config.extensions.biliSurfSearchOrder
         : 'totalrank',
+      biliSurfDeepJudge: !(config.extensions && config.extensions.biliSurfDeepJudge === false),
       biliSurfIncludeArticles: !(config.extensions && config.extensions.biliSurfIncludeArticles === false),
       biliLiveFrameWatch: !!(config.extensions && config.extensions.biliLiveFrameWatch),
       biliLiveFrameEverySec: (() => {

@@ -181,6 +181,8 @@ export const DEFAULT_CONFIG = Object.freeze({
     biliSurfIncludePopular: true,
     /** 搜索排序：totalrank=综合（网页默认，头部相关）/ pubdate=最新 / click=最多播放。 */
     biliSurfSearchOrder: 'totalrank',
+    /** 细看裁决：初扫后由带人设的 Agent 判断是否值得在 DSH 里认真看完第二遍。 */
+    biliSurfDeepJudge: true,
     /** Also read B 站专栏文章（关键词 + 推荐）。 */
     biliSurfIncludeArticles: true,
     /**

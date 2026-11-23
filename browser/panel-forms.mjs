@@ -508,6 +508,18 @@ function autoSurfSection({ draft, patchExtensions }) {
         }),
         h('span', { key: 't' }, '看热门/首页推荐前几（每轮优先，占一半名额）'),
       ]),
+      h('label', {
+        key: 'autosurf-deep-judge',
+        className: 'sm-rhythm-check',
+        title: '每支视频初扫后，把「值不值得认真看完」交给带人设的 Agent 判断；判定值得且初扫没看够的，会在 DSH 里用更密画面帧 + 更长字幕按人设看第二遍并写全片评价。每片至多二刷一次，会多花一些模型用量。',
+      }, [
+        h('input', {
+          key: 'i', type: 'checkbox',
+          checked: ext.biliSurfDeepJudge !== false,
+          onChange: (event) => patchExtensions({ biliSurfDeepJudge: event.target.checked }),
+        }),
+        h('span', { key: 't' }, '细看裁决（Agent 按人设决定要不要认真看完）'),
+      ]),
       field('autosurf-search-order', '兴趣搜索排序（取每个词的前几条）', h('select', {
         key: 'control',
         className: 'sm-panel-input',

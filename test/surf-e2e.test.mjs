@@ -228,6 +228,8 @@ function visionController({ mode = 'ok', calls = [] } = {}) {
   return {
     async generateReply(args) {
       calls.push(args);
+      // 细看裁决问句：默认答「不细看」，让各 e2e 场景保持单遍看片语义。
+      if (args?.purpose === 'bili-deep-judge') return { text: '{"deep":false,"reason":"e2e 默认粗扫"}' };
       if (mode === 'blind') return { text: '抱歉，只有时间戳，没有画面内容，无法描述各采样点的画面。' };
       if (mode === 'throw') throw new Error('mock-vision-down');
       return { text: VISION_OK_TEXT };
@@ -506,8 +508,9 @@ test('surf e2e: 没截到帧但有字幕 → 纯文本总结通道 ok:text-only�
     assert.equal(res.channels.visionSummary, 'ok:text-only');
     assert.match(res.takeaway, /时间线：/);
     assert.ok(res.worthScore >= 13, 'text-only keeps the honest score (no blind cap)');
-    assert.equal(calls.length, 1);
-    assert.ok(!calls[0].images || !calls[0].images.length, 'text-only call carries no images');
-    assert.ok(String(calls[0].text || '').includes('字幕摘录'), 'transcript still reaches the model');
+    const visionCalls = calls.filter((c) => c.purpose !== 'bili-deep-judge');
+    assert.equal(visionCalls.length, 1);
+    assert.ok(!visionCalls[0].images || !visionCalls[0].images.length, 'text-only call carries no images');
+    assert.ok(String(visionCalls[0].text || '').includes('字幕摘录'), 'transcript still reaches the model');
   }, { sessionController: visionController({ calls }) });
 });

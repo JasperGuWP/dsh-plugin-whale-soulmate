@@ -335,6 +335,7 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     biliAutoSurfDeepWatch: true,
     biliSurfIncludePopular: true,
     biliSurfSearchOrder: 'totalrank',
+    biliSurfDeepJudge: true,
     biliSurfIncludeArticles: true,
     biliLiveFrameWatch: false,
     biliLiveFrameEverySec: 30,
@@ -1005,5 +1006,72 @@ test('shareVideoToUser: a failed send does not consume quota and never leaks the
     const retry = await shareVideoToUser(home, { target: BV_GOOD, reason: REASON }, { ...net, nowMs: T0 + 1000 });
     assert.equal(retry.ok, true, 'no ledger entry was written by the failed attempt');
     assert.equal(retry.sharedToday, 1);
+  });
+});
+
+test('watchAndRecordVideo: 细看裁决 — agent 判 deep 且初扫没看够 → DSH 二刷（人设+更密帧），每片至多一次', async () => {
+  await withEnv(allVideos(), {}, async ({ mock, service, net }) => {
+    const judgeCalls = [];
+    const visionCalls = [];
+    const llmController = {
+      generateReply: async (args) => {
+        judgeCalls.push(args);
+        return { text: '{"deep":true,"reason":"硬核长片，粗扫没看够，值得认真看完"}' };
+      },
+    };
+    const visionSummarize = async ({ prompt, images }) => {
+      visionCalls.push({ prompt, imageCount: (images || []).length });
+      return { text: '总览：一期讲透智能体\n时间线：\n· 00:00–00:30 开场：点题\n· 00:30–01:00 论证：给证据\n观感：这片子有点东西，值得你看。' };
+    };
+    const res = await watchAndRecordVideo(service, { target: BV_GOOD }, {
+      ...net,
+      keywords: ['AI'],
+      llmController,
+      visionSummarize,
+      maxStoryboardFrames: 8,
+      personaVoice: '戏谑、护短带刺',
+    });
+    assert.equal(res.ok, true, JSON.stringify(res.recorded?.surf || res));
+    assert.equal(judgeCalls.length, 1, '裁决只问一次');
+    assert.equal(judgeCalls[0].purpose, 'bili-deep-judge');
+    assert.match(judgeCalls[0].text, /【你的性格】戏谑/);
+    assert.equal(visionCalls.length, 2, '初扫 + 二刷各一次视觉总结');
+    assert.ok(visionCalls[1].imageCount > visionCalls[0].imageCount, '二刷帧更密');
+    assert.match(visionCalls[1].prompt, /字幕摘录/);
+    assert.equal(res.digest.deepJudge.deep, true);
+    assert.equal(res.digest.deepJudge.secondPass, true);
+    assert.equal(res.digest.deepJudge.via, 'agent');
+    assert.match(res.digest.takeaway, /细看裁决：硬核长片/);
+    assert.match(res.digest.takeaway, /已按人设认真看完第二遍/);
+    assert.equal(res.digest.channels.deepJudge, 'ok:agent');
+    // 二刷后的记录只写一份（fact/日志不重复）
+    const { listSurfLog } = await import('../packages/soulmate-core/surf-log.mjs');
+    const log = await listSurfLog(service.home, { platform: 'bilibili', limit: 50 });
+    assert.equal(log.filter((e) => e.videoId === BV_GOOD).length, 1);
+  });
+});
+
+test('watchAndRecordVideo: 裁决判 skim 不二刷；关闭开关连裁决都不问', async () => {
+  await withEnv(allVideos(), {}, async ({ service, net }) => {
+    const judgeCalls = [];
+    const llmController = {
+      generateReply: async (args) => {
+        judgeCalls.push(args);
+        return { text: '{"deep":false,"reason":"整活短片，粗扫够了"}' };
+      },
+    };
+    const res = await watchAndRecordVideo(service, { target: BV_GOOD }, { ...net, llmController, maxStoryboardFrames: 8 });
+    assert.equal(res.ok, true);
+    assert.equal(judgeCalls.length, 1);
+    assert.equal(res.digest.deepJudge.deep, false);
+    assert.ok(!res.digest.deepJudge.secondPass);
+    assert.equal(res.digest.channels.deepJudge, 'skim:agent');
+    assert.match(res.digest.takeaway, /细看裁决：整活短片/);
+
+    judgeCalls.length = 0;
+    const off = await watchAndRecordVideo(service, { target: BV_B }, { ...net, llmController, deepJudge: false });
+    assert.equal(off.ok, true);
+    assert.equal(judgeCalls.length, 0, 'deepJudge:false 完全跳过');
+    assert.ok(!off.digest.deepJudge);
   });
 });
