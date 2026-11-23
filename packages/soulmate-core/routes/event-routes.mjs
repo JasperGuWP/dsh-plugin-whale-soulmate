@@ -48,9 +48,10 @@ function scheduleFocusRetries(focusImpl) {
 }
 
 /**
- * AttachWindow 策略（仅当宿主运行在 Electron 主进程内才可用）：
- * 直接枚举本应用窗口 restore/show/focus，比协议 handler 少一次进程跳转；
- * 跳过最小化到托盘前主动 hide 的窗口以外的一切可见性判断——hide 的窗口 show 出来正是用户要的。
+ * 进程内聚焦（仅当宿主运行在 Electron 主进程内才可用）。
+ * Windows 前台锁：别的软件在前台时，后台进程的 show()/focus() 会被系统拒绝（只闪任务栏）。
+ * 标准穿透手段是临时 setAlwaysOnTop(true) 把窗口抬到最前，再立刻取消置顶——
+ * 窗口留在前台但不再压着别人。moveTop 再把 Z 序顶到最上。
  * 返回聚焦到的窗口数；非 Electron / 无窗口返回 0，调用方回落协议。
  */
 export function focusHarnessWindowsDirect() {
@@ -61,13 +62,32 @@ export function focusHarnessWindowsDirect() {
     const BrowserWindow = electron?.BrowserWindow;
     if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') return 0;
     let n = 0;
-    for (const w of BrowserWindow.getAllWindows()) {
+    const wins = BrowserWindow.getAllWindows().filter((w) => {
+      try { return w && !w.isDestroyed(); } catch (_) { return false; }
+    });
+    for (const w of wins) {
       try {
-        if (!w || w.isDestroyed()) continue;
         if (w.isMinimized()) w.restore();
         w.show();
-        w.focus();
         n += 1;
+      } catch (_) { /* next window */ }
+    }
+    // 置顶只给最后创建的主窗口（getAllWindows 按创建序），避免 welcome/mandatory 小窗被抬到主窗之上。
+    const primary = wins[wins.length - 1];
+    if (primary && process.platform === 'win32') {
+      try {
+        // 'screen-saver' 层级高于普通窗口与多数全屏应用；600ms 后取消，不长期置顶。
+        primary.setAlwaysOnTop(true, 'screen-saver');
+        const t = setTimeout(() => {
+          try { if (!primary.isDestroyed()) primary.setAlwaysOnTop(false); } catch (_) { /* ignore */ }
+        }, 600);
+        t.unref?.();
+      } catch (_) { /* ignore */ }
+    }
+    for (const w of wins) {
+      try {
+        if (typeof w.moveTop === 'function') w.moveTop();
+        w.focus();
       } catch (_) { /* next window */ }
     }
     return n;
