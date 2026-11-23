@@ -2,6 +2,7 @@
 
 import { jsonOut } from '../http-plumbing.mjs';
 import { listImChat, listImContacts } from '../im-chat.mjs';
+import { listKnownImConversations } from '../im-known.mjs';
 
 export function imChatRoutes({ home }) {
   return [
@@ -20,6 +21,15 @@ export function imChatRoutes({ home }) {
         // Panel wants chronological bubbles (oldest → newest)
         const chronological = messages.slice().reverse();
         return jsonOut(200, { ok: true, platform, peer, contacts, messages: chronological });
+      },
+    },
+    {
+      // IM 主动搭话白名单「从最近会话选」：QQ 官方 prefs + 各平台 im-chat 台账。
+      method: 'GET',
+      paths: ['/dsh-soulmate/api/im/known'],
+      handler: async () => {
+        const conversations = await listKnownImConversations(home);
+        return jsonOut(200, { ok: true, conversations });
       },
     },
   ];

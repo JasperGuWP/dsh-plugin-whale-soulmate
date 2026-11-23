@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
-function makeReact() {
-  const slots = [];
+function makeReact(sharedSlots) {
+  const slots = sharedSlots || [];
   let i = 0;
   return {
     createElement: (type, props, ...children) => {
@@ -35,9 +35,9 @@ const walk = (node, out = []) => {
 };
 const texts = (tree) => walk(tree).filter((n) => typeof n === 'string').join('\n');
 
-async function loadBrowser(file, extraRequires = {}) {
+async function loadBrowser(file, extraRequires = {}, sharedSlots) {
   const src = await readFile(new URL(`../browser/${file}`, import.meta.url), 'utf8');
-  const react = makeReact();
+  const react = makeReact(sharedSlots);
   const module = { exports: {} };
   vm.runInNewContext(src, {
     module,
@@ -50,7 +50,7 @@ async function loadBrowser(file, extraRequires = {}) {
     require: (id) => {
       if (id === 'react') return react;
       if (extraRequires[id]) return extraRequires[id];
-      if (id.endsWith('util.mjs')) return { api: async () => ({}), companionPronoun: () => ({ third: '他' }) };
+      if (id.endsWith('util.mjs')) return { api: async () => ({ ok: true, conversations: [] }), companionPronoun: () => ({ third: '他' }) };
       if (id.endsWith('panel-qqbot.mjs')) return { QqBotColumn: () => null };
       if (id.endsWith('panel-engage-quota.mjs')) return realQuota;
       throw new Error('unexpected require ' + id);
@@ -80,4 +80,42 @@ test('IM 主动搭话卡挂在 DsBot 标签，冲浪页不再渲染它', async (
   assert.ok(!surfSrc.includes('imProactiveSection'), '冲浪页不再引用 IM 主动搭话');
   const dsbotSrc = await readFile(new URL('../browser/panel-dsbot.mjs', import.meta.url), 'utf8');
   assert.ok(dsbotSrc.includes('imProactiveSection'), 'DsBot 页引用 IM 主动搭话');
+});
+
+test('白名单编辑器提供「从最近会话选」，点击拉 /im/known 并可加白', async () => {
+  const slots = [];
+  const quota = await loadBrowser('panel-engage-quota.mjs', {
+    './util.mjs': {
+      api: async (path) => {
+        if (path === 'im/known') {
+          return { ok: true, conversations: [{ platform: 'qq', to: 'OPENID123', groupId: '', label: 'QQ私聊 OPENID…' }] };
+        }
+        return {};
+      },
+    },
+  }, slots);
+  // 直接渲染内部编辑器不可得（未导出）；经 imProactiveSection 开启态渲染。
+  const patches = [];
+  const tree = quota.imProactiveSection({
+    ext: { imProactiveEnabled: true, imProactiveWhitelist: [] },
+    patchExtensions: (p) => patches.push(p),
+  });
+  const btns = walk(tree).filter((n) => n.type === 'button');
+  const pick = btns.find((b) => (b.children || []).some((c) => typeof c === 'string' && c.includes('从最近会话选')));
+  assert.ok(pick, '存在「从最近会话选」按钮');
+  await pick.props.onClick();
+  // useState 在 shim 里同步落槽，重渲染可见已知会话行
+  // 重渲染复用同一份 hooks 槽（真实 React 语义），已知会话行才会出现
+  const quota2 = await loadBrowser('panel-engage-quota.mjs', {
+    './util.mjs': { api: async () => ({ ok: true, conversations: [] }) },
+  }, slots);
+  const tree2 = quota2.imProactiveSection({
+    ext: { imProactiveEnabled: true, imProactiveWhitelist: [] },
+    patchExtensions: (p) => patches.push(p),
+  });
+  const addBtn = walk(tree2).filter((n) => n.type === 'button').find((b) => (b.children || []).includes('加白'));
+  assert.ok(addBtn, '已知会话行带「加白」');
+  addBtn.props.onClick();
+  assert.equal(patches.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(patches[0].imProactiveWhitelist[0])), { platform: 'qq', to: 'OPENID123', groupId: '', label: 'QQ私聊 OPENID…' });
 });
