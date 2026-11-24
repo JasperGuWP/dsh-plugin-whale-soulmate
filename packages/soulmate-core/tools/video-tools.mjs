@@ -14,7 +14,7 @@ import { createHostVisionSummarize } from '../../soulmate-bili/host-vision.mjs';
 import { clip, str } from '../small-utils.mjs';
 import { loadConfig } from '../state.mjs';
 
-export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatHome, warn }) {
+export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatHome, warn, oneShotLlm }) {
   const resolveLlmController = () => {
     const candidates = [];
     try {
@@ -86,6 +86,9 @@ export function videoTools({ makeTool, service, home, cfg, pushEvent, ctx, chatH
       ...(controller ? { llmController: controller } : {}),
       ...(visionSummarize ? { visionSummarize } : {}),
       ...(preferredModel ? { visionModel: preferredModel } : {}),
+      // 细看裁决走 oneShot（llm.stream 兜底）：桌面宿主没有 generateReply，
+      // 只靠 llmController 会让裁决永远落启发式。
+      ...(typeof oneShotLlm === 'function' ? { judgeOneShot: oneShotLlm } : {}),
     };
   };
 

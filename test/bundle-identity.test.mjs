@@ -40,10 +40,38 @@ test('bundle identity: client.js is a build artifact, built on demand', async ()
   assert.doesNotThrow(() => new vm.Script(built, { filename: 'client.js' }));
 });
 
-test('bundle identity: the bundle patch row matches the package name', async () => {
+test('bundle identity: the bundle patch mounts soulmate plus the shipped QQ bot', async () => {
   const patch = await readFile(new URL('cordis.patch.yml', root), 'utf8');
-  const names = [...patch.matchAll(/^\s+name:\s*(\S+)\s*$/gm)].map((m) => m[1]);
-  assert.deepEqual(names, [pkg.name], 'the bundle patch must mount the package by its own name');
+  const names = [...patch.matchAll(/^\s+name:\s*['"]?([^'"\s]+)['"]?\s*$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    names,
+    [pkg.name, `${pkg.name}/qqbot-server`],
+    'the bundle patch must mount soulmate and the QQ bot through its server-only subpath',
+  );
+  // Installing soulmate alone must pull the official package transitively.
+  assert.ok(
+    pkg.dependencies && pkg.dependencies['@tencent-connect/dsh-qqbot'],
+    'package.json must depend on @tencent-connect/dsh-qqbot',
+  );
+  // The subpath must be exported, or the loader cannot resolve the patch row.
+  assert.equal(
+    pkg.exports && pkg.exports['./qqbot-server'],
+    './packages/soulmate-core/qqbot-server.mjs',
+    'package.json must export ./qqbot-server',
+  );
+});
+
+test('bundle identity: the QQ server wrapper delegates to the official node half', async () => {
+  // Mounting the official package root also pulls its browser surface, which
+  // registers a second standalone 「QQ 机器人」 sidebar. The subpath installs
+  // only a small model-sync hook, then delegates every QQ feature to upstream.
+  const source = await readFile(new URL('packages/soulmate-core/qqbot-server.mjs', root), 'utf8');
+  const code = source.replace(/\/\/[^\n]*/g, '').trim();
+  assert.match(code, /import \{ apply as applyOfficial \} from '@tencent-connect\/dsh-qqbot'/);
+  assert.match(code, /export \{ name, inject, Config \} from '@tencent-connect\/dsh-qqbot'/);
+  assert.match(code, /installQqModelSync\(ctx\)/);
+  assert.match(code, /await applyOfficial\(ctx, config\)/);
+  assert.doesNotMatch(code, /dsh-qqbot\/client/);
 });
 
 test('bundle identity: the node half reports the same name', async () => {

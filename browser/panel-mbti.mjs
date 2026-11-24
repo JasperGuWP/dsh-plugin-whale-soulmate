@@ -183,6 +183,7 @@ function buildPersonaEvolvePayload(current) {
     name: current.name.trim(),
     callUser: current.callUser.trim(),
     selfRef: current.selfRef.trim(),
+    city: (current.city || '').trim(),
     customBody: current.customBody,
     preset: current.preset,
     traitScheme: current.traitScheme === 'mbti' ? 'mbti' : 'five',

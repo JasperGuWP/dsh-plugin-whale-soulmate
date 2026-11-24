@@ -53,11 +53,18 @@ function createMockCtx(dir, { webServerKind = 'registerRoute' } = {}) {
       if (serviceName === 'webServer') return mockCtx._webServer();
       return mockCtx[serviceName];
     },
-    // Mirrors Cordis: wait for deps then run the fork (desktop host uses this for webServer).
+    // Mirrors Cordis: required deps must exist (missing = loud failure); a dep marked
+    // { required: false } may be absent — the fork still runs and sees it undefined.
     inject(deps, callback) {
-      const needed = Array.isArray(deps) ? deps : Object.keys(deps || {});
-      for (const dep of needed) {
+      const entries = Array.isArray(deps) ? deps.map((d) => [d, {}]) : Object.entries(deps || {});
+      for (const [dep, spec] of entries) {
         if (dep === 'webServer') continue;
+        // Cordis array-inject *waits* for the service instead of throwing; a host
+        // without `llm` simply never runs the child. The mock models that as a no-op.
+        if (dep === 'llm' && mockCtx.get(dep) === undefined && mockCtx[dep] === undefined) {
+          return () => {};
+        }
+        if (spec && spec.required === false) continue;
         if (mockCtx.get(dep) === undefined && mockCtx[dep] === undefined) {
           throw new Error(`mock inject missing ${dep}`);
         }
@@ -119,7 +126,7 @@ test('plugin-integration: registers tools, systemPrompt, ctx.soulmate service, a
     assert.ok(registeredTools.has('soulmate_video_surf'));
     assert.ok(registeredTools.has('soulmate_im_send'));
     assert.ok(registeredTools.has('soulmate_im_manage'));
-    assert.equal(registeredTools.size, 14, '10 v1 tools + bili_manage + bili_action + promise + resolve_conflict');
+    assert.equal(registeredTools.size, 15, '10 v1 tools + bili_manage + bili_action + 2 v3 trust tools + weather');
     assert.ok(registeredTools.has('soulmate_bili_action'));
     assert.ok(registeredTools.has('soulmate_memory_promise'));
     assert.ok(registeredTools.has('soulmate_memory_resolve_conflict'));
@@ -180,7 +187,7 @@ test('plugin-integration: registers tools, systemPrompt, ctx.soulmate service, a
     assert.equal(promptContexts.length, 0, 'drift anchor context removed');
     assert.equal(mockCtx.soulmate, undefined, 'service removed');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -228,7 +235,7 @@ test('plugin-integration: dynamic persona system-prompt section follows name, ev
     // letting an ENOTEMPTY mask the real assertion error.
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
         break;
       } catch (err) {
         if (err?.code !== 'ENOTEMPTY' || attempt === 3) throw err;
@@ -276,7 +283,7 @@ test('plugin-integration: drift anchor re-injects a terse persona every N steps 
     assert.equal(anchor.text(), '');
     dispose();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -381,7 +388,7 @@ test('soulmate_persona_evolve: customize name, self-growth, appearance and the t
 
     dispose();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -509,7 +516,7 @@ test('memory tools: retain/recall/reflect/forget with privacy guardrails, and th
 
     dispose();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -598,7 +605,7 @@ test('home APIs: 3D page unmounted (paused); state/interact/evolve/onboard/sync 
 
     dispose();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -632,7 +639,7 @@ test('home routes: prefix-style webServer.register hosts get one dispatcher per 
     dispose();
     assert.equal(prefixes.length, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -684,7 +691,7 @@ test('home routes: companion art uploads to /api/sprite, is served back as bytes
 
     dispose();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -711,7 +718,7 @@ test('home routes: male default sprite is the bundled Q版 PNG and DELETE restor
 
     dispose();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -735,9 +742,9 @@ test('plugin config is validated loudly and extensions can register / unregister
     assert.throws(() => mockCtx.soulmate.registerExtension({}), /registerExtension/);
     off();
     dispose();
-    await rm(custom, { recursive: true, force: true });
+    await rm(custom, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -793,7 +800,7 @@ test('cloud wiring: consent -> sync against the mock AIGC server mounts remote c
     assert.equal(registeredTools.size, 0, 'dynamic cloud tools unmounted with the plugin');
   } finally {
     await server.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -1049,7 +1056,7 @@ test('plugin-integration v3: presence digest rides the drift anchor and the trus
   } finally {
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
         break;
       } catch (err) {
         if (err?.code !== 'ENOTEMPTY' || attempt === 3) throw err;
@@ -1065,6 +1072,8 @@ test('plugin-integration v3: the promise patrol speaks once per local day for ov
     const { mockCtx, registeredTools, dispose } = createMockCtx(dir);
     apply(mockCtx, {});
     await mockCtx.soulmate.ready;
+    const { saveConfigAuto } = await import('../packages/soulmate-core/state.mjs');
+    await saveConfigAuto(mockCtx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
     const retain = registeredTools.get('soulmate_memory_retain');
     const at = Date.parse('2026-11-10T11:00:00Z'); // 19:00 at UTC+8
     await retain.execute({ kind: 'fact', topic: 'promise', content: '上周答应一起复盘网关', category: 'promise', dueAt: '2026-11-04T00:00:00Z' });
@@ -1079,7 +1088,7 @@ test('plugin-integration v3: the promise patrol speaks once per local day for ov
   } finally {
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
         break;
       } catch (err) {
         if (err?.code !== 'ENOTEMPTY' || attempt === 3) throw err;
@@ -1112,7 +1121,7 @@ test('plugin-integration v3: engine snapshot carries the trust layer and the reb
   } finally {
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
         break;
       } catch (err) {
         if (err?.code !== 'ENOTEMPTY' || attempt === 3) throw err;

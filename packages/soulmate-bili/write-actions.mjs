@@ -25,6 +25,30 @@ export const WRITE_LIMITS = Object.freeze({
   minWriteGapMs: 30 * 1000,
 });
 
+/**
+ * Per-action daily caps (rolling 24h, same clock as the total quota). Coin spends real
+ * money, so it sits behind its own switch *and* cap; comment additionally carries a
+ * configurable length ceiling. All values are user-editable in the surf tab.
+ */
+export const ACTION_CAP_KEYS = Object.freeze({
+  comment: { key: 'biliCommentDailyCap', def: 5, max: 30 },
+  like: { key: 'biliLikeDailyCap', def: 10, max: 50 },
+  favorite: { key: 'biliFavoriteDailyCap', def: 10, max: 50 },
+  follow: { key: 'biliFollowDailyCap', def: 2, max: 20 },
+  coin: { key: 'biliCoinDailyCap', def: 2, max: 10 },
+});
+
+/** Today's per-action write counts for the panel's “已用 n/N” display. */
+export async function biliWriteUsageToday(home, nowMs = Date.now()) {
+  const ledger = await readLedger(home);
+  const dayAgo = nowMs - 24 * 3600 * 1000;
+  const counts = {};
+  for (const w of ledger.writes) {
+    if (w.at > dayAgo) counts[w.action] = (counts[w.action] || 0) + 1;
+  }
+  return counts;
+}
+
 // Bilibili only accepts video containers; the allowlist also keeps arbitrary local
 // files (notes, configs, credentials) from being uploaded via a prompt-injected path.
 const UPLOAD_EXTS = new Set(['.mp4', '.flv', '.mov', '.mkv', '.webm', '.avi', '.m4v', '.ts', '.wmv', '.mpg', '.mpeg']);
@@ -43,7 +67,8 @@ const num = (v, d = 0) => {
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const clip = (s, n) => {
   const t = str(s);
-  return t.length > n ? `${t.slice(0, n)}…` : t;
+  // The ellipsis counts against the cap: a 20-char limit must never post 21 chars.
+  return t.length > n ? `${t.slice(0, Math.max(0, n - 1))}…` : t;
 };
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
@@ -205,6 +230,16 @@ export async function biliWriteAction(home, input = {}, options = {}) {
       const waitSec = Math.ceil((minGap - (nowMs - lastAny)) / 1000);
       return hold('cooldown', `两次写操作至少间隔 ${minGap / 1000} 秒，还需等 ${waitSec} 秒。`, { retryAfterSec: waitSec });
     }
+    // Per-action quota: comment / like / favorite / follow / coin each have their own cap.
+    const capSpec = ACTION_CAP_KEYS[action];
+    if (capSpec) {
+      const cap = clamp(Math.floor(num(ext[capSpec.key], capSpec.def)), 0, capSpec.max);
+      const used = ledger.writes.filter((w) => w.action === action && w.at > dayAgo).length;
+      if (used >= cap) return hold('action_daily_limit', `「${action}」今天已 ${used} 次（上限 ${cap}），明天再说。`, { actionUsed: used, actionCap: cap });
+    }
+    if (action === 'coin' && ext.biliCoinEnabled !== true) {
+      return hold('coin_disabled', '投币默认关闭：它花真硬币，先在设置里单独打开。');
+    }
   }
 
   const resolveVideo = async () => {
@@ -250,7 +285,8 @@ export async function biliWriteAction(home, input = {}, options = {}) {
       result = { ok: true, action, to, message: scrub.text };
       meta = { to };
     } else if (action === 'comment') {
-      const scrub = await scrubOutbound(home, action, input.message ?? input.text, 900);
+      const maxChars = clamp(Math.floor(num(ext.biliCommentMaxChars, 80)), 10, 500);
+      const scrub = await scrubOutbound(home, action, input.message ?? input.text, maxChars);
       if (scrub.blocked) return hold('privacy_blocked', `评论被隐私防火墙拦截：${scrub.reason}`);
       if (!scrub.text) return hold('empty_message', '评论内容不能为空。');
       const parent = str(input.parent || input.root || '').trim();

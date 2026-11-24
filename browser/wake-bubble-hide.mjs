@@ -18,16 +18,18 @@ function isWakeText(text) {
 
 /** Climb to the smallest ancestor that still looks like one message bubble. */
 function bubbleFromTextNode(textNode) {
-  let el = textNode && textNode.parentElement
+  const el = textNode && textNode.parentElement
   if (!el) return null
-  while (el.parentElement && el.parentElement !== document.body) {
-    const parent = el.parentElement
-    const et = String(el.textContent || '').trim()
-    const pt = String(parent.textContent || '').trim()
-    // Parent carries many other messages → current el is the bubble.
-    if (pt.length > et.length + 24) return el
-    el = parent
-  }
+  // Hide ONLY the smallest element that contains the marker text — never climb.
+  // The old heuristic climbed ancestors until a +24-char jump and, on a sparse
+  // session (one wake bubble + short composer), reached <main> and display:none'd
+  // the whole chat area: the white screen. The direct parent of the marker text
+  // node is the message's own text container; hiding it is enough and safe.
+  const full = String(el.textContent || '').trim()
+  if (full.length > 400) return null
+  if (full.indexOf(WAKE_BUBBLE_MARK) < 0 && !isVisionDumpText(full)) return null
+  const STRUCTURAL = /^(MAIN|SECTION|ARTICLE|NAV|ASIDE|HEADER|FOOTER|FORM|BODY)$/i
+  if (STRUCTURAL.test(String(el.tagName || ''))) return null
   return el
 }
 

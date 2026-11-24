@@ -18,7 +18,7 @@ import QRCode from 'qrcode';
 import { atomicWriteJson, loadConfig, loadCredentials, maskKey, saveConfigAuto } from '../soulmate-core/state.mjs';
 import { appendPrivacyAudit, inspectAndScrub } from '../soulmate-core/privacy-firewall.mjs';
 import { getDisplayName } from '../soulmate-core/persona.mjs';
-import { appendImChat, recentImBotSend } from '../soulmate-core/im-chat.mjs';
+import { appendImChat, listImChat, recentImBotSend } from '../soulmate-core/im-chat.mjs';
 
 export const IM_EXTENSION_ID = 'soulmate-im';
 export const IM_PLATFORMS = Object.freeze(['weixin', 'qq', 'feishu', 'dingtalk']);
@@ -185,8 +185,27 @@ const originOf = (u) => {
 export async function getImStatus(home) {
   const [conf, creds] = await Promise.all([loadConfig(home), loadImCredentials(home)]);
   const plat = (p) => ({ enabled: conf.extensions?.imPlatforms?.[p]?.enabled === true, configured: isImConfigured(p, creds[p]) });
+  // The official QQ open-platform bot is a SEPARATE channel from these built-in IM
+  // platforms. Without this note the model reads "all off" and tells the user it cannot
+  // send anything — while it is literally replying through the official bot right now.
+  let officialQqBot = { bound: false };
+  try {
+    const { readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { homedir } = await import('node:os');
+    const patch = await readFile(join(homedir(), '.dsh', 'profiles', 'desktop', 'cordis.patch.yml'), 'utf8');
+    const block = patch.slice(patch.indexOf('- id: im-qqbot'));
+    const appId = /appId:\s*"?(\d+)"?/.exec(block)?.[1] || '';
+    officialQqBot = { bound: Boolean(appId), appId: appId ? appId.slice(0, 4) + '…' : '' };
+  } catch { /* no profile patch */ }
   return {
     ok: true,
+    note: '这里只列 soulmate 内置 IM 通道。QQ 官方开放平台 Bot 是独立通道（见 officialQqBot），它绑定着就能在 QQ 私聊/群里对话；其主动发消息受平台被动窗口限制（群5分钟/私聊30分钟）。内置通道全关 ≠ QQ 不能说话。',
+    officialQqBot,
+    imProactive: {
+      enabled: conf.extensions?.imProactiveEnabled === true,
+      whitelist: Array.isArray(conf.extensions?.imProactiveWhitelist) ? conf.extensions.imProactiveWhitelist.length : 0,
+    },
     imEnabled: conf.extensions?.imEnabled !== false,
     whitelist: Array.isArray(conf.extensions?.imWhitelist) ? conf.extensions.imWhitelist : [],
     platforms: {
@@ -1104,9 +1123,14 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
   if (whitelist.length > 0 && !whitelistHit(whitelist, ev)) {
     return { ok: true, ignored: true, reason: 'not_whitelisted', platform, senderId };
   }
-  const ownerId = platform === 'weixin' ? creds.userId : creds.ownerId;
-  // memories are only quoted back to the owner or a whitelisted sender — fail closed when neither is configured
-  const trusted = whitelist.length > 0 || (Boolean(ownerId) && ownerId === senderId);
+  const OWNER_KEYS = { weixin: 'imOwnerWeixin', qq: 'imOwnerQq', feishu: 'imOwnerFeishu', dingtalk: 'imOwnerDingtalk' };
+  const ownerOverride = str(conf.extensions?.[OWNER_KEYS[platform]]).trim();
+  const ownerId = ownerOverride || (platform === 'weixin' ? creds.userId : creds.ownerId);
+  const isGroup = Boolean(str(ev.groupId).trim());
+  const isOwner = Boolean(ownerId) && str(ownerId) === senderId;
+  // memories are only quoted back to the owner or a whitelisted sender in a DM — and
+  // never inside a group: other members would read them too.
+  const trusted = !isGroup && (whitelist.length > 0 || isOwner);
 
   // privacy firewall (inbound): a high-risk secret never enters memory and is never recalled/echoed
   const checked = inspectAndScrub(text);
@@ -1116,8 +1140,8 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
     const reply = `${str(persona.callUser) || '你'}，刚才那条看起来包含密钥/密码类敏感信息（${checked.blockedReason}），${str(persona.selfRef) || '我'}没有记下来。建议撤回并尽快更换。`;
     const dispatched = dispatchEnabled ? await dispatchReply(home, ev, reply, options) : null;
     const labelBlocked = clip(str(ev.senderName).trim() || senderId, 24);
-    await appendImChat(home, { platform, peerId: senderId, peerLabel: labelBlocked, role: 'user', text: '[已拦截敏感内容]', messageId: str(ev.messageId) }).catch(() => {});
-    if (reply) await appendImChat(home, { platform, peerId: senderId, peerLabel: labelBlocked, role: 'bot', text: reply }).catch(() => {});
+    await appendImChat(home, { platform, peerId: senderId, peerLabel: labelBlocked, groupId: str(ev.groupId), role: 'user', text: '[已拦截敏感内容]', messageId: str(ev.messageId) }).catch(() => {});
+    if (reply) await appendImChat(home, { platform, peerId: senderId, peerLabel: labelBlocked, groupId: str(ev.groupId), role: 'bot', text: reply }).catch(() => {});
     return { ok: true, blocked: true, blockedReason: checked.blockedReason, recorded: false, platform, senderId, reply, dispatched };
   }
 
@@ -1153,6 +1177,7 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
     platform,
     peerId: senderId,
     peerLabel: label,
+    groupId: str(ev.groupId),
     role: 'user',
     text: checked.scrubbedText,
     messageId: str(ev.messageId),
@@ -1162,7 +1187,24 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
   // 6. in-character reply
   const persona = { ...(conf.persona ?? {}), name: getDisplayName(conf.persona) };
   const reply = clip(
-    await generateReply({ event: ev, text, persona, state, mood: state.mood, memories, trusted, platform }, options),
+    await generateReply({
+      event: ev,
+      text,
+      persona,
+      state,
+      mood: state.mood,
+      memories,
+      trusted,
+      platform,
+      // Speaker identity: in a group she must know whether 主人 or a 群友 is talking.
+      speaker: {
+        isGroup,
+        isOwner,
+        name: str(ev.senderName).trim(),
+        label: isOwner ? '主人' : isGroup ? '群友' : '对方',
+        groupId: str(ev.groupId),
+      },
+    }, options),
     1800
   );
 
@@ -1180,9 +1222,41 @@ export async function handleInboundImMessage(soulmateService, event = {}, option
         platform,
         peerId: senderId,
         peerLabel: label,
+        groupId: str(ev.groupId),
         role: 'bot',
         text: reply,
       }).catch(() => {});
+    }
+  }
+
+  // 7. star map: each IM thread becomes a session star (kind 'im'), content = recent
+  //    exchange from the local timeline.
+  if (conf.extensions?.imMemoryStars !== false && typeof soulmateService.upsertSessionEpisode === 'function') {
+    try {
+      const group = str(ev.groupId).trim();
+      const thread = await listImChat(home, group
+        ? { platform, groupId: group, limit: 40 }
+        : { platform, peerId: senderId, limit: 40 });
+      const rows = Array.isArray(thread?.entries) ? thread.entries : (Array.isArray(thread) ? thread : []);
+      if (rows.length) {
+        const content = rows
+          .map((r) => {
+            if (r.role === 'bot') return `我：${str(r.text)}`;
+            const who = group ? (str(r.peerLabel) || '群友') : '对方';
+            return `${who}：${str(r.text)}`;
+          })
+          .join('\n');
+        await soulmateService.upsertSessionEpisode({
+          sessionId: group ? `im:group:${platform}:${group}` : `im:${platform}:${senderId}`,
+          title: group
+            ? `${IM_PLATFORM_LABELS[platform] || platform}群 · ${clip(str(ev.groupName).trim() || group, 24)}`
+            : `${IM_PLATFORM_LABELS[platform] || platform} · ${label}`,
+          content,
+          kind: 'im',
+        });
+      }
+    } catch (err) {
+      console.warn('[soulmate-im] im memory star failed', err?.message || err);
     }
   }
 

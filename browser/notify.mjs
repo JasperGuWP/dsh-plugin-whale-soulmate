@@ -150,6 +150,18 @@ function toastFor(ev, name) {
         fullText: '去专属窗答第一题。',
         tag: 'dsh-soulmate-quiz',
       }
+    case 'llm-rerouted': {
+      const from = String(ev.from || '')
+      const to = String(ev.to || '')
+      const why = String(ev.reason || '').slice(0, 80)
+      const body = '你选的 ' + from + ' 调用失败（' + why + '），这次临时改用 ' + to + '。要恢复请在 DSH 里换模型或修复该线路。'
+      return {
+        title: n + ' · 模型线路已临时切换',
+        body,
+        fullText: body,
+        tag: 'dsh-soulmate-llm-reroute',
+      }
+    }
     case 'usage-blocked': {
       const used = Number(ev.used) || 0
       const cap = Number(ev.cap) || 0

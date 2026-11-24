@@ -371,8 +371,27 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     biliMaxDailyWrites: 20,
     biliAutoEngageEnabled: true,
     biliAutoReplyEnabled: true,
-    biliAutoReplyMaxRounds: 3,
+    biliAutoReplyMaxRounds: 2,
     biliFollowDedupDays: 7,
+    biliCommentMaxChars: 80,
+    biliCommentDailyCap: 5,
+    biliLikeDailyCap: 10,
+    biliFavoriteDailyCap: 10,
+    biliFollowDailyCap: 2,
+    biliCoinEnabled: false,
+    biliCoinDailyCap: 2,
+    biliEngageLlmEnabled: true,
+    imProactiveEnabled: false,
+    imProactiveWhitelist: [],
+    imProactivePerConvDaily: 2,
+    imProactiveDailyTotal: 4,
+    imProactiveMinGapMinutes: 90,
+    imProactiveMaxChars: 120,
+    imOwnerWeixin: '',
+    imOwnerQq: '',
+    imOwnerFeishu: '',
+    imOwnerDingtalk: '',
+    weatherEnabled: true,
   });
 });
 
@@ -614,7 +633,7 @@ test('plugin wiring: soulmate_video_watch tool, POST /video-watch route and the 
   await withEnv(allVideos(), { search: [{ bvid: BV_B, title: '独立开发' }] }, async ({ service, registeredTools, routes }) => {
     const summary = await service.getState();
     assert.ok(summary);
-    assert.equal(registeredTools.size, 14, '10 v1 tools + bili_manage + bili_action + 2 v3 trust tools');
+    assert.equal(registeredTools.size, 15, '10 v1 tools + bili_manage + bili_action + 2 v3 trust tools + weather');
     assert.ok(registeredTools.has('soulmate_bili_manage'), 'bili auth manage tool registered');
     assert.ok(registeredTools.has('soulmate_memory_promise'), 'v3 promise tool registered');
     assert.ok(registeredTools.has('soulmate_memory_resolve_conflict'), 'v3 conflict tool registered');
@@ -1073,5 +1092,53 @@ test('watchAndRecordVideo: 裁决判 skim 不二刷；关闭开关连裁决都�
     assert.equal(off.ok, true);
     assert.equal(judgeCalls.length, 0, 'deepJudge:false 完全跳过');
     assert.ok(!off.digest.deepJudge);
+  });
+});
+
+test('watchAndRecordVideo: 细看裁决走 judgeOneShot（桌面宿主无 generateReply 也能按人设裁决）', async () => {
+  await withEnv(allVideos(), {}, async ({ service, net }) => {
+    const judgeCalls = [];
+    const res = await watchAndRecordVideo(service, { target: BV_GOOD }, {
+      ...net,
+      keywords: ['AI'],
+      // 无 llmController.generateReply：只有 oneShot 通道（llm.stream 兜底形状）。
+      judgeOneShot: async ({ prompt, kind }) => {
+        judgeCalls.push({ prompt, kind });
+        return { text: '{"deep":false,"reason":"整活短片，粗扫够了"}' };
+      },
+      maxStoryboardFrames: 8,
+    });
+    assert.equal(res.ok, true);
+    assert.equal(judgeCalls.length, 1, '裁决经 oneShot 问了一次');
+    assert.equal(judgeCalls[0].kind, 'bili-deep-judge');
+    assert.equal(res.digest.deepJudge.via, 'agent', 'oneShot 裁决算 agent，不是启发式');
+    assert.equal(res.digest.deepJudge.deep, false);
+  });
+});
+
+test('watchAndRecordVideo: 长片分镜充足但喂进模型的帧稀疏 → 判 deep 时仍二刷（fedSparse）', async () => {
+  // 37 分钟长片：分镜 36 张（≥24 不算 thin）、字幕充足（≥800），但视觉初扫只喂 16 张
+  // → 每帧间隔 ~139s，远超 15s 采样密度 → fedSparse 触发二刷。
+  const longVideo = makeVideo(BV_GOOD, 1001, { duration: 2220, title: 'AI 产业深度复盘：三十七分钟讲透' });
+  await withEnv([longVideo], {}, async ({ service, net }) => {
+    const visionCalls = [];
+    const res = await watchAndRecordVideo(service, { target: BV_GOOD }, {
+      ...net,
+      keywords: ['AI'],
+      liveFrameWatch: false,
+      llmController: {
+        generateReply: async () => ({ text: '{"deep":true,"reason":"信息量长片，值得认真看完"}' }),
+      },
+      visionSummarize: async ({ prompt, images }) => {
+        visionCalls.push({ prompt, imageCount: (images || []).length });
+        return { text: '总览：一期讲透智能体\n时间线：\n· 00:00–00:30 开场：点题\n观感：这片子有点东西，值得你看。' };
+      },
+      maxStoryboardFrames: 36,
+      liveFrameEverySec: 15,
+    });
+    assert.equal(res.ok, true, JSON.stringify(res.recorded?.surf || res));
+    assert.equal(res.digest.deepJudge.secondPass, true, '喂帧稀疏的长片必须二刷');
+    assert.ok(visionCalls.length >= 2, '初扫 + 二刷');
+    assert.ok(visionCalls[1].imageCount <= 20, '二刷帧数不超过宿主单条消息图片上限 20');
   });
 });

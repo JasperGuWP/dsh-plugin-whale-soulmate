@@ -3,7 +3,8 @@
 // extension cards, mementos and dynamically mounted cloud capabilities.
 
 import { readFile } from 'node:fs/promises';
-import { atomicWriteJson, loadConfig, saveConfigAuto } from '../state.mjs';
+import { join } from 'node:path';
+import { appendJsonl, atomicWriteJson, loadConfig, saveConfigAuto } from '../state.mjs';
 import {
   applyInteraction,
   computeBondStage,
@@ -21,6 +22,7 @@ import {
   forgetMemory,
   recallMemory,
   recordEpisode as recordEpisodeImpl,
+  upsertSessionEpisode as upsertSessionEpisodeImpl,
   reflectToWiki,
   resolveConflict as resolveConflictImpl,
   retainFact as retainFactImpl,
@@ -160,6 +162,12 @@ export function createMemoryService({ home, gateway, cfg, promptEngine, pushEven
     touchPetActivity();
     const state = await applyInteraction(home, action, Date.now(), payload);
     pushEvent('interact', { action });
+    // Experience layer: his turns are the response signal for her proactive attempts.
+    // One tiny row per interaction; the weekly pass pairs them with her delivered acts.
+    await appendJsonl(join(home.rootDir, 'logs', 'interactions.jsonl'), {
+      at: new Date().toISOString(),
+      action,
+    }).catch(() => {});
     if (state?.bondCrossing) {
       await enrichSafe('bond-milestone', async () => {
         const conf = await loadConfig(home);
@@ -415,6 +423,7 @@ export function createMemoryService({ home, gateway, cfg, promptEngine, pushEven
     resetPersona,
     retainFact,
     recordEpisode,
+    upsertSessionEpisode: upsertSessionEpisodeImpl,
     recall,
     reflect,
     forget,

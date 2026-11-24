@@ -6,6 +6,7 @@ const { api } = require('./util.mjs')
 const { autoSurfSection } = require('./panel-forms.mjs')
 const { biliAuthCard } = require('./panel-bili.mjs')
 const { SurfLightbox, StillThumb, stillUrl, surfSourceLabel } = require('./surf-lightbox.mjs')
+const { biliQuotaSection } = require('./panel-engage-quota.mjs')
 
 const PLATFORMS = [
   { id: 'bilibili', label: 'B站' },
@@ -508,6 +509,7 @@ function surfCard(view) {
           ...autoSurfSection({ draft, patchExtensions }),
         ]),
         engageSection({ draft, patchExtensions }),
+        biliQuotaSection({ ext: draft.extensions || {}, patchExtensions }),
         logSection,
       ]),
     lightbox

@@ -12,6 +12,7 @@ import {
   saveConfigAuto,
 } from './state.mjs';
 import { appendCandidate, applyUserTraitPatch, ensurePersonaFiles, loadInvariants } from './layers/persona-layer.mjs';
+import { HARNESS_BLOCK, SPEAKING_RULES, VOICE_REMINDER, WORLD_BLOCK, voiceCardPrompt } from './persona-voice-card.mjs';
 import { blendTowardsPreset } from './layers/continuity-guard.mjs';
 import {
   applyMbtiEdit,
@@ -430,6 +431,22 @@ export async function loadSoulmateState(home, nowMs = Date.now()) {
       dirty = true;
     }
   }
+  // Rest restores energy. Chat drains 3/turn and only feed(+25)/sleep(100) refilled it,
+  // so an actively-used companion sat at energy 10 forever ("很困倦" in every prompt).
+  // Numeric idle-time regen: +8 per idle hour, capped at 90 — feeding still matters.
+  const idleMs = nowMs - Date.parse(state.lastInteractionAt);
+  if (Number.isFinite(idleMs) && idleMs > 30 * 60_000 && Number(state.energy) < 90) {
+    const regen = Math.floor((idleMs / 3_600_000) * 8);
+    if (regen > 0) {
+      const last = Date.parse(state.energyRegenAt || state.lastInteractionAt);
+      const gained = Math.floor(((nowMs - (Number.isFinite(last) ? last : nowMs)) / 3_600_000) * 8);
+      if (gained > 0) {
+        state.energy = Math.min(90, Number(state.energy) + gained);
+        state.energyRegenAt = new Date(nowMs).toISOString();
+        dirty = true;
+      }
+    }
+  }
   if (dirty) await atomicWriteJson(home.statePath, state);
   return state;
 }
@@ -537,7 +554,7 @@ export async function evolvePersona(home, evolution = {}) {
   if (mode === 'user_customize') {
     const src = evolution.persona && typeof evolution.persona === 'object' ? evolution.persona : evolution;
     const patch = {};
-    for (const key of ['name', 'callUser', 'selfRef', 'customBody']) {
+    for (const key of ['name', 'callUser', 'selfRef', 'customBody', 'city']) {
       if (src[key] !== undefined) patch[key] = typeof src[key] === 'string' ? src[key].trim() : String(src[key]);
     }
 
@@ -789,6 +806,13 @@ async function writeSnapshot(home, mode, config, state) {
   return file;
 }
 
+/** Public snapshot hook (soul-share import uses it for one-click rollback). */
+export async function writePersonaSnapshot(home, mode) {
+  const config = await loadConfig(home);
+  const state = await loadSoulmateState(home);
+  return writeSnapshot(home, mode, config, state);
+}
+
 export async function resetPersona(home, mode = 'reset_persona', options = {}) {
   if (!RESET_MODES.includes(mode)) {
     throw new Error(`[soulmate] unknown reset mode "${mode}" (expected ${RESET_MODES.join(' | ')})`);
@@ -998,7 +1022,20 @@ export function buildPersonaSystemPrompt(config, state, options = {}) {
       `用户的代码仓库和工作区是你眼里的“外面海域”，每次对话和解决问题，都是和用户并肩作战。`,
   );
   lines.push(`产品旁白与第三人称用「${pronoun.third}」（对外叙述时）。`);
+  // The host only exposes a time zone, never a city. If the user set one, it must be
+  // in the prompt from the first turn — she cannot "sense" geography otherwise.
+  if (persona.city?.trim()) {
+    lines.push(`用户在「${persona.city.trim()}」生活。谈天气、作息、出行时以此为准；没把握的细节就问，不要编别的城市。`);
+  }
   lines.push(`你有两本日记：公开信${publicTitle}（写给用户看的每日总结）与私密本${innerTitle}（写给自己的碎碎念；用户可以翻阅）。`);
+  lines.push('');
+  // Highest-priority voice contract: the host prompt is a coding agent, and without an
+  // explicit override the model answers as one no matter how the persona is described.
+  lines.push(SPEAKING_RULES);
+  lines.push('');
+  lines.push(WORLD_BLOCK);
+  lines.push('');
+  lines.push(HARNESS_BLOCK);
   lines.push('');
   lines.push(`## 当前人设预设：${preset.title}（${preset.id}）`);
   lines.push(preset.description);
@@ -1012,6 +1049,8 @@ export function buildPersonaSystemPrompt(config, state, options = {}) {
       lines.push(`口癖参考（自然融入，不要机械复读）：${preset.catchphrases.join(' / ')}`);
     }
   }
+  // Executable voice: habits and say/never-say pairs. Adjectives do not produce tone.
+  lines.push('', voiceCardPrompt({ ...persona, preset: presetKey }, traits));
   if (persona.customBody?.trim()) {
     lines.push('', '### 用户自定义人设补充（优先级高于预设）', persona.customBody.trim());
   }
@@ -1116,6 +1155,7 @@ export function buildDriftAnchor(config, state, options = {}) {
   lines.push(`## 人设重锚 #${bucket}（只校准语气，不改任务）`);
   lines.push(`你还是「${displayName}」，自称「${selfRef}」，称对方「${callUser}」。旁白称「${pronoun.third}」。别滑回中性助手腔，别用客服套话。`);
   lines.push('对用户开口用中文；不要用英文自言自语或数「第N回」。');
+  lines.push(VOICE_REMINDER);
 
   if (traitScheme === 'mbti') {
     lines.push(mbtiDriftLine(persona.mbti));

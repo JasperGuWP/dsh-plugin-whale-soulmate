@@ -74,7 +74,7 @@ function drawSky(ctx, w, h, t, view) {
     const oy = view.pitch * 26 * s.d
     const x = ((s.x + ox) % w + w) % w
     const y = ((s.y + oy) % h + h) % h
-    const a = 0.16 + 0.42 * (0.5 + 0.5 * Math.sin(TT * s.sp + s.tw))
+    const a = 0.18 + 0.52 * (0.5 + 0.5 * Math.sin(TT * s.sp + s.tw))
     ctx.fillStyle = 'rgba(214,228,255,' + a.toFixed(3) + ')'
     ctx.beginPath()
     ctx.arc(x, y, s.r, 0, Math.PI * 2)

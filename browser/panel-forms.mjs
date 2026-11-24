@@ -12,6 +12,7 @@ const { companionPronoun, api } = require('./util.mjs')
 const { paintBalloonMini } = require('./balloon-sprite.mjs')
 const { field, BUNDLED_LOOKS, skinFrameUrl, lookPetCard } = require('./panel-pet.mjs')
 const { AsrSettings } = require('./panel-asr.mjs')
+const { intentSection } = require('./panel-intent.mjs')
 
 /** Hint under «真看抽帧»: only surfaces blockers (login / missing ffmpeg with a download link). */
 function LiveFrameReadyHint() {
@@ -143,6 +144,11 @@ function identityCard(view) {
       field('selfRef', pronoun + '的自称', h('input', {
         key: 'control', className: 'sm-panel-input', maxLength: 12, placeholder: '我',
         value: draft.selfRef, onChange: (event) => patchPersona({ selfRef: event.target.value }),
+      })),
+      field('city', '你所在的城市', h('input', {
+        key: 'control', className: 'sm-panel-input', maxLength: 20, placeholder: '例如：杭州',
+        title: pronoun + '会记住并用于天气/作息',
+        value: draft.city || '', onChange: (event) => patchPersona({ city: event.target.value }),
       })),
     ]),
     h(PresetGenderFold, {
@@ -652,6 +658,7 @@ function rhythmCard(view) {
         h('span', { key: 't' }, '整理记忆尽量选错峰（更省）'),
       ]),
       ...llmBudget({ h, proDraft, usage, patchProactive }),
+      intentSection({ h, proDraft, patchProactive, companionThird: pp }),
       h('p', { key: 'quiet', className: 'sm-panel-muted' },
         '免打扰：' + ((proDraft.quietHours && proDraft.quietHours.join('、')) || '无')
           + ' · 专属窗大约 ' + (homeDraft.maxTurns || 500) + ' 回合后换新窗'

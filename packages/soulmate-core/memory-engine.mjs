@@ -322,6 +322,7 @@ async function readWikiPages(home) {
       links: Array.isArray(meta.links) ? meta.links : extractWikiLinks(body),
       sourceFactIds: Array.isArray(meta.sourceFactIds) ? meta.sourceFactIds : [],
       updatedAt: await fileUpdatedAt(path, meta.updatedAt),
+      createdAt: str(meta.createdAt) || undefined,
       content: body.trim(),
     });
   }
@@ -373,7 +374,8 @@ async function readEpisodes(home, { includePrivate = false } = {}) {
       out.push({
         id: `session:${sessionId}`,
         date: todayYYYYMMDD(toMs(updatedAt) || Date.now()),
-        kind: 'session',
+        // meta.kind distinguishes summaries / IM threads / verbatim transcripts
+        kind: str(meta.kind).trim() || 'session',
         sessionId,
         title: str(meta.title),
         file,
@@ -702,6 +704,8 @@ export async function upsertSessionEpisode(home, input = {}) {
   if (!content) return { ok: false, error: 'content is required' };
   const isPrivate = input.visibility === 'private';
   const title = str(input.title).trim();
+  // `im` = an IM thread; `transcript` = the verbatim conversation of a chat-home window.
+  const kind = ['session', 'im', 'transcript'].includes(str(input.kind)) ? str(input.kind) : 'session';
 
   const check = await gate(home, 'upsertSessionEpisode', { title, content });
   if (!check.allowed) return { ok: false, blockedReason: check.blockedReason };
@@ -719,7 +723,7 @@ export async function upsertSessionEpisode(home, input = {}) {
       file,
       serializeDoc(
         {
-          kind: 'session',
+          kind,
           sessionId,
           title: safeTitle,
           workspaceId: str(input.workspaceId).trim(),
@@ -2025,6 +2029,7 @@ export async function buildNeuralGraph(home, options = {}) {
       summary: p.summary || shorten(p.content),
       content: p.content,
       updatedAt: p.updatedAt,
+      createdAt: p.createdAt,
       // self-arc hugs the core (smaller radius) so it reads as the protagonist hub
       position: fibSphere(i, pages.length, isSelfArc ? CORE_RADIUS * 0.55 : CORE_RADIUS),
     };
@@ -2114,14 +2119,18 @@ export async function buildNeuralGraph(home, options = {}) {
   ]) {
     let prev = null;
     group.forEach((e, i) => {
-      const isSession = e.kind === 'session';
+      const isSession = e.kind === 'session' || e.kind === 'im';
+      const isTranscript = e.kind === 'transcript';
+      const transcriptTitle = str(e.title).replace(/^原文\s*·\s*/, '');
       const node = {
         id: `${isPrivate ? 'episode-private' : 'episode'}:${e.id}`,
-        label: isSession ? e.title || e.sessionId || e.id : `${e.date} ${e.kind}`,
-        kind: isSession ? 'session_star' : 'episode_crystal',
+        label: isTranscript
+          ? `原文 · ${transcriptTitle || e.date}`
+          : isSession ? e.title || e.sessionId || e.id : `${e.date} ${e.kind}`,
+        kind: isTranscript ? 'transcript_star' : isSession ? 'session_star' : 'episode_crystal',
         zone: isPrivate ? 'private_vault' : 'local_cortex',
-        color: isPrivate ? COLORS.shield : isSession ? COLORS.session : COLORS.episode,
-        size: isSession ? 1.2 : 1,
+        color: isPrivate ? COLORS.shield : (isSession || isTranscript) ? COLORS.session : COLORS.episode,
+        size: isSession || isTranscript ? 1.2 : 1,
         energy: energyOf(2 ** (-Math.max(0, (nowMs - toMs(e.updatedAt)) / DAY_MS) / 14)),
         importance: 2,
         recallCount: 0,
@@ -2269,6 +2278,7 @@ function factToNode(f, nowMs, kind, zone, color) {
     summary: shorten(f.content),
     content: f.content,
     updatedAt: f.updatedAt,
+    createdAt: f.createdAt,
     position: pos(0, 0, 0),
   };
 }

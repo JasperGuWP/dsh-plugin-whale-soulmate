@@ -24,6 +24,8 @@ export function normalizeImChatEntry(raw = {}) {
     platform,
     peerId,
     peerLabel: str(raw.peerLabel) || peerId,
+    // Group threads keep their group id so one group reads as one conversation.
+    groupId: str(raw.groupId),
     role,
     text,
     messageId: str(raw.messageId),
@@ -53,16 +55,18 @@ export async function recentImBotSend(home, { platform = 'weixin', peerId = '', 
  * Newest-first messages for one peer (or all if peer empty).
  * `before` = ISO timestamp — return messages strictly older than it.
  */
-export async function listImChat(home, { platform = 'weixin', peerId = '', limit = 50, before = '' } = {}) {
+export async function listImChat(home, { platform = 'weixin', peerId = '', groupId = '', limit = 50, before = '' } = {}) {
   const cap = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
   const rows = await readJsonlTail(imChatPath(home), Math.max(cap * 8, 400));
   // Empty platform → all IM channels (weixin/qq/feishu/dingtalk).
   const plat = str(platform).trim();
   const peer = str(peerId).trim();
+  const group = str(groupId).trim();
   const beforeMs = before ? Date.parse(before) : NaN;
   let list = rows
     .map((r) => normalizeImChatEntry(r))
-    .filter((r) => (!plat || r.platform === plat) && (!peer || r.peerId === peer));
+    .filter((r) => (!plat || r.platform === plat))
+    .filter((r) => (group ? r.groupId === group : (!peer || (r.peerId === peer && !r.groupId))));
   if (Number.isFinite(beforeMs)) {
     list = list.filter((r) => {
       const t = Date.parse(r.at);
@@ -82,11 +86,14 @@ export async function listImContacts(home, { platform = 'weixin', limit = 80 } =
   for (const raw of rows) {
     const r = normalizeImChatEntry(raw);
     if (r.platform !== plat || !r.peerId) continue;
-    const prev = map.get(r.peerId);
+    // Group conversations aggregate by group, not by each member's peerId.
+    const key = r.groupId ? `g:${r.groupId}` : r.peerId;
+    const prev = map.get(key);
     if (!prev || String(r.at) >= String(prev.lastAt)) {
-      map.set(r.peerId, {
-        peerId: r.peerId,
-        peerLabel: r.peerLabel || r.peerId,
+      map.set(key, {
+        peerId: r.groupId || r.peerId,
+        groupId: r.groupId || '',
+        peerLabel: r.groupId ? (prev?.peerLabel || `群 ${r.groupId.slice(0, 8)}…`) : (r.peerLabel || r.peerId),
         lastAt: r.at,
         lastText: r.text,
         lastRole: r.role,

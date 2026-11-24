@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
+import { deflateRawSync } from 'node:zlib';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -74,6 +76,15 @@ test('proactive: config ships an enabled-by-default block that deep-merges witho
     distillLlmAutoOffReason: '',
     distillLlmAutoOffAt: '',
     distillLlmPetRemindDateKey: '',
+    intentEnabled: false,
+    intentLlmDailyCap: 60_000,
+    intentLlmModel: '',
+    intentMaxDecisionsPerDay: 6,
+    intentMaxActsPerDay: 3,
+    intentMinGapMinutes: 90,
+    experienceEnabled: true,
+    experienceLlmEnabled: true,
+    experienceLlmDailyCap: 30_000,
   });
 
   const merged = DEFAULT_CONFIG.proactive;
@@ -86,6 +97,7 @@ test('proactive: /api/proactive/status reports the gate decision and stays after
     const { mockCtx, routes, dispose } = createMockCtx(dir);
     apply(mockCtx, {});
     await mockCtx.soulmate.ready;
+    await saveConfigAuto(mockCtx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
 
     const handler = routes.get('GET /dsh-soulmate/api/proactive/status');
     assert.ok(handler, 'status route must be mounted');
@@ -118,6 +130,7 @@ test('proactive: config patch accepts the proactive knobs and rejects non-allow-
     const { mockCtx, routes, dispose } = createMockCtx(dir);
     apply(mockCtx, {});
     await mockCtx.soulmate.ready;
+    await saveConfigAuto(mockCtx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
 
     const post = routes.get('POST /dsh-soulmate/api/config');
     const out = body(await post({
@@ -145,6 +158,7 @@ test('proactive: the scheduled tick is registered through ctx.effect and cleared
     const { mockCtx, dispose } = createMockCtx(dir);
     apply(mockCtx, {});
     await mockCtx.soulmate.ready;
+    await saveConfigAuto(mockCtx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
 
     // The tick is exposed for hosts (and tests) that own their own clock.
     assert.equal(typeof mockCtx.soulmate.runProactiveTick, 'function');
@@ -170,6 +184,7 @@ test('proactive: nudges are appended to the audit log so a silent gate is explai
     const { mockCtx, dispose } = createMockCtx(dir);
     apply(mockCtx, {});
     await mockCtx.soulmate.ready;
+    await saveConfigAuto(mockCtx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
 
     await mockCtx.soulmate.runProactiveTick(Date.parse('2026-11-09T23:40:00Z'));
     const home = mockCtx.soulmate.home;
@@ -202,6 +217,7 @@ test('proactive: dream LLM path writes wiki via inject and records dream-llm usa
     const { saveConfigAuto } = await import('../packages/soulmate-core/state.mjs');
     await saveConfigAuto(mockCtx.soulmate.home, {
       proactive: { dreamLlmEnabled: true, dreamLlmDailyCap: 300_000, dreamReflect: true },
+      extensions: { biliAutoSurfEnabled: false },
     });
 
     await mockCtx.soulmate.retainFact({ topic: '饮品', content: '冰美式', importance: 4 });
@@ -229,6 +245,7 @@ test('proactive: the night dream really writes a Wiki page from that night facts
     const { mockCtx, dispose } = createMockCtx(dir);
     apply(mockCtx, {});
     await mockCtx.soulmate.ready;
+    await saveConfigAuto(mockCtx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
 
     await mockCtx.soulmate.retainFact({ topic: '饮品偏好', content: '早上一杯冰美式', importance: 4 });
     await mockCtx.soulmate.retainFact({ topic: '代码风格', content: '坚持纯 Node 零依赖', importance: 4 });
@@ -254,6 +271,98 @@ test('proactive: the night dream really writes a Wiki page from that night facts
 
     dispose();
   } finally {
+    await rm(dir, { force: true, recursive: true });
+  }
+});
+test('proactive: auto-surf tick watches through the real ctx.soulmate service (regression: bare {home} picked 0)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sm-surf-tick-'));
+  // Minimal mock Bilibili: one searchable video with subtitle + storyboard + comments.
+  const bvid = 'BV1Tick00001';
+  const aid = 9001;
+  const cid = aid * 10;
+  const pubdate = Math.floor(Date.now() / 1000) - 86400;
+  const subtitleBody = Array.from({ length: 30 }, (_, i) => ({ from: i * 10, to: i * 10 + 9, content: `第${i + 1}段讲解：智能体如何拆解任务、调用工具并自我修正。` }));
+  const mock = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://mock.local');
+    const json = (data, code = 0) => {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ code, message: code ? 'mock error' : '0', data }));
+    };
+    switch (url.pathname) {
+      case '/x/web-interface/nav':
+        return json({ isLogin: false, wbi_img: { img_url: 'https://i0.hdslb.com/bfs/wbi/abcdefghijklmnopqrstuvwxyz0123456789.png', sub_url: 'https://i0.hdslb.com/bfs/wbi/zyxwvutsrqponmlkjihgfedcba9876543210.png' } });
+      case '/x/web-interface/search/type':
+        if (url.searchParams.get('search_type') === 'article') return json({ result: [] });
+        return json({ result: [{ bvid, title: 'AI 编程新范式：十分钟讲透智能体', author: 'UP小明', play: 50000, pubdate }] });
+      case '/x/web-interface/popular': return json({ list: [] });
+      case '/x/web-interface/ranking/v2': return json({ list: [] });
+      case '/x/web-interface/index/top/feed/rcmd': return json({ item: [] });
+      case '/x/article/recommends': return json({ articles: [] });
+      case '/x/web-interface/view':
+        return json({ bvid, aid, cid, title: 'AI 编程新范式：十分钟讲透智能体', desc: '一期讲清楚智能体编程的视频。', pic: 'http://i0.hdslb.com/bfs/archive/cover.jpg', duration: 300, pubdate, owner: { mid: 4321, name: 'UP小明' }, stat: { view: 50000, danmaku: 120, reply: 80, favorite: 2000, like: 6000, coin: 1500 }, pages: [{ cid, page: 1 }] });
+      case '/x/tag/archive/tags': return json([{ tag_name: 'AI' }]);
+      case '/x/player/v2':
+        return json({ subtitle: { subtitles: [{ lan: 'ai-zh', lan_doc: '中文（自动生成）', subtitle_url: `http://127.0.0.1:${mock.address().port}/sub/${bvid}.json` }] } });
+      case '/x/player/videoshot':
+        return json({ image: ['//i0.hdslb.com/bfs/videoshot/a.jpg'], index: Array.from({ length: 125 }, (_, i) => i * 2), img_x_len: 10, img_y_len: 10, img_x_size: 160, img_y_size: 90 });
+      case '/x/v1/dm/list.so':
+        res.writeHead(200, { 'content-type': 'text/xml; charset=utf-8' });
+        return res.end(deflateRawSync(Buffer.from('<i><d p="10.0,1,25,16777215,0,0,0,0">高能</d></i>', 'utf8')));
+      case '/x/v2/reply':
+        return json({ replies: [{ rpid: 1, like: 99, member: { uname: '路人' }, content: { message: '讲得清楚' }, replies: [] }], hots: [] });
+      default: {
+        const m = url.pathname.match(/^\/sub\/(.+?)\.json$/);
+        if (m && m[1] === bvid) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          return res.end(JSON.stringify({ body: subtitleBody }));
+        }
+        res.writeHead(404);
+        return res.end('nope');
+      }
+    }
+  });
+  await new Promise((resolve) => mock.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${mock.address().port}`;
+  try {
+    const { mockCtx, dispose } = createMockCtx(dir);
+    apply(mockCtx, { autoSync: false, biliBaseUrl: baseUrl, biliDmBaseUrl: baseUrl });
+    await mockCtx.soulmate.ready;
+    await saveConfigAuto(mockCtx.soulmate.home, {
+      extensions: {
+        biliEnabled: true,
+        biliAutoSurfEnabled: true,
+        biliAutoSurfEveryMinutes: 360,
+        biliAutoSurfMaxPick: 2,
+        biliKeywordsAuto: false,
+        biliKeywordsSeed: ['AI'],
+        biliSurfIncludePopular: false,
+        biliSurfIncludeArticles: false,
+        biliLiveFrameWatch: false,
+        biliVisionSummary: false,
+        biliSurfDeepJudge: false,
+        biliWriteEnabled: false,
+        biliAutoEngageEnabled: false,
+      },
+    });
+
+    const res = await mockCtx.soulmate.runProactiveTick(Date.now());
+    assert.equal(res.autoSurf.ran, true, JSON.stringify(res.autoSurf));
+    assert.equal(res.autoSurf.ok, true, JSON.stringify(res.autoSurf));
+    assert.equal(res.autoSurf.picked, 1, 'the scheduled round must actually watch, not silently pick 0');
+
+    const ledger = await readFile(join(mockCtx.soulmate.home.logsDir, 'proactive.jsonl'), 'utf8');
+    const row = ledger.trim().split('\n').map((l) => JSON.parse(l)).find((x) => x.kind === 'auto-surf');
+    assert.equal(row.delivered, 'watched');
+    assert.equal(row.picked, 1);
+
+    const seen = JSON.parse(await readFile(join(mockCtx.soulmate.home.rootDir, 'bili-seen.json'), 'utf8'));
+    assert.ok(seen.seen[bvid], 'watched video lands in the seen ledger');
+    const facts = await readFile(mockCtx.soulmate.home.factsPath, 'utf8');
+    assert.ok(facts.includes(bvid), 'watch writes a video fact through the real service');
+
+    dispose();
+  } finally {
+    await new Promise((resolve) => mock.close(resolve));
     await rm(dir, { force: true, recursive: true });
   }
 });

@@ -2,10 +2,10 @@
 const React = require('react')
 const h = React.createElement
 const { api, clampNum, PRESET_FALLBACK, API } = require('./util.mjs')
-const { drawNeurons, neuronViews, DEFAULT_VIEW } = require('./neuron/index.mjs')
+const { NeuronCard } = require('./panel-neuron-card.mjs')
 const { drawAvatar } = require('./avatar.mjs')
 const { deleteSprite } = require('./sprite.mjs')
-const { engHead, statusCard, schedulingCard, personaCard } = require('./panel-cards.mjs')
+const { statusCard, schedulingCard, personaCard } = require('./panel-cards.mjs')
 const { usageCard } = require('./panel-usage.mjs')
 const { diaryCard } = require('./panel-diary.mjs')
 const { trustCard } = require('./panel-trust.mjs')
@@ -31,6 +31,7 @@ const { OPEN_TAB_EVENT, consumePendingTab } = require('./panel-nav.mjs')
 const { SoulmatePanelIcon, PetPreview } = require('./panel-preview.mjs')
 const { surfCard: surfCardEl } = require('./panel-surf.mjs')
 const { DsBotCard } = require('./panel-dsbot.mjs')
+const { SoulShareCard } = require('./panel-soul-share.mjs')
 
     // Sidebar panel — 「小鱼」persona workshop (slot `main` + panellist row).
     const PANEL_ID = 'soulmate'
@@ -52,7 +53,6 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       const [busy, setBusy] = React.useState(false)
       const [note, setNote] = React.useState('')
       const [tab, setTab] = React.useState(() => consumePendingTab() || 'surf')
-      const [graph, setGraph] = React.useState(null)
       React.useEffect(() => {
         const onOpen = (ev) => {
           const next = String((ev && ev.detail && ev.detail.tab) || '').trim()
@@ -64,9 +64,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
         return () => window.removeEventListener(OPEN_TAB_EVENT, onOpen)
       }, [])
       const canvasRef = React.useRef(null)
-      const neuronRef = React.useRef(null)
       const draftRef = React.useRef(null)
-      const graphRef = React.useRef(null)
       const moodRef = React.useRef('neutral')
       // Must live with the other hooks — never after the empty-draft early return, or
       // React crashes on the first successful load and the settings page goes blank.
@@ -123,14 +121,6 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       }, [tab])
       useTraitsStatePoll(React, tab, load)
       React.useEffect(() => {
-        if (tab !== 'neurons') return undefined
-        let alive = true
-        const fetchGraph = () => { api('neural-graph').then((g) => { if (alive && g && g.ok !== false) setGraph(g) }) }
-        fetchGraph()
-        const timer = setInterval(fetchGraph, 15000)
-        return () => { alive = false; clearInterval(timer) }
-      }, [tab])
-      React.useEffect(() => {
         if (tab !== 'rhythm') return undefined
         let alive = true
         const fetchStatus = () => { api('proactive/status').then((s) => { if (alive && s && s.ok !== false) setProStatus(s) }) }
@@ -145,7 +135,6 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
         return () => clearInterval(timer)
       }, [])
       draftRef.current = draft
-      graphRef.current = graph
 
       React.useEffect(() => {
         let raf = 0
@@ -153,9 +142,6 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
           const current = draftRef.current
           if (canvasRef.current && current && !(current.appearance && current.appearance.customSpriteUrl)) {
             drawAvatar(canvasRef.current, current.appearance, moodRef.current, time)
-          }
-          if (neuronRef.current) {
-            drawNeurons(neuronRef.current, graphRef.current, time)
           }
           raf = requestAnimationFrame(tick)
         }
@@ -266,8 +252,28 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
                 biliKeywords: (current.extensions.biliKeywords || []).map((k) => String(k).trim()).filter(Boolean),
                 biliAutoEngageEnabled: current.extensions.biliAutoEngageEnabled !== false,
                 biliAutoReplyEnabled: current.extensions.biliAutoReplyEnabled !== false,
-                biliAutoReplyMaxRounds: Number(current.extensions.biliAutoReplyMaxRounds) || 3,
+                biliAutoReplyMaxRounds: Number(current.extensions.biliAutoReplyMaxRounds) || 2,
                 biliFollowDedupDays: Number(current.extensions.biliFollowDedupDays) || 7,
+                biliCommentMaxChars: Number(current.extensions.biliCommentMaxChars) || 80,
+                biliCommentDailyCap: Number.isFinite(Number(current.extensions.biliCommentDailyCap)) ? Number(current.extensions.biliCommentDailyCap) : 5,
+                biliLikeDailyCap: Number.isFinite(Number(current.extensions.biliLikeDailyCap)) ? Number(current.extensions.biliLikeDailyCap) : 10,
+                biliFavoriteDailyCap: Number.isFinite(Number(current.extensions.biliFavoriteDailyCap)) ? Number(current.extensions.biliFavoriteDailyCap) : 10,
+                biliFollowDailyCap: Number.isFinite(Number(current.extensions.biliFollowDailyCap)) ? Number(current.extensions.biliFollowDailyCap) : 2,
+                biliCoinEnabled: current.extensions.biliCoinEnabled === true,
+                biliCoinDailyCap: Number.isFinite(Number(current.extensions.biliCoinDailyCap)) ? Number(current.extensions.biliCoinDailyCap) : 2,
+                biliEngageLlmEnabled: current.extensions.biliEngageLlmEnabled !== false,
+                imProactiveEnabled: current.extensions.imProactiveEnabled === true,
+                imProactiveWhitelist: Array.isArray(current.extensions.imProactiveWhitelist)
+                  ? current.extensions.imProactiveWhitelist.filter((e) => e && typeof e === 'object')
+                  : [],
+                imProactivePerConvDaily: Number(current.extensions.imProactivePerConvDaily) || 2,
+                imProactiveDailyTotal: Number(current.extensions.imProactiveDailyTotal) || 4,
+                imProactiveMinGapMinutes: Number(current.extensions.imProactiveMinGapMinutes) || 90,
+                imProactiveMaxChars: Number(current.extensions.imProactiveMaxChars) || 120,
+                imOwnerWeixin: String(current.extensions.imOwnerWeixin || ''),
+                imOwnerQq: String(current.extensions.imOwnerQq || ''),
+                imOwnerFeishu: String(current.extensions.imOwnerFeishu || ''),
+                imOwnerDingtalk: String(current.extensions.imOwnerDingtalk || ''),
               },
             })
             if (extSave && extSave.ok === false) failure = extSave.error || '未知错误'
@@ -288,6 +294,11 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
                 distillLlmEnabled: !!current.proactive.distillLlmEnabled,
                 distillLlmDailyCap: Number(current.proactive.distillLlmDailyCap) || 0,
                 distillLlmModel: String(current.proactive.distillLlmModel || ''),
+                intentEnabled: !!current.proactive.intentEnabled,
+                intentLlmDailyCap: Number(current.proactive.intentLlmDailyCap) || 0,
+                intentLlmModel: String(current.proactive.intentLlmModel || ''),
+                intentMaxActsPerDay: Number(current.proactive.intentMaxActsPerDay) || 3,
+                experienceEnabled: current.proactive.experienceEnabled !== false,
               },
             })
             if (proSave && proSave.ok === false) failure = proSave.error || '未知错误'
@@ -547,20 +558,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
       // plain function after the empty-draft early return changes hook order and blanks the panel.
       const surfPage = h(surfCardEl, { key: 'surf-page', draft, patchExtensions })
 
-      const neuronCard = h('div', { key: 'neurons', className: 'sm-eng-card' }, [
-        engHead('05', '记忆星图', '点与连线', ''),
-        h('div', { key: 'lead', className: 'sm-neuron-lead' }, [
-          h('span', { key: 'k' }, '记忆点'),
-          h('b', { key: 'v' }, String((mem.facts || 0) + (mem.wiki || 0))),
-          h('span', { key: 'k2' }, '日记'),
-          h('b', { key: 'v2' }, String((mem.episodes || 0))),
-        ]),
-        h('canvas', {
-          key: 'canvas', ref: neuronRef, className: 'sm-neuron-canvas',
-          width: 720, height: 360,
-        }),
-        h('p', { key: 'note', className: 'sm-eng-note' }, '拖动旋转，滚轮缩放；单击查看，双击飞近，双击空白回到全景。'),
-      ])
+      const neuronCard = h(NeuronCard, { key: 'neurons', mem, onNote: setNote })
 
       const tabs = [
         { id: 'surf', label: '冲浪', feature: true },
@@ -616,7 +614,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
         })],
         personality: [personaCardEl, traits, gateCard],
         neurons: [neuronCard],
-        identity: [identity, lookPetCardEl],
+        identity: [identity, lookPetCardEl, h(SoulShareCard, { key: 'soul-share', onImported: load })],
         rhythm: [rhythmCard],
         surf: [surfPage],
         usage: [usageCard({ usage, draft: usageDraft, busy: usageBusy, note: usageNote, h, onDraft: (patch) => setUsageDraft((prev) => ({ ...(prev || {}), ...patch })), onSave: saveUsage })],
@@ -629,7 +627,7 @@ const { DsBotCard } = require('./panel-dsbot.mjs')
           gender: draft.gender === 'male' || draft.gender === 'female' ? draft.gender : null,
           h,
         })],
-        dsbot: [h(DsBotCard, { key: 'dsbot' })],
+        dsbot: [h(DsBotCard, { key: 'dsbot', ext: draft.extensions || {}, patchExtensions })],
       }
 
       return h('div', { className: 'sm-panel' }, h('div', { className: 'sm-panel-wrap' }, [

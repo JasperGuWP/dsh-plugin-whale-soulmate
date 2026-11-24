@@ -20,7 +20,7 @@ export async function writeCommentLedger(home, ledger) {
   await atomicWriteJson(commentLedgerPath(home), ledger);
 }
 
-export async function rememberPostedComment(home, { bvid, aid, rpid, videoId } = {}) {
+export async function rememberPostedComment(home, { bvid, aid, rpid, videoId, title, commentText } = {}) {
   const id = str(rpid);
   if (!id) return { ok: false };
   const ledger = await readCommentLedger(home);
@@ -30,6 +30,8 @@ export async function rememberPostedComment(home, { bvid, aid, rpid, videoId } =
     root: id,
     bvid: str(bvid || videoId),
     aid: str(aid),
+    title: str(title),
+    commentText: str(commentText),
     rounds: 0,
     closed: false,
     seenReplyIds: [],

@@ -149,8 +149,8 @@ export function buildVisionPrompt({ title = '', desc = '', transcript = '', fram
     '· mm:ss–mm:ss <章标题>：<要点>',
     '· …（3–6 段）',
     voice
-      ? '观感：<2–3 句，用你的口吻总结并评价整个视频：内容值不值、亮点或槽点在哪、推不推荐对方看。必须带当前性格的措辞与态度，不是中性分析报告。>'
-      : '观感：<2–3 句，总结并评价整个视频：内容值不值、亮点或槽点、推不推荐看，结合信息密度给出态度。>',
+      ? '观感：<2–3 句，用你的口吻评价这支视频的内容本身：讲了什么、值不值、亮点或槽点在哪、推不推荐对方看。像跟搭档聊你刚看完的东西，不是影评——不要评镜头/机位/剪辑/运镜，除非片子本身就是讲拍摄的。必须带当前性格的措辞与态度，不是中性分析报告。>'
+      : '观感：<2–3 句，评价这支视频的内容本身：讲了什么、值不值、亮点或槽点、推不推荐看。聊内容，不要评镜头/机位/剪辑，除非片子本身就是讲拍摄的。>',
   ];
   if (voice) lines.push(`【你的性格（只影响观感措辞）】${clip(voice, 300)}`);
   lines.push('');
@@ -256,8 +256,8 @@ export function buildTextFallbackPrompt(digest = {}, { persona = '' } = {}) {
     '· mm:ss–mm:ss <章标题>:<要点>',
     '· …(3–6 段)',
     voice
-      ? '观感:<2–3 句,用你的口吻总结并评价整个视频:内容值不值、亮点或槽点、推不推荐对方看,带当前性格的态度。>'
-      : '观感:<2–3 句,总结并评价整个视频:内容值不值、亮点或槽点、推不推荐看。>',
+      ? '观感:<2–3 句,用你的口吻评价这支视频的内容本身:讲了什么、值不值、亮点或槽点、推不推荐对方看。像跟搭档聊你刚看完的东西,不是影评——不要评镜头/机位/剪辑/运镜,除非片子本身就是讲拍摄的。带当前性格的态度。>'
+      : '观感:<2–3 句,评价这支视频的内容本身:讲了什么、值不值、亮点或槽点、推不推荐看。聊内容,不要评镜头/机位/剪辑,除非片子本身就是讲拍摄的。>',
   ];
   if (voice) lines.push(`【你的性格（只影响观感措辞）】${clip(voice, 300)}`);
   lines.push('');
@@ -284,8 +284,8 @@ export async function composeVisionTimelineSummary({
   if (typeof visionSummarize !== 'function') {
     return { ok: false, channel: 'skip:no-vision-model', takeaway: '', error: 'no-vision-callback' };
   }
-  // 深看二刷可放宽到 24 帧；常规 16。
-  maxFrames = Math.min(24, Math.max(4, Math.floor(num(maxFrames, VISION_FRAME_MAX))));
+  // 深看二刷可放宽到 20 帧（宿主单条消息图片上限 20，再多会被整批拒收）；常规 16。
+  maxFrames = Math.min(20, Math.max(4, Math.floor(num(maxFrames, VISION_FRAME_MAX))));
 
   const live = digest.liveFrameStills
     || digest.liveFrames?.frames

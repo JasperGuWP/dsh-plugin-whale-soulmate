@@ -133,6 +133,19 @@ export const DEFAULT_CONFIG = Object.freeze({
     distillLlmAutoOffReason: '',
     distillLlmAutoOffAt: '',
     distillLlmPetRemindDateKey: '',
+    // Intent layer: events are opportunities; she decides in character whether to act.
+    // Off by default until the panel switch lands — enabling flips the schedule gate
+    // from direct delivery to opportunity source.
+    intentEnabled: false,
+    intentLlmDailyCap: 60_000,
+    intentLlmModel: '',
+    intentMaxDecisionsPerDay: 6,
+    intentMaxActsPerDay: 3,
+    intentMinGapMinutes: 90,
+    // Experience layer: weekly lessons from her attempts × his responses. Never touches traits.
+    experienceEnabled: true,
+    experienceLlmEnabled: true,
+    experienceLlmDailyCap: 30_000,
   },
   pet: {
     // Desktop-pet sprite layer (assets/pet/): 13 transparent frames + pet.json state machine.
@@ -241,8 +254,34 @@ export const DEFAULT_CONFIG = Object.freeze({
     biliAutoEngageEnabled: true,
     // Reply when others answer her comments (max rounds below).
     biliAutoReplyEnabled: true,
-    biliAutoReplyMaxRounds: 3,
+    biliAutoReplyMaxRounds: 2,
     biliFollowDedupDays: 7,
+    // 分项配额（滚动 24h）：评论字数 / 每日评论 / 赞 / 藏 / 关注 / 投币。
+    biliCommentMaxChars: 80,
+    biliCommentDailyCap: 5,
+    biliLikeDailyCap: 10,
+    biliFavoriteDailyCap: 10,
+    biliFollowDailyCap: 2,
+    // 投币花真硬币：独立开关，默认关。
+    biliCoinEnabled: false,
+    biliCoinDailyCap: 2,
+    // 评论/回复由她按人设+观后笔记现写（LLM），失败回落模板。
+    biliEngageLlmEnabled: true,
+    // IM 自主主动发：总开关默认关；只发 imProactiveWhitelist 里用户显式加白的会话。
+    imProactiveEnabled: false,
+    imProactiveWhitelist: [],
+    imProactivePerConvDaily: 2,
+    imProactiveDailyTotal: 4,
+    imProactiveMinGapMinutes: 90,
+    imProactiveMaxChars: 120,
+    // Owner identity per platform (the human's own account id). In a group this is how
+    // she tells 主人 apart from 群友; empty = everyone in the group is a stranger.
+    imOwnerWeixin: '',
+    imOwnerQq: '',
+    imOwnerFeishu: '',
+    imOwnerDingtalk: '',
+    // Weather tool talks to Open-Meteo (no key). Set false to disable network use entirely.
+    weatherEnabled: true,
   },
 });
 

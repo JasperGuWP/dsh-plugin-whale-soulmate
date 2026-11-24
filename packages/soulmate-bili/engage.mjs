@@ -17,10 +17,11 @@ const clip = (s, n) => {
 };
 
 /** Hard filter for Bilibili-style public comments. Returns { ok, text, reason? }. */
-export function sanitizeCommentText(raw) {
+export function sanitizeCommentText(raw, maxChars = 100) {
+  const cap = Math.max(10, Math.min(500, Math.floor(Number(maxChars) || 100)));
   let text = str(raw).replace(/\s+/g, ' ').trim();
   if (!text) return { ok: false, text: '', reason: 'empty' };
-  if (text.length > 100) text = `${text.slice(0, 99)}…`;
+  if (text.length > cap) text = `${text.slice(0, cap - 1)}…`;
   const blocked = [
     [/加微信|加v|vx\s*[:：]|微信[:：]/i, '导流站外'],
     [/http[s]?:\/\/|www\./i, '外链'],
@@ -52,6 +53,7 @@ export function decideSurfEngageHeuristic({ digest, persona } = {}) {
     comment: false,
     commentText: '',
     follow: false,
+    coin: false,
     reason: '',
   };
 
@@ -64,6 +66,9 @@ export function decideSurfEngageHeuristic({ digest, persona } = {}) {
   plan.favorite = score >= 14 || (score >= 12 && talkative >= 60);
   plan.follow = score >= 16 && (clingy >= 55 || talkative >= 65);
   plan.comment = score >= 12 && talkative >= 45;
+  // Coin spends real money: only near-perfect watches, and the write layer still
+  // requires biliCoinEnabled + its own daily cap on top of this.
+  plan.coin = score >= 18;
 
   if (tsundere >= 70 && plan.comment && score < 15) {
     plan.comment = false;
@@ -126,6 +131,7 @@ export async function executeSurfEngage(home, { digest, plan, options = {} } = {
     favorite: false,
     comment: false,
     follow: false,
+    coin: false,
     commentText: '',
     reason: str(plan?.reason),
     skippedReasons: skipped,
@@ -175,7 +181,7 @@ export async function executeSurfEngage(home, { digest, plan, options = {} } = {
     if (res) actions.favorite = true;
   }
   if (plan?.comment && plan.commentText) {
-    const scrub = sanitizeCommentText(plan.commentText);
+    const scrub = sanitizeCommentText(plan.commentText, ext.biliCommentMaxChars ?? 80);
     if (!scrub.ok) skipped.push(`comment:${scrub.reason}`);
     else {
       const res = await run('comment', { target, bvid, message: scrub.text });
@@ -187,6 +193,8 @@ export async function executeSurfEngage(home, { digest, plan, options = {} } = {
           bvid,
           rpid: res.rpid,
           videoId: bvid,
+          title: str(digest?.title),
+          commentText: scrub.text,
         }).catch(() => {});
       }
     }
@@ -197,8 +205,12 @@ export async function executeSurfEngage(home, { digest, plan, options = {} } = {
   } else if (plan?.follow && !mid) {
     skipped.push('follow:no-mid');
   }
+  if (plan?.coin) {
+    const res = await run('coin', { target, bvid, multiply: 1 });
+    if (res) actions.coin = true;
+  }
 
-  if (!actions.like && !actions.favorite && !actions.comment && !actions.follow && !skipped.length) {
+  if (!actions.like && !actions.favorite && !actions.comment && !actions.follow && !actions.coin && !skipped.length) {
     skipped.push(plan?.reason || 'no-engage');
   }
   return actions;

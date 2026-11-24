@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { appendJsonl, loadConfig, readJsonlTail, saveConfigAuto } from '../state.mjs';
 import { getDisplayName, getNotebookTitles, loadSoulmateState } from '../persona.mjs';
 import { listSessionEpisodes, listTrustItems, recordEpisode as recordEpisodeImpl, reflectToWiki } from '../memory-engine.mjs';
-import { getEngineSnapshot, runSubmissionGate } from '../layers/index.mjs';
+import { getEngineSnapshot } from '../layers/index.mjs';
 import { estimateTokens } from '../budget.mjs';
 import {
   composeDailyDiaryLetters,
@@ -20,19 +20,23 @@ import {
   pendingDiaryDateKeys,
   postDreamTargets,
   promisePatrolTargets,
-  shouldAutoSurf,
   shouldDream,
-  shouldRunWeeklyGate,
 } from '../proactive.mjs';
-import { runAutonomousSurfRound } from '../../soulmate-bili/index.mjs';
-import { createHostVisionSummarize } from '../../soulmate-bili/host-vision.mjs';
-import { refreshSurfKeywords, mergeSurfKeywords } from '../../soulmate-bili/keyword-learn.mjs';
+import { personaVoiceBrief } from '../persona-voice.mjs';
+import { createBiliLlmAdapters } from './bili-llm-adapter.mjs';
+import { createSurfRuntime } from './surf-runtime.mjs';
+import { refreshSurfKeywords } from '../../soulmate-bili/keyword-learn.mjs';
 import { runAutoReplyPatrol } from '../../soulmate-bili/reply-patrol.mjs';
 import { resolveLlmModel } from '../llm-model-pick.mjs';
-import { clampSurfMaxPick, resolveSurfIntervalMinutes } from '../surf-schedule.mjs';
 import { clip, errMsg, str } from '../small-utils.mjs';
 import { priceInfo } from './chat-home-runtime.mjs';
 import { createProactiveDistill } from './proactive-distill.mjs';
+import { createIntentRuntime } from './intent-runtime.mjs';
+import { createGrowthRuntime } from './growth-runtime.mjs';
+import { createImProactiveRuntime } from './im-proactive-runtime.mjs';
+import { createQqbotBridgeRuntime } from './qqbot-bridge-runtime.mjs';
+import { createOfficialQqSender } from './qq-official-send.mjs';
+import { createExperienceRuntime } from './experience-runtime.mjs';
 
 export function createProactiveRuntime({
   home,
@@ -42,12 +46,27 @@ export function createProactiveRuntime({
   usage,
   chatHome,
   cfg,
+  getService,
 }) {
   const { meteredCall, listHostModels, oneShotLlm, kindBudget } = usage;
   const { hostDeliverer, maybeCaptureSessionStars, chatHomeStatus, notePetSay } = chatHome;
 
   // Distillation pass + budget auto-off live in their own module.
   const { runDistillationCheck, maybeAutoOffLlm } = createProactiveDistill({ home, warn, pushEvent, usage, loadFactsForDream });
+  // Intent layer: when on, the schedule gate becomes an opportunity source and *she* decides.
+  const experience = createExperienceRuntime({ home, warn, pushEvent, usage });
+  const intent = createIntentRuntime({ home, warn, pushEvent, usage, chatHome, experienceBlock: experience.experienceBlock });
+  // Weekly gate + growth snapshot live in their own module (600-line assembly ceiling).
+  const growth = createGrowthRuntime({ home, warn });
+  const biliLlm = createBiliLlmAdapters({ home, usage });
+  const surf = createSurfRuntime({ home, warn, pushEvent, usage, chatHome, cfg, getService });
+  // Official QQ bot sessions → IM timeline + memory stars (the two worlds were split).
+  const qqbotBridge = createQqbotBridgeRuntime({ home, warn, pushEvent });
+  const imProactive = createImProactiveRuntime({
+    home, warn, pushEvent, usage, cfg,
+    officialSend: createOfficialQqSender({ bridge: qqbotBridge, cfg, warn }),
+    officialTargets: (opts) => qqbotBridge.officialSendTargets(opts),
+  });
 
   // Bookkeeping (`proactive.jsonl`) is the dedupe ledger: restarts must not re-greet, and a
   // silent gate must be explainable after the fact.
@@ -176,6 +195,8 @@ export function createProactiveRuntime({
         candidates: targets.length + sessionStars.length,
       };
     }
+    // Star-sea process: the night's work is visible while it happens.
+    pushEvent('memory-progress', { stage: 'dream', work: 'dream', count: targets.length + sessionStars.length });
 
     let digest = null;
     let via = 'template';
@@ -264,6 +285,7 @@ export function createProactiveRuntime({
       via,
     }).catch((err) => warn('dream ledger append failed', err));
     pushEvent('dream', { ids: [`wiki:${digest.slug}`], count: targets.length, via });
+    pushEvent('memory-progress', { stage: 'done', work: 'dream', slug: digest.slug, ids: [`wiki:${digest.slug}`] });
     return { ok: true, dream: true, slug: digest.slug, facts: targets.length, decision: decision.reason, via };
   }
 
@@ -296,6 +318,7 @@ export function createProactiveRuntime({
       warn('daily diary: session star scan failed', err);
     }
     const written = [];
+    if (pending.dates.length) pushEvent('memory-progress', { stage: 'diary', work: 'diary', count: pending.dates.length });
     let lastKey = str(conf.proactive?.lastDiaryDateKey);
     for (const dateKey of pending.dates) {
       const material = diaryMaterialForDate({
@@ -341,6 +364,7 @@ export function createProactiveRuntime({
     }
     if (written.length) {
       await saveConfigAuto(home, { proactive: { lastDiaryDateKey: lastKey } });
+      pushEvent('memory-progress', { stage: 'done', work: 'diary', ids: [] });
     }
     return { ok: true, wrote: written.length > 0, dates: written, reason: pending.reason };
   }
@@ -348,7 +372,7 @@ export function createProactiveRuntime({
   // v3 (§5): one patrol per local day. Overdue-by->3d promises become an ask that
   // bypasses the slot gate (a trust event, not small talk); due-today promises only
   // speak when the evening slot already opened.
-  async function runPromisePatrolIfDue({ conf, cfg, tz, at, plan }) {
+  async function runPromisePatrolIfDue({ conf, cfg, tz, at, plan, mute = false }) {
     if ((cfg.promisePatrol ?? true) === false) return { ok: true, ran: false, reason: 'disabled' };
     const { dateKey } = localClock(at, tz);
     if ((conf.proactive?.lastPromisePatrol ?? '') === dateKey) return { ok: true, ran: false, reason: 'already-today' };
@@ -357,8 +381,8 @@ export function createProactiveRuntime({
     await saveConfigAuto(home, { proactive: { lastPromisePatrol: dateKey } });
     if (!targets.length) return { ok: true, ran: true, targets: 0, speak: false };
     const ask = targets.find((t) => t.patrol === 'ask');
-    const speak = ask ? true : plan.speak === true && plan.kind === 'evening';
-    if (!speak) return { ok: true, ran: true, targets: targets.length, speak: false };
+    const speak = !mute && (ask ? true : plan.speak === true && plan.kind === 'evening');
+    if (!speak) return { ok: true, ran: true, targets: targets.length, speak: false, muted: mute };
     const target = ask ?? targets[0];
     const callUser = String(conf.persona?.callUser ?? '').trim() || '你';
     const text = ask
@@ -385,113 +409,6 @@ export function createProactiveRuntime({
     }).catch((err) => warn('promise patrol ledger append failed', err));
     pushEvent('promise-patrol', { ids: [target.id], ask: Boolean(ask) });
     return { ok: true, ran: true, targets: targets.length, speak: true, via: delivery.via, ask: Boolean(ask) };
-  }
-
-  // v3 (§7 T2): weekly clustering of undistilled facts → submission-gate candidates.
-  // Scheduled Bilibili patrol: read-only surf round on the auto-surf interval.
-  // Watching writes local notes + seen ledger only; sharing / writes stay opt-in elsewhere.
-  async function runAutoSurfIfDue({ conf, tz, at }) {
-    const ext = conf.extensions ?? {};
-    const decision = shouldAutoSurf({
-      nowMs: at,
-      tzOffsetMinutes: tz,
-      config: { ...ext, quietHours: conf.proactive?.quietHours ?? [] },
-      lastAutoSurfAt: ext.lastAutoSurfAt ?? '',
-    });
-    if (!decision.surf) return { ok: true, ran: false, reason: decision.reason };
-    const maxPick = clampSurfMaxPick(ext.biliAutoSurfMaxPick, resolveSurfIntervalMinutes(ext));
-    const deepWatch = ext.biliAutoSurfDeepWatch === true;
-    let keywordsRefresh = null;
-    try {
-      keywordsRefresh = await refreshSurfKeywords(home, {
-        nowMs: at,
-        oneShotLlm,
-        listHostModels,
-        sessionController: typeof chatHome.getSessionController === 'function'
-          ? chatHome.getSessionController
-          : undefined,
-      });
-    } catch (err) {
-      warn('surf keyword refresh failed', err);
-      keywordsRefresh = { ok: false, error: errMsg(err) };
-    }
-    const live = await loadConfig(home).catch(() => conf);
-    const kwExt = live?.extensions ?? ext;
-    const keywords = mergeSurfKeywords(
-      kwExt.biliKeywordsSeed?.length ? kwExt.biliKeywordsSeed : kwExt.biliKeywords,
-      kwExt.biliLearnedKeywords,
-    );
-    let res;
-    try {
-      const llmController = typeof chatHome.getSessionController === 'function'
-        ? chatHome.getSessionController()
-        : null;
-      const visionSummarize = createHostVisionSummarize({
-        controller: llmController,
-        chatHome,
-        fetchImpl: cfg?.biliFetch,
-        model: live?.extensions?.biliVisionModel || '',
-        soulmateRoot: home?.rootDir || '',
-        warn,
-      });
-      res = await runAutonomousSurfRound(
-        { home },
-        {
-          maxPick,
-          deepWatch,
-          keywords,
-          ...(cfg?.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
-          ...(cfg?.biliBaseUrl ? { baseUrl: cfg.biliBaseUrl } : {}),
-          ...(llmController ? { llmController } : {}),
-          ...(visionSummarize ? { visionSummarize } : {}),
-        }
-      );
-    } catch (err) {
-      res = { ok: false, error: errMsg(err) };
-    }
-    // Stamp the attempt even on failure so a broken network cannot retry every tick.
-    await saveConfigAuto(home, { extensions: { lastAutoSurfAt: new Date(at).toISOString() } });
-    await appendJsonl(home.proactiveLogPath, {
-      at: new Date(at).toISOString(),
-      dateKey: decision.dateKey,
-      kind: 'auto-surf',
-      speak: false,
-      reason: decision.reason,
-      delivered: res.ok ? 'watched' : 'failed',
-      picked: res.pickedCount ?? 0,
-      keywordsChanged: keywordsRefresh?.changed === true,
-      keywords: Array.isArray(keywordsRefresh?.keywords) ? keywordsRefresh.keywords.slice(0, 8) : undefined,
-    }).catch((err) => warn('auto-surf ledger append failed', err));
-    if (res.ok && (res.pickedCount ?? 0) > 0) {
-      pushEvent('video-surf', {
-        auto: true,
-        deepWatch,
-        pickedCount: res.pickedCount,
-        keywords: Array.isArray(keywords) ? keywords.slice(0, 8) : undefined,
-        videos: (res.videos || []).filter((v) => v.ok).slice(0, 3).map((v) => (
-          deepWatch
-            ? { title: v.title, worthScore: v.worthScore, depth: v.coverage?.depth, howIWatched: v.howIWatched }
-            : { title: v.title, worthScore: v.worthScore }
-        )),
-      });
-    }
-    return {
-      ok: res.ok !== false,
-      ran: true,
-      picked: res.pickedCount ?? 0,
-      reason: decision.reason,
-      error: res.error,
-      keywordsRefresh,
-    };
-  }
-
-  async function runWeeklyGateIfDue({ cfg, at }) {
-    const lastGateWeek = (await loadConfig(home)).proactive?.lastGateWeek ?? '';
-    const due = shouldRunWeeklyGate({ nowMs: at, config: cfg, lastGateWeek });
-    if (!due.run) return { ok: true, ran: false, reason: due.reason, week: due.week };
-    const res = await runSubmissionGate(home, { nowMs: at }).catch((err) => ({ ok: false, error: errMsg(err) }));
-    await saveConfigAuto(home, { proactive: { lastGateWeek: due.week } });
-    return { ok: res.ok !== false, ran: true, week: due.week, applied: res.applied ?? null, reason: res.reason ?? '' };
   }
 
   /**
@@ -521,8 +438,9 @@ export function createProactiveRuntime({
       persona: conf.persona,
     });
 
+    const intentOn = cfg.intentEnabled === true;
     let delivery = { ok: true, via: 'silent' };
-    if (plan.speak) {
+    if (plan.speak && !intentOn) {
       delivery = await deliverNudge(plan, {
         deliver: hostDeliverer(plan),
         // No host channel: the 3D home still shows the bubble, and the audit log records it.
@@ -533,21 +451,72 @@ export function createProactiveRuntime({
         delivery = { ok: false, via: 'silent', blocked: true, reason: delivery.reason };
       }
     }
-    await noteProactive(plan, delivery.via);
+    await noteProactive(plan, intentOn && plan.speak ? 'intent-source' : delivery.via);
 
     // Night dream: distill today's loose facts into one Wiki page while she "sleeps".
     const dream = await runDreamIfDue({ conf, cfg, tz, at, persona: conf.persona });
     // Daily diary: one letter per local day (catch-up fills missed yesterday/today).
     const diary = await runDailyDiaryIfDue({ conf, cfg, tz, at, persona: conf.persona });
-    const gate = await runWeeklyGateIfDue({ cfg, at });
+    const gate = await growth.runWeeklyGateIfDue({ cfg, at });
+    // Experience pass rides the weekly gate: her attempts × his responses → lessons.
+    let exp = { ok: true, ran: false, reason: 'gate-not-due' };
+    if (gate.ran) {
+      exp = await experience.runExperienceIfDue({ week: gate.week, at, conf }).catch((err) => {
+        warn('experience pass failed', err);
+        return { ok: false, ran: false, reason: 'error', error: errMsg(err) };
+      });
+    }
     // v3 (§5/§7): the promise patrol and the weekly distillation check ride this tick.
-    const patrol = await runPromisePatrolIfDue({ conf, cfg, tz, at, plan });
-    const autoSurf = await runAutoSurfIfDue({ conf, tz, at });
+    // With intent on, the patrol still runs its ledger bookkeeping but never speaks —
+    // due promises reach her as opportunities and the wording is hers.
+    const patrol = await runPromisePatrolIfDue({ conf, cfg, tz, at, plan, mute: intentOn });
+    const autoSurf = await surf.runAutoSurfIfDue({ conf, tz, at });
+    // Intent pass rides after surf so this round's finds are immediate opportunities.
+    let intentRes = { ok: true, ran: false, reason: 'disabled' };
+    if (intentOn) {
+      try {
+        intentRes = await intent.runIntentIfDue({
+          conf,
+          cfg,
+          tz,
+          at,
+          plan,
+          surfResult: autoSurf?.ran
+            ? { ran: true, picked: autoSurf.picked ?? 0, videos: autoSurf.surfVideos ?? [] }
+            : null,
+        });
+      } catch (err) {
+        intentRes = { ok: false, ran: false, reason: 'error', error: errMsg(err) };
+        warn('intent pass failed', err);
+      }
+    }
+    // IM proactive: whitelist-gated first messages, her angle when intent produced one.
+    let imRes = { ok: true, ran: false, reason: 'disabled' };
+    try {
+      imRes = await imProactive.runImProactiveIfDue({
+        at,
+        angle: intentRes?.ran && intentRes.action && intentRes.action !== 'silent' && intentRes.action !== 'defer'
+          ? str(intentRes.angle || intentRes.reason)
+          : '',
+      });
+    } catch (err) {
+      imRes = { ok: false, ran: false, reason: 'error', error: errMsg(err) };
+      warn('im proactive pass failed', err);
+    }
+    let qqBridgeRes = { ok: true, ran: false, reason: 'skipped' };
+    try {
+      qqBridgeRes = await qqbotBridge.runQqbotBridgeIfEnabled();
+    } catch (err) {
+      qqBridgeRes = { ok: false, ran: false, reason: 'error', error: errMsg(err) };
+      warn('qqbot bridge pass failed', err);
+    }
     let autoReply = { ok: true, ran: false, reason: 'skipped' };
     try {
       autoReply = await runAutoReplyPatrol(home, {
         nowMs: at,
         ...(cfg?.biliFetch ? { fetchImpl: cfg.biliFetch } : {}),
+        voiceOf: (persona) => personaVoiceBrief(persona, state),
+        authorReply: biliLlm.authorReply,
       });
     } catch (err) {
       autoReply = { ok: false, error: errMsg(err) };
@@ -571,8 +540,8 @@ export function createProactiveRuntime({
       return { ok: false, error: errMsg(err) };
     });
 
-    return { ok: true, at: new Date(at).toISOString(), plan, delivery, dream, diary, gate, patrol, autoSurf, autoReply, distill, sessionStars, ...priceInfo(at) };
+    return { ok: true, at: new Date(at).toISOString(), plan, delivery, dream, diary, gate, patrol, autoSurf, autoReply, distill, sessionStars, intent: intentRes, imProactive: imRes, qqbotBridge: qqBridgeRes, experience: exp, ...priceInfo(at) };
   }
 
-  return { runProactiveTick, proactiveRecent, priceInfo };
+  return { runProactiveTick, proactiveRecent, priceInfo, syncQqbotBridge: () => qqbotBridge.runQqbotBridgeIfEnabled() };
 }

@@ -28,10 +28,12 @@ import { errMsg } from './small-utils.mjs';
 import { makeToolFactory } from './tool-cards.mjs';
 import { mountHttp } from './http-plumbing.mjs';
 import { createPetWindowRuntime } from './runtime/pet-window-runtime.mjs';
+import { createNeuronWindowRuntime } from './runtime/neuron-window-runtime.mjs';
 import { createCloudGateway } from './cloud-gateway.mjs';
 import { createPromptEngine } from './runtime/prompt-engine.mjs';
 import { createMemoryService } from './runtime/memory-service.mjs';
 import { createUsageRuntime } from './runtime/usage-runtime.mjs';
+import { createDesktopModelSelection } from './runtime/desktop-model-selection.mjs';
 import { createChatHomeRuntime } from './runtime/chat-home-runtime.mjs';
 import { deliverViaPrompt } from './chat-home.mjs';
 import { createProactiveRuntime } from './runtime/proactive-runtime.mjs';
@@ -87,7 +89,12 @@ export function apply(ctx, config = {}) {
   // Bare/test hosts without .get expose services as plain properties instead.
   const optional = (name) => (typeof ctx.get === 'function' ? ctx.get(name) : ctx[name]);
   const sessionController = () => optional('sessionController');
-  const getLlm = () => optional('llm');
+  // `llm` is not in this plugin's inject list, so ctx.get('llm') on a live Cordis ctx
+  // silently returns undefined — that is why every internal one-shot died with
+  // "no llm one-shot available" (139 failed IM proactive attempts on a real install).
+  // The inject callback below captures the resolved service into this slot instead.
+  let llmService = null;
+  const getLlm = () => llmService || optional('llm');
 
   // ------------------------------------------------------------------ runtime domains
   const promptEngine = createPromptEngine({ home, warn, sessionController, pushEvent });
@@ -105,7 +112,9 @@ export function apply(ctx, config = {}) {
     sessionController,
   });
 
-  const usage = createUsageRuntime({ home, cfg, warn, pushEvent, sessionController, getLlm });
+  const desktopSelection = createDesktopModelSelection({ ctx, warn, sessionController });
+  track(() => desktopSelection.dispose);
+  const usage = createUsageRuntime({ home, cfg, warn, pushEvent, sessionController, getLlm, desktopSelection });
 
   chatHome = createChatHomeRuntime({
     home, ctx, sessionController, promptEngine, pushEvent, warn,
@@ -136,7 +145,9 @@ export function apply(ctx, config = {}) {
   // Mirror EVERY DSH conversation reply → activity feed → Windows toast.
   track(() => chatHome.startReplyToastWatch());
 
-  const proactive = createProactiveRuntime({ home, warn, pushEvent, promptEngine, usage, chatHome, cfg });
+  // getService is a late-bound lookup: `service` is assembled below this line, and the
+  // surf runtime only needs it when a tick actually fires.
+  const proactive = createProactiveRuntime({ home, warn, pushEvent, promptEngine, usage, chatHome, cfg, getService: () => service });
 
   const getSummary = createSummaryProvider({ home, warn, promptEngine, memory, eventSeq: () => eventSeq });
 
@@ -150,6 +161,7 @@ export function apply(ctx, config = {}) {
     resetPersona: memory.resetPersona,
     retainFact: memory.retainFact,
     recordEpisode: memory.recordEpisode,
+    upsertSessionEpisode: memory.upsertSessionEpisode,
     recall: memory.recall,
     reflect: memory.reflect,
     forget: memory.forget,
@@ -296,6 +308,13 @@ export function apply(ctx, config = {}) {
     execPath: cfg.updateExecPath,
   });
 
+  // 星空独立大窗:手动开(面板放大按钮),关窗即收, bounds 记忆。与桌宠窗互不干扰。
+  const neuronWindow = createNeuronWindowRuntime({
+    home, routes: [], ready: readyPromise, warn,
+    spawnImpl: cfg.petWindowSpawnImpl, electronPath: cfg.petWindowElectronPath,
+  });
+  track(() => neuronWindow.dispose);
+
   const routes = buildRoutes({
     selfUpdate,
     home,
@@ -317,6 +336,7 @@ export function apply(ctx, config = {}) {
     chatHome,
     askHomeAgent,
     petWindowStatus: () => (petWindow ? petWindow.status() : null),
+    neuronWindow,
     evolvePersona: memory.evolvePersona,
     video: { videoWatch: toolSet.videoWatch, videoSurf: toolSet.videoSurf, videoShare: toolSet.videoShare, biliAuthManage: toolSet.biliAuthManage },
     imNet: toolSet.imNet,
@@ -337,6 +357,20 @@ export function apply(ctx, config = {}) {
     else warn('webServer unavailable — HTTP routes not mounted (widget will show 未连接)');
   }
 
+  // Capture the host llm service the Cordis way: services this plugin does not declare
+  // in `inject` are invisible to ctx.get on a live context (strict get returns
+  // undefined). The array form waits until the service exists, then hands us a context
+  // that can read it — same pattern as the webServer mount above. Optional child fiber:
+  // the parent plugin stays active on hosts without an llm service (tests / embedding).
+  if (typeof ctx.inject === 'function') {
+    track(() =>
+      ctx.inject(['llm'], (llmCtx) => {
+        llmService = (typeof llmCtx.get === 'function' ? llmCtx.get('llm') : llmCtx.llm) ?? null;
+        return () => { llmService = null; };
+      })
+    );
+  }
+
   // ------------------------------------------------------------------ desktop window pet (config-gated)
   // 独立透明窗口形态:与页内 widget 共用同一套浏览器引擎与路由,开关 pet.windowEnabled。
   const petWindow = createPetWindowRuntime({
@@ -345,6 +379,7 @@ export function apply(ctx, config = {}) {
     spawnImpl: cfg.petWindowSpawnImpl, electronPath: cfg.petWindowElectronPath,
   });
   petWindow.begin();
+  neuronWindow.setRoutes(routes);
   // track 会立即执行 fn 取 disposer:这里返回 dispose 函数本身, teardown 时才调用
   track(() => petWindow.dispose);
   selfUpdate.begin();

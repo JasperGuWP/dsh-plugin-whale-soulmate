@@ -148,6 +148,7 @@ function draftFromSummary(snap) {
     name: typeof persona.name === 'string' ? persona.name : '',
     callUser: typeof persona.callUser === 'string' ? persona.callUser : '',
     selfRef: typeof persona.selfRef === 'string' ? persona.selfRef : '',
+    city: typeof persona.city === 'string' ? persona.city : '',
     customBody: typeof persona.customBody === 'string' ? persona.customBody : '',
     gender,
     preset: typeof persona.preset === 'string' ? persona.preset : 'rice-whale',
@@ -255,8 +256,28 @@ function draftFromSummary(snap) {
         : ['AI', '编程', '科技'],
       biliAutoEngageEnabled: !(config.extensions && config.extensions.biliAutoEngageEnabled === false),
       biliAutoReplyEnabled: !(config.extensions && config.extensions.biliAutoReplyEnabled === false),
-      biliAutoReplyMaxRounds: clampNum(Number(config.extensions && config.extensions.biliAutoReplyMaxRounds) || 3, 2, 3),
+      biliAutoReplyMaxRounds: clampNum(Number(config.extensions && config.extensions.biliAutoReplyMaxRounds) || 2, 1, 5),
       biliFollowDedupDays: clampNum(Number(config.extensions && config.extensions.biliFollowDedupDays) || 7, 1, 30),
+      biliCommentMaxChars: clampNum(Number(config.extensions && config.extensions.biliCommentMaxChars) || 80, 10, 500),
+      biliCommentDailyCap: clampNum(Number.isFinite(Number(config.extensions && config.extensions.biliCommentDailyCap)) ? Number(config.extensions.biliCommentDailyCap) : 5, 0, 30),
+      biliLikeDailyCap: clampNum(Number.isFinite(Number(config.extensions && config.extensions.biliLikeDailyCap)) ? Number(config.extensions.biliLikeDailyCap) : 10, 0, 50),
+      biliFavoriteDailyCap: clampNum(Number.isFinite(Number(config.extensions && config.extensions.biliFavoriteDailyCap)) ? Number(config.extensions.biliFavoriteDailyCap) : 10, 0, 50),
+      biliFollowDailyCap: clampNum(Number.isFinite(Number(config.extensions && config.extensions.biliFollowDailyCap)) ? Number(config.extensions.biliFollowDailyCap) : 2, 0, 20),
+      biliCoinEnabled: !!(config.extensions && config.extensions.biliCoinEnabled),
+      biliCoinDailyCap: clampNum(Number.isFinite(Number(config.extensions && config.extensions.biliCoinDailyCap)) ? Number(config.extensions.biliCoinDailyCap) : 2, 0, 10),
+      biliEngageLlmEnabled: !(config.extensions && config.extensions.biliEngageLlmEnabled === false),
+      imProactiveEnabled: !!(config.extensions && config.extensions.imProactiveEnabled),
+      imProactiveWhitelist: (config.extensions && Array.isArray(config.extensions.imProactiveWhitelist))
+        ? config.extensions.imProactiveWhitelist.filter((e) => e && typeof e === 'object').map((e) => Object.assign({}, e))
+        : [],
+      imProactivePerConvDaily: clampNum(Number(config.extensions && config.extensions.imProactivePerConvDaily) || 2, 1, 10),
+      imProactiveDailyTotal: clampNum(Number(config.extensions && config.extensions.imProactiveDailyTotal) || 4, 1, 20),
+      imProactiveMinGapMinutes: clampNum(Number(config.extensions && config.extensions.imProactiveMinGapMinutes) || 90, 10, 720),
+      imProactiveMaxChars: clampNum(Number(config.extensions && config.extensions.imProactiveMaxChars) || 120, 10, 500),
+      imOwnerWeixin: String((config.extensions && config.extensions.imOwnerWeixin) || ''),
+      imOwnerQq: String((config.extensions && config.extensions.imOwnerQq) || ''),
+      imOwnerFeishu: String((config.extensions && config.extensions.imOwnerFeishu) || ''),
+      imOwnerDingtalk: String((config.extensions && config.extensions.imOwnerDingtalk) || ''),
     },
     // Proactive scheduler: mirrored straight from config so the switches show what the
     // node half is actually running with, not a separate front-end-only copy.
@@ -273,6 +294,11 @@ function draftFromSummary(snap) {
       distillLlmEnabled: !!(config.proactive && config.proactive.distillLlmEnabled),
       distillLlmDailyCap: clampNum(Number(config.proactive && config.proactive.distillLlmDailyCap) || 200000, 0, 50_000_000),
       distillLlmModel: (config.proactive && typeof config.proactive.distillLlmModel === 'string') ? config.proactive.distillLlmModel : '',
+      intentEnabled: !!(config.proactive && config.proactive.intentEnabled),
+      intentLlmDailyCap: clampNum(Number(config.proactive && config.proactive.intentLlmDailyCap) || 60000, 0, 50_000_000),
+      intentLlmModel: (config.proactive && typeof config.proactive.intentLlmModel === 'string') ? config.proactive.intentLlmModel : '',
+      intentMaxActsPerDay: clampNum(Number(config.proactive && config.proactive.intentMaxActsPerDay) || 3, 1, 8),
+      experienceEnabled: !(config.proactive && config.proactive.experienceEnabled === false),
     },
     chatHome: {
       autoMemory: !(config.chatHome && config.chatHome.autoMemory === false),
@@ -296,7 +322,7 @@ function draftFromSummary(snap) {
 function draftSignature(draft) {
   if (!draft) return ''
   return JSON.stringify({
-    name: draft.name, callUser: draft.callUser, selfRef: draft.selfRef, customBody: draft.customBody,
+    name: draft.name, callUser: draft.callUser, selfRef: draft.selfRef, city: draft.city, customBody: draft.customBody,
     gender: draft.gender, preset: draft.preset, traitScheme: draft.traitScheme, traits: draft.traits, mbti: draft.mbti,
     appearance: draft.appearance, pet: draft.pet, notify: draft.notify, extensions: draft.extensions,
     proactive: draft.proactive,

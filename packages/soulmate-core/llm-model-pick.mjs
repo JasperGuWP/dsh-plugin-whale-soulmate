@@ -18,6 +18,22 @@ function modelId(m) {
   return str(m?.id || m?.model || m?.name).trim();
 }
 
+/**
+ * Non-chat models must never be auto-picked for text generation: a real catalog
+ * carries tts / asr / image / embedding / realtime routes, and "cheapest flash"
+ * happily chose one → the stream finished with zero text blocks, every attempt.
+ * Explicit user preference still wins (they may know a route we don't).
+ */
+const NON_CHAT = /(tts|asr|audio|omni|realtime|livetranslate|embedding|image|wan2|z-image|qvq|ocr|-vl-|vl-flash|vl-plus|math|s2s|live-translate|gui-plus|deep-research|deep-search)/i;
+
+export function isChatModel(m) {
+  const id = modelId(m);
+  if (!id) return false;
+  if (m?.modality && m.modality !== 'text' && m.modality !== 'chat') return false;
+  if (Array.isArray(m?.capabilities) && m.capabilities.length && !m.capabilities.includes('chat') && !m.capabilities.includes('text')) return false;
+  return !NON_CHAT.test(id);
+}
+
 function modelLabel(m) {
   return str(m?.displayName || m?.title || m?.name || modelId(m)).trim() || modelId(m);
 }
@@ -87,7 +103,8 @@ export function resolveLlmModel({ models = [], preferredId = '' } = {}) {
     const hit = ranked.find((m) => m._pickId === want);
     if (hit) return { id: hit._pickId, label: hit._pickLabel, auto: false, model: hit };
   }
-  const best = ranked[0] || null;
+  const chatRanked = ranked.filter(isChatModel);
+  const best = chatRanked[0] || null;
   if (!best) return { id: '', label: '', auto: true, model: null };
   return { id: best._pickId, label: best._pickLabel, auto: !want || want !== best._pickId, model: best };
 }

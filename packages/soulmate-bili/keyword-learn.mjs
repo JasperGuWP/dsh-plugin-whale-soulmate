@@ -20,10 +20,24 @@ const STOP = new Set([
   'soulmate', 'session', 'token', 'api', 'prompt', 'assistant', 'user', 'model',
   'soulmate-wake', 'wake', 'current', 'describes', 'information', 'of', 'your',
   'null', 'true', 'false', 'undefined', 'todo', 'task', 'context', 'message',
+  // 提示词/时间戳碎片:真实安装里被学成关键词,搜出去全是噪声
+  '标题', '请根据', '你是视频内容分析', '视频内容分析', 'mm', 'ss', 'hh', '时间线',
+  '请', '根据', '以下', '输出', '分析', '画面', '字幕', '弹幕', '总结', '观看', '助手',
 ]);
 
 /** 明显是内部字段/URL 片段的 token 直接丢弃。 */
 const JUNK = /(system-reminder|worthscore|bvid|^https?:?$|www\.|\.com\b|\.cn\b|\/)/i;
+
+/**
+ * Host/agent plumbing that must never feed interest learning: system reminders,
+ * time-sampling notices, skill listings, our own wake/vision prompts. A real install
+ * learned 「你是视频内容分析」「请根据」「mm」「ss」 from exactly these lines.
+ */
+const PLUMBING = /<system-reminder>|<available_skills>|Time sampled while preparing|Browser time zone|soulmate-wake|你是视频内容分析|请根据以下|【Soulmate 插件|勿复述|\[Chat history (begins|ends)\]|\[Current message\]/;
+
+export function isPlumbingText(text) {
+  return PLUMBING.test(str(text));
+}
 
 const INTEREST_CUE = /想看|想了解|感兴趣|最近在看|推荐(?:个|几个|一下)?|搜一下|关于|讲讲|聊聊|关注|学习|入门|教程|新闻|科技|编程|AI|装机|硬件|数码/;
 
@@ -105,7 +119,7 @@ export function proposeSurfKeywords({
   ];
   for (const text of chats) {
     const t = str(text);
-    if (!t.trim()) continue;
+    if (!t.trim() || isPlumbingText(t)) continue;
     const w = INTEREST_CUE.test(t) ? 5 : 1.2;
     for (const k of extractKeywordsFromText(t)) bump(k, w);
     // Whole short phrases after cues:「想看量子计算」
@@ -151,9 +165,10 @@ function userLinesFromEpisodeBody(body) {
   const out = [];
   for (const line of str(body).split(/\n+/)) {
     const m = line.match(/^[-\s]*(?:你|搭档|用户|User)\s*[：:]\s*(.+)$/i);
-    if (m && m[1].trim()) out.push(m[1].trim());
+    if (m && m[1].trim() && !isPlumbingText(m[1])) out.push(m[1].trim());
   }
-  if (!out.length && str(body).trim()) out.push(str(body).slice(0, 240));
+  const whole = str(body).trim();
+  if (!out.length && whole && !isPlumbingText(whole)) out.push(whole.slice(0, 240));
   return out;
 }
 

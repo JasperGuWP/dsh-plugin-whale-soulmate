@@ -3,6 +3,7 @@ import { loadConfig } from '../soulmate-core/state.mjs';
 import { patchSurfLogActions } from '../soulmate-core/surf-log.mjs';
 import { inRanges, localClock } from '../soulmate-core/proactive.mjs';
 import { sanitizeCommentText, decideSurfEngageHeuristic } from './engage.mjs';
+import { composeThreadReplyPrompt, parseAuthoredText } from './engage-brain.mjs';
 import { biliWriteAction } from './write-actions.mjs';
 import { cookieFromCredentials } from './auth/credentials.mjs';
 import { readCommentLedger, writeCommentLedger } from './comment-ledger.mjs';
@@ -57,7 +58,8 @@ export async function runAutoReplyPatrol(home, options = {}) {
     return { ok: true, ran: false, reason: 'quiet-hours' };
   }
 
-  const maxRounds = Math.min(3, Math.max(2, Math.floor(num(ext.biliAutoReplyMaxRounds, 3))));
+  const maxRounds = Math.min(5, Math.max(1, Math.floor(num(ext.biliAutoReplyMaxRounds, 2))));
+  const maxChars = Math.min(500, Math.max(10, Math.floor(num(ext.biliCommentMaxChars, 80))));
   const ledger = await readCommentLedger(home);
   const open = ledger.threads.filter((t) => !t.closed && num(t.rounds) < maxRounds);
   if (!open.length) return { ok: true, ran: false, reason: 'none' };
@@ -111,10 +113,40 @@ export async function runAutoReplyPatrol(home, options = {}) {
         break;
       }
 
-      let text = plan.commentText || '嗯，看到了。';
-      if (/谢谢|感谢/.test(reply.message)) text = '不客气～';
-      else if (reply.message.length < 40) text = clipReply(`收到啦`);
-      const scrub = sanitizeCommentText(text);
+      // Author the reply in character, actually reading what they said. The old
+      // regex-templates ("谢谢→不客气～") ignored the content entirely; LLM first,
+      // template only as a soft fallback when no authoring channel exists.
+      let text = '';
+      if (ext.biliEngageLlmEnabled !== false && typeof options.authorReply === 'function') {
+        try {
+          const prompt = composeThreadReplyPrompt({
+            threadTitle: thread.title || thread.bvid,
+            theirReply: reply.message,
+            myComment: thread.commentText || '',
+            persona: conf.persona,
+            voice: typeof options.voiceOf === 'function' ? options.voiceOf(conf.persona) : '',
+            maxChars,
+            round: num(thread.rounds) + 1,
+            maxRounds,
+          });
+          const raw = await options.authorReply({ prompt, kind: 'engage-llm' });
+          const parsed = parseAuthoredText(raw, { maxChars });
+          if (!parsed.ok) {
+            thread.closed = true;
+            thread.closeReason = parsed.reason === 'declined' ? 'she-declined' : parsed.reason;
+            break;
+          }
+          text = parsed.text;
+        } catch {
+          // fall through to template
+        }
+      }
+      if (!text) {
+        text = plan.commentText || '嗯，看到了。';
+        if (/谢谢|感谢/.test(reply.message)) text = '不客气～';
+        else if (reply.message.length < 40) text = clipReply(`收到啦`);
+      }
+      const scrub = sanitizeCommentText(text, maxChars);
       if (!scrub.ok) {
         thread.closed = true;
         thread.closeReason = scrub.reason;

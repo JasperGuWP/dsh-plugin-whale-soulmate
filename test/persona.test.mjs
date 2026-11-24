@@ -602,3 +602,34 @@ test('persona: gender null skips romance catchphrase dump; gendered uses compani
   );
   assert.ok(!nullAnchor.includes('口吻样例'), 'gender null drift must not dump catchphrase samples');
 });
+
+test('persona: idle time restores energy (+8/h up to 90), feeding still tops up', async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { resolveSoulmateHome, atomicWriteJson } = await import('../packages/soulmate-core/state.mjs');
+  const { loadSoulmateState } = await import('../packages/soulmate-core/persona.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'sm-energy-'));
+  try {
+    const home = resolveSoulmateHome(join(dir, 'home'));
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(home.rootDir, { recursive: true });
+    const t0 = Date.parse('2026-11-24T00:00:00Z');
+    await atomicWriteJson(home.statePath, {
+      mood: 'focused', energy: 10, affinity: 100, interactionCount: 20,
+      lastInteractionAt: new Date(t0).toISOString(),
+      energyRegenAt: new Date(t0).toISOString(),
+    });
+    // 4 idle hours → +32, capped path not hit
+    const s1 = await loadSoulmateState(home, t0 + 4 * 3600_000);
+    assert.equal(s1.energy, 42);
+    // re-read at the same instant does not double-count
+    const s2 = await loadSoulmateState(home, t0 + 4 * 3600_000);
+    assert.equal(s2.energy, 42);
+    // long idle caps at 90, not 100 — feeding remains meaningful
+    const s3 = await loadSoulmateState(home, t0 + 48 * 3600_000);
+    assert.equal(s3.energy, 90);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

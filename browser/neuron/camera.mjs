@@ -2,9 +2,10 @@
 // to pin it, double-click a star to fly to it, double-click space to come home.
 // One view per canvas, kept in a WeakMap.
 const DEFAULT_VIEW = {
-  yaw: -0.35,
-  pitch: 0.16,
-  zoom: 1.05,
+  yaw: -0.9,
+  // A flattened spiral needs a real tilt to read as a disc; 0.16 was nearly edge-on.
+  pitch: 0.9,
+  zoom: 1.55,
   // Pan is a screen-space offset applied after projection. Without it the camera could
   // only ever look at the world origin, so "zoom in on that memory" was impossible.
   panX: 0,
@@ -29,7 +30,7 @@ const neuronViews = new WeakMap()
 function resetView(view) {
   view.yaw = DEFAULT_VIEW.yaw
   view.pitch = DEFAULT_VIEW.pitch
-  view.zoom = 1
+  view.zoom = DEFAULT_VIEW.zoom
   view.panX = 0
   view.panY = 0
   view.pinned = null
@@ -37,6 +38,8 @@ function resetView(view) {
   view.vy = 0
   view.vp = 0
   view.flying = null
+  // Allow auto-framing again after the user comes home.
+  view.userFramed = false
 }
 
 function neuronViewOf(canvas) {
@@ -126,6 +129,7 @@ function bindNeuronInput(canvas, view) {
   const down = (event) => {
     // Any manual drag takes the camera back from the animation, otherwise the two fight.
     view.flying = null
+    view.userFramed = true
     drag = { x: event.clientX, y: event.clientY, moved: 0 }
     canvas.setPointerCapture && canvas.setPointerCapture(event.pointerId)
     canvas.style.cursor = 'grabbing'
@@ -160,6 +164,7 @@ function bindNeuronInput(canvas, view) {
     event.preventDefault()
     // Zooming by hand cancels a flight in progress.
     view.flying = null
+    view.userFramed = true
     const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.zoom * (event.deltaY > 0 ? 0.92 : 1.08)))
     const f = next / view.zoom
     if (f === 1) return
@@ -227,7 +232,23 @@ function makeProjector(view, w, h) {
   }
 }
 
+/**
+ * Zoom that frames the living sky so it fills ~80% of the shorter canvas edge.
+ * `coreExtent` is world-space radius of theme/fact/diary stars (not private/far cloud).
+ */
+function fitOverviewZoom(coreExtent, w, h) {
+  const extent = Math.max(4, Number(coreExtent) || 8)
+  const short = Math.min(w, h)
+  // screenR ≈ extent * short * 1.4 * zoom / BASE_CAM_Z  (see makeProjector)
+  // 0.46 fills the card without clipping flares; card aspect is wide so use short edge.
+  const target = short * 0.46
+  const perZoom = extent * short * 1.4 / BASE_CAM_Z
+  if (!(perZoom > 0) || !(short > 0)) return DEFAULT_VIEW.zoom
+  const z = target / perZoom
+  return Math.min(3.2, Math.max(1.35, z))
+}
+
 module.exports = {
   DEFAULT_VIEW, MIN_ZOOM, MAX_ZOOM, FLY_ZOOM, neuronViews, neuronViewOf,
-  resetView, pickNode, flyTo, stepFly, makeProjector, CAM_Z,
+  resetView, pickNode, flyTo, stepFly, makeProjector, CAM_Z, BASE_CAM_Z, fitOverviewZoom,
 }

@@ -817,7 +817,7 @@ test('im tools & routes: 10 built-in tools, manage tool actions, config validati
     { [`GET ${WX}/ilink/bot/get_bot_qrcode`]: { ret: 0, qrcode: 'QRX', qrcode_img_content: 'img' } },
     async (ctx) => {
       const { registeredTools, routes } = ctx;
-      assert.equal(registeredTools.size, 14, '10 v1 tools + bili_manage + bili_action + 2 v3 trust tools');
+      assert.equal(registeredTools.size, 15, '10 v1 tools + bili_manage + bili_action + 2 v3 trust tools + weather');
     assert.ok(registeredTools.has('soulmate_memory_promise'));
       assert.ok(registeredTools.has('soulmate_memory_resolve_conflict'));
       for (const name of ['soulmate_im_send', 'soulmate_im_manage']) assert.ok(registeredTools.has(name));

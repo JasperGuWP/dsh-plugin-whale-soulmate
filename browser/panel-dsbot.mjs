@@ -1,13 +1,16 @@
-// DsBot tab — 已接通平台（当前：微信）。
+// DsBot tab — 已接通平台：微信 iLink + 官方 QQ Bot（随包附带）。
 
 const React = require('react')
 const h = React.createElement
 const { api } = require('./util.mjs')
+const { QqBotColumn } = require('./panel-qqbot.mjs')
+const { imProactiveSection } = require('./panel-engage-quota.mjs')
 
 const QR_POLL_MS = 1500
 
 const PLATFORMS = [
   { id: 'weixin', label: '微信' },
+  { id: 'qq', label: 'QQ' },
 ]
 
 function statusLabel(status) {
@@ -40,7 +43,7 @@ function shortPeer(id) {
   return s.slice(0, 8) + '…' + s.slice(-6)
 }
 
-function DsBotCard() {
+function DsBotCard({ ext, patchExtensions } = {}) {
   const [platform, setPlatform] = React.useState('weixin')
   const [status, setStatus] = React.useState(null)
   const [busy, setBusy] = React.useState(false)
@@ -48,6 +51,7 @@ function DsBotCard() {
   const [enabled, setEnabled] = React.useState(false)
   const [sendText, setSendText] = React.useState('')
   const [openWx, setOpenWx] = React.useState(false)
+  const [openQq, setOpenQq] = React.useState(false)
   const [qr, setQr] = React.useState(null)
   const [contacts, setContacts] = React.useState([])
   const [peer, setPeer] = React.useState('')
@@ -68,10 +72,14 @@ function DsBotCard() {
     setEnabled(!!wx.enabled)
   }, [])
 
+  // The timeline follows the platform tab: QQ conversations (bridged from the official
+  // bot) deserve the same bubble history as WeChat — the panel used to hard-code weixin.
+  // Exclusive view: the open column IS the platform (no separate state to disagree).
+  const chatPlatform = openQq ? 'qq' : 'weixin';
   const loadChat = React.useCallback(async (nextPeer, { before } = {}) => {
     setChatBusy(true)
     try {
-      const q = new URLSearchParams({ platform: 'weixin', limit: '50' })
+      const q = new URLSearchParams({ platform: chatPlatform, limit: '50' })
       if (nextPeer) q.set('peer', nextPeer)
       if (before) q.set('before', before)
       const res = await api('im/chat?' + q.toString())
@@ -90,12 +98,19 @@ function DsBotCard() {
     } finally {
       setChatBusy(false)
     }
-  }, [])
+  }, [chatPlatform])
 
   React.useEffect(() => {
     refresh().catch(() => {})
-    loadChat('').catch(() => {})
   }, [refresh]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The timeline follows the platform tab: switching to QQ must reload QQ contacts.
+  // (The earlier restore lost this effect — QQ tab always showed weixin's empty list.)
+  React.useEffect(() => {
+    setPeer('')
+    setMessages([])
+    loadChat('').catch(() => {})
+  }, [chatPlatform, loadChat])
 
   React.useEffect(() => {
     if (!threadRef.current) return
@@ -255,23 +270,70 @@ function DsBotCard() {
   const wx = (status && status.platforms && status.platforms.weixin) || {}
   const loggedIn = !!wx.configured
 
-  const platformCols = PLATFORMS.length > 1
-    ? h('div', {
-      key: 'cols',
-      className: 'sm-dsbot-platforms',
-      role: 'tablist',
-      'aria-label': 'DsBot 平台',
-    }, PLATFORMS.map((p) => h('button', {
-      key: p.id,
-      type: 'button',
-      role: 'tab',
-      'aria-selected': platform === p.id ? 'true' : 'false',
-      className: 'sm-dsbot-plat' + (platform === p.id ? ' on' : ''),
-      onClick: () => setPlatform(p.id),
-    }, [
-      h('span', { key: 'badge', className: 'sm-dsbot-plat-badge' }, p.label),
-    ])))
-    : null
+  // Shared bubble timeline: WeChat AND QQ (bridged official-bot conversations) get the
+  // same history view; the platform tab decides whose conversations load.
+  const chatTimeline = h('div', { key: 'chat', className: 'sm-dsbot-chat', 'data-testid': 'dsbot-chat', 'data-platform': chatPlatform }, [
+    h('aside', { key: 'list', className: 'sm-dsbot-peers' }, [
+      h('div', { key: 'ph', className: 'sm-dsbot-peers-head' }, chatPlatform === 'qq' ? 'QQ 会话' : '会话'),
+      contacts.length
+        ? contacts.map((c) => h('button', {
+          key: c.peerId,
+          type: 'button',
+          className: 'sm-dsbot-peer' + (peer === c.peerId ? ' on' : ''),
+          onClick: () => selectPeer(c.peerId),
+        }, [
+          h('span', { key: 'n', className: 'sm-dsbot-peer-name' }, shortPeer(c.peerLabel || c.peerId)),
+          h('span', { key: 't', className: 'sm-dsbot-peer-time' }, formatTime(c.lastAt)),
+          h('span', { key: 'p', className: 'sm-dsbot-peer-preview' }, c.lastText || ''),
+        ]))
+        : h('p', { key: 'none', className: 'sm-panel-muted', style: { padding: '8px' } },
+          chatPlatform === 'qq' ? '暂无 QQ 记录；官方 QQ 对话由桥接每 2 分钟同步进来。' : '暂无会话'),
+    ]),
+    h('section', { key: 'thread', className: 'sm-dsbot-thread' }, [
+      h('div', { key: 'th', className: 'sm-dsbot-thread-head' },
+        peer ? shortPeer((contacts.find((c) => c.peerId === peer) || {}).peerLabel || peer) : '选择左侧会话'),
+      peer ? h('button', {
+        key: 'older',
+        type: 'button',
+        className: 'sm-btn sm-dsbot-load-older',
+        disabled: chatBusy || !messages.length,
+        onClick: () => loadChat(peer, { before: messages[0] && messages[0].at }),
+      }, '加载更早') : null,
+      h('div', { key: 'msgs', className: 'sm-dsbot-msgs', ref: threadRef },
+        peer
+          ? (messages.length
+            ? messages.map((m) => h('div', {
+              key: m.id,
+              className: 'sm-dsbot-bubble-row ' + (m.role === 'bot' ? 'bot' : 'user'),
+            }, [
+              h('div', { key: 'b', className: 'sm-dsbot-bubble' }, m.text),
+              h('time', { key: 't' }, formatTime(m.at)),
+            ]))
+            : h('p', { key: 'empty', className: 'sm-panel-muted' }, chatBusy ? '加载中…' : '此会话暂无记录'))
+          : h('p', { key: 'hint', className: 'sm-panel-muted' }, '选中联系人后显示气泡时间线')),
+      peer && chatPlatform !== 'qq' ? h('div', { key: 'composer', className: 'sm-dsbot-composer' }, [
+        h('input', {
+          key: 'i',
+          className: 'sm-panel-input',
+          value: sendText,
+          disabled: busy,
+          placeholder: '回复（需对方先发过消息）',
+          onChange: (e) => setSendText(e.target.value),
+          onKeyDown: (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              testSend()
+            }
+          },
+        }),
+        h('button', {
+          key: 'go', type: 'button', className: 'sm-btn primary', disabled: busy, onClick: testSend,
+        }, '发送'),
+      ]) : null,
+      peer && chatPlatform === 'qq' ? h('p', { key: 'qqnote', className: 'sm-panel-muted', style: { padding: '6px 10px' } },
+        'QQ 官方通道由 bot 会话回复；此处为桥接同步的对话记录。') : null,
+    ]),
+  ])
 
   const weixinColumn = h('div', { key: 'wx', className: 'sm-dsbot-column', 'data-platform': 'weixin' }, [
     h('header', { key: 'h', className: 'sm-dsbot-column-head' }, [
@@ -330,65 +392,7 @@ function DsBotCard() {
       }, '保存开关'),
     ]) : null,
 
-    h('div', { key: 'chat', className: 'sm-dsbot-chat', 'data-testid': 'dsbot-chat' }, [
-      h('aside', { key: 'list', className: 'sm-dsbot-peers' }, [
-        h('div', { key: 'ph', className: 'sm-dsbot-peers-head' }, '会话'),
-        contacts.length
-          ? contacts.map((c) => h('button', {
-            key: c.peerId,
-            type: 'button',
-            className: 'sm-dsbot-peer' + (peer === c.peerId ? ' on' : ''),
-            onClick: () => selectPeer(c.peerId),
-          }, [
-            h('span', { key: 'n', className: 'sm-dsbot-peer-name' }, shortPeer(c.peerLabel || c.peerId)),
-            h('span', { key: 't', className: 'sm-dsbot-peer-time' }, formatTime(c.lastAt)),
-            h('span', { key: 'p', className: 'sm-dsbot-peer-preview' }, c.lastText || ''),
-          ]))
-          : null,
-      ]),
-      h('section', { key: 'thread', className: 'sm-dsbot-thread' }, [
-        h('div', { key: 'th', className: 'sm-dsbot-thread-head' },
-          peer ? shortPeer(peer) : '选择左侧会话'),
-        peer ? h('button', {
-          key: 'older',
-          type: 'button',
-          className: 'sm-btn sm-dsbot-load-older',
-          disabled: chatBusy || !messages.length,
-          onClick: () => loadChat(peer, { before: messages[0] && messages[0].at }),
-        }, '加载更早') : null,
-        h('div', { key: 'msgs', className: 'sm-dsbot-msgs', ref: threadRef },
-          peer
-            ? (messages.length
-              ? messages.map((m) => h('div', {
-                key: m.id,
-                className: 'sm-dsbot-bubble-row ' + (m.role === 'bot' ? 'bot' : 'user'),
-              }, [
-                h('div', { key: 'b', className: 'sm-dsbot-bubble' }, m.text),
-                h('time', { key: 't' }, formatTime(m.at)),
-              ]))
-              : h('p', { key: 'empty', className: 'sm-panel-muted' }, chatBusy ? '加载中…' : '此会话暂无记录'))
-            : h('p', { key: 'hint', className: 'sm-panel-muted' }, '选中联系人后显示气泡时间线')),
-        peer ? h('div', { key: 'composer', className: 'sm-dsbot-composer' }, [
-          h('input', {
-            key: 'i',
-            className: 'sm-panel-input',
-            value: sendText,
-            disabled: busy,
-            placeholder: '回复（需对方先发过消息）',
-            onChange: (e) => setSendText(e.target.value),
-            onKeyDown: (e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                testSend()
-              }
-            },
-          }),
-          h('button', {
-            key: 'go', type: 'button', className: 'sm-btn primary', disabled: busy, onClick: testSend,
-          }, '发送'),
-        ]) : null,
-      ]),
-    ]),
+    platform !== 'qq' ? chatTimeline : null,
   ])
 
   return h('div', { className: 'sm-eng-card sm-dsbot-card', 'data-testid': 'dsbot-card' }, [
@@ -396,26 +400,47 @@ function DsBotCard() {
       h('h3', { key: 'title', className: 'sm-dsbot-title' }, 'DsBot'),
       null,
     ]),
-    !openWx
+    // Exclusive platform view (user decision): the two gate buttons pick ONE platform;
+    // its card + chat timeline show, the other hides. No stacked columns, no toggle bar.
+    !openWx && !openQq
       ? h('div', { key: 'gate', className: 'sm-dsbot-gate' }, [
         h('button', {
           key: 'wx',
           type: 'button',
           className: 'sm-btn primary sm-dsbot-gate-btn',
-          onClick: () => setOpenWx(true),
+          onClick: () => { setOpenWx(true); setOpenQq(false); setPlatform('weixin') },
         }, '微信 Bot'),
+        h('button', {
+          key: 'qq',
+          type: 'button',
+          className: 'sm-btn primary sm-dsbot-gate-btn',
+          onClick: () => { setOpenQq(true); setOpenWx(false); setPlatform('qq') },
+        }, 'QQ 机器人'),
       ])
-      : h('div', { key: 'wx-body', className: 'sm-dsbot-body' }, [
-        h('div', { key: 'gate-bar', className: 'sm-dsbot-gate-bar' }, [
+      : h('div', { key: 'body', className: 'sm-dsbot-body' }, [
+        h('div', { key: 'gate-bar', className: 'sm-dsbot-gate' }, [
           h('button', {
-            key: 'fold', type: 'button', className: 'sm-btn', onClick: () => setOpenWx(false),
-          }, '收起微信'),
+            key: 'wx', type: 'button',
+            className: 'sm-btn sm-dsbot-gate-btn' + (openWx ? ' primary' : ''),
+            onClick: () => { setOpenWx(true); setOpenQq(false); setPlatform('weixin') },
+          }, '微信 Bot'),
+          h('button', {
+            key: 'qq', type: 'button',
+            className: 'sm-btn sm-dsbot-gate-btn' + (openQq ? ' primary' : ''),
+            onClick: () => { setOpenQq(true); setOpenWx(false); setPlatform('qq') },
+          }, 'QQ 机器人'),
         ]),
-        platformCols,
-        weixinColumn,
+        openWx ? weixinColumn : null,
+        openQq ? h(QqBotColumn, { key: 'qqcol', onSynced: () => loadChat(peer || '') }) : null,
+        openQq ? chatTimeline : null,
         msg ? h('p', { key: 'msg', className: 'sm-panel-muted', style: { marginTop: 10 } }, msg) : null,
       ]),
+    // IM 主动搭话是 IM 通道行为，归 DsBot 管（原来误挂在冲浪页）。
+    typeof patchExtensions === 'function'
+      ? imProactiveSection({ ext: ext || {}, patchExtensions })
+      : null,
   ])
 }
 
 module.exports = { DsBotCard }
+

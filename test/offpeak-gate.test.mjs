@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apply } from '../index.js';
-import { DEFAULT_CONFIG, loadConfig } from '../packages/soulmate-core/state.mjs';
+import { DEFAULT_CONFIG, loadConfig, saveConfigAuto } from '../packages/soulmate-core/state.mjs';
 import { isDeepSeekOffPeak } from '../packages/soulmate-core/persona.mjs';
 import { isOffPeakUtc } from '../packages/soulmate-core/proactive.mjs';
 
@@ -67,6 +67,7 @@ test('off-peak: a dream due in the peak window is deferred, not skipped', async 
     const ctx = createMockCtx(dir);
     apply(ctx, {});
     await ctx.soulmate.ready;
+    await saveConfigAuto(ctx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
     await seedFacts(ctx.soulmate);
 
     const peak = await ctx.soulmate.runProactiveTick(PEAK_NIGHT);
@@ -90,6 +91,7 @@ test('off-peak: preferOffPeak can be switched off so she dreams the moment 23:30
     const ctx = createMockCtx(dir);
     apply(ctx, {});
     await ctx.soulmate.ready;
+    await saveConfigAuto(ctx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
     assert.equal(DEFAULT_CONFIG.proactive.preferOffPeak, true, 'cheaper first is the default');
 
     const post = ctx._routes.get('POST /dsh-soulmate/api/config');
@@ -110,6 +112,7 @@ test('off-peak: the gate reports the price window so the panel can explain a qui
     const ctx = createMockCtx(dir);
     apply(ctx, {});
     await ctx.soulmate.ready;
+    await saveConfigAuto(ctx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
 
     const handler = ctx._routes.get('GET /dsh-soulmate/api/proactive/status');
     const at = Date.parse('2026-11-09T15:40:00Z');

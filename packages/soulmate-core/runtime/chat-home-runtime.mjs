@@ -161,6 +161,7 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
       return undefined;
     }
     return async (text) => {
+      const intentSteps = Math.max(1, Math.min(6, Math.floor(Number(plan?.steps) || 1)));
       const res = await meteredCall({
         kind: deliveryKind === 'boot' ? 'boot' : 'proactive',
         trigger: 'auto',
@@ -188,7 +189,7 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
           // 性格小传 + 此刻记得：喂进 wake 指令，让开口有据可依，而不是自由发挥成助手腔。
           let voice = '';
           let memory = '';
-          if (deliveryKind === 'boot' || deliveryKind === 'proactive') {
+          if (deliveryKind === 'boot' || deliveryKind === 'proactive' || deliveryKind.startsWith('intent-')) {
             try {
               const st = await loadSoulmateState(home);
               voice = personaVoiceBrief(conf.persona, st);
@@ -209,6 +210,7 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
             voiceHint,
             voice,
             memory,
+            steps: intentSteps,
           });
           const visible = buildWakeVisibleNotice(deliveryKind, { callUser, hint: text, name });
           const petLine = buildPetSay(deliveryKind, {

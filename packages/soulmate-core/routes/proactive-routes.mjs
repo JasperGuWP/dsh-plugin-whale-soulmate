@@ -57,5 +57,15 @@ export function proactiveRoutes({ home, proactive, chatHome, promptText, eventSe
         return jsonOut(200, { ...res, eventSeq: eventSeq() });
       },
     },
+    {
+      // 「拉取最新」: run the QQ bridge now instead of waiting for the 2-min tick.
+      method: 'POST',
+      paths: ['/dsh-soulmate/api/qqbot/sync'],
+      handler: async () => {
+        if (typeof proactive.syncQqbotBridge !== 'function') return jsonOut(200, { ok: false, error: 'bridge unavailable' });
+        const res = await proactive.syncQqbotBridge();
+        return jsonOut(200, res);
+      },
+    },
   ];
 }

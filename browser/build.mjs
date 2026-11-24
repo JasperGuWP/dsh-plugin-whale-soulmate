@@ -123,4 +123,22 @@ if (direct) {
   const bundle = await bundleSource()
   await writeFile(path.join(HERE, '..', 'client.js'), bundle, 'utf8')
   console.log('client.js rebuilt:', bundle.split('\n').length, 'lines')
+
+  // Standalone star-sea bundle for the independent neuron window: same modules, no host
+  // loader, no React — just the renderer surface on window.__neuronFx.
+  const { sources, deps } = await collectModules('./neuron/index.mjs')
+  const neuronBundle = [
+    '// GENERATED FILE — do not hand-edit. Rebuild with `npm run build:client`.',
+    '(function () {',
+    '  const hostRequire = () => { throw new Error("neuron bundle has no host modules") }',
+    moduleTableSource('./neuron/index.mjs', sources, deps, 'neuron'),
+    "  window.__neuronFx = __makeRequire('')('./neuron/index.mjs')",
+    '})()',
+    '',
+  ].join('\n')
+  const outDir = path.join(HERE, '..', 'runtime', 'neuron-window')
+  const { mkdir } = await import('node:fs/promises')
+  await mkdir(outDir, { recursive: true })
+  await writeFile(path.join(outDir, 'neuron-bundle.js'), neuronBundle, 'utf8')
+  console.log('neuron-bundle.js rebuilt:', neuronBundle.split('\n').length, 'lines')
 }

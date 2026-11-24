@@ -1,9 +1,14 @@
 # dsh-plugin-whale-soulmate bundle patch.
 #
-# One row mounts BOTH faces of this dual-face package:
+# Row 1 mounts BOTH faces of this dual-face package:
 #   - the node half (index.js) registers the Soulmate service, tools and routes;
 #   - the browser half (client.js, via the package.json `dsh.client` declaration)
 #     renders the companion widget and the 3D home in the Web Chat.
+# Row 2 mounts the official QQ bot (@tencent-connect/dsh-qqbot, shipped as a
+# dependency) through soulmate's server-only subpath, so installing soulmate
+# alone provides the QQ channel. The subpath keeps the host from loading the
+# official browser surface, whose standalone 「QQ 机器人」 sidebar duplicates the
+# QQ column inside the DsBot panel.
 - insert:
     - id: soulmate
       name: dsh-plugin-whale-soulmate
@@ -11,3 +16,18 @@
         enabled: true
         # 微信 iLink 靠长轮询收消息；不开则只能登录不能回。
         imAutoPoll: true
+    # 官方 QQ Bot 随 soulmate 一起安装；凭据默认读环境变量
+    # （QQBOT_APPID / QQBOT_SECRET），扫码绑定后由官方插件写入 profile patch。
+    - id: im-qqbot
+      name: 'dsh-plugin-whale-soulmate/qqbot-server'
+      config:
+        appId: __FROM_ENV__
+        appSecret: __FROM_ENV__
+        # provider/model 留空：跟随 DSH 最近一次在对话中选择的模型
+        requireMention: true
+        textChunkLimit: 4500
+        sessionIdleTimeout: 1800000
+        maxQueue: 20
+        processingTimeoutMs: 1800000
+        historyLimit: 10
+        debug: false

@@ -1104,12 +1104,19 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
       const { loadSoulmateState } = await import('../soulmate-core/persona.mjs');
       const voice = str(options.personaVoice) || personaVoiceBrief(confLive.persona, await loadSoulmateState(home));
       const ctrl = options.llmController;
-      const generateText = typeof ctrl?.generateReply === 'function'
+      // 桌面宿主只有 llm.stream（经 oneShot），没有 generateReply；两条路都接上，
+      // 否则裁决永远落启发式，「按人设判断细看」形同虚设。
+      const generateText = typeof options.judgeOneShot === 'function'
         ? async (prompt) => {
-          const out = await ctrl.generateReply({ text: prompt, purpose: 'bili-deep-judge' });
-          return str(out?.text ?? out?.reply ?? out?.content ?? out?.message?.content ?? '').trim();
+          const out = await options.judgeOneShot({ prompt, kind: 'bili-deep-judge' });
+          return str(out?.text ?? out?.reply ?? out?.content ?? '').trim();
         }
-        : undefined;
+        : typeof ctrl?.generateReply === 'function'
+          ? async (prompt) => {
+            const out = await ctrl.generateReply({ text: prompt, purpose: 'bili-deep-judge' });
+            return str(out?.text ?? out?.reply ?? out?.content ?? out?.message?.content ?? '').trim();
+          }
+          : undefined;
       const verdict = await judgeDeepWatch(digest, {
         persona: voice,
         interests: confLive.extensions?.biliKeywords || [],
@@ -1117,19 +1124,24 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
         generateText,
       });
       digest.deepJudge = verdict;
-      // 二刷条件：初扫没读到足量字幕，或帧没喂饱（真帧 <12 / 分镜 <24）。
-      // coverage.depth 的 deep 只看字幕存在，不代表看够了，不能单独作跳过依据。
+      // 二刷条件：初扫没读到足量字幕，或「喂进模型的帧」没覆盖全片。
+      // 注意：抽帧多 ≠ 看得多——视觉总结有帧数上限，长片抽 149 帧也只喂 16 张，
+      // 平均每帧间隔远超采样密度就算没看够（宿主单条消息图片上限 20，二刷喂 20）。
       const subChars = str(digest.transcript).length;
       const liveCount = (digest.liveFrameStills || []).length;
       const boardCount = (digest.storyboardFrames || []).length;
-      const thin = subChars < 800 || (liveCount > 0 ? liveCount < 12 : boardCount < 24);
+      const fedCount = (digest.visionSummary?.frames || []).length;
+      const durSec = num(digest.durationSec);
+      const everySecTarget = num(options.liveFrameEverySec ?? confLive.extensions?.biliLiveFrameEverySec, 30);
+      const fedSparse = fedCount > 0 && durSec > 0 && durSec / fedCount > everySecTarget * 2;
+      const thin = subChars < 800 || (liveCount > 0 ? liveCount < 12 : boardCount < 24) || fedSparse;
       if (verdict.deep && thin) {
         const deeper = await watchAndRecordVideo(soulmateService, { ...input, deepJudged: true }, {
           ...options,
           deepWatch: true,
           deepJudge: false,
           maxStoryboardFrames: Math.max(36, num(options.maxStoryboardFrames, 0)),
-          visionMaxFrames: Math.max(24, num(options.visionMaxFrames, 0)),
+          visionMaxFrames: Math.max(20, num(options.visionMaxFrames, 0)),
           liveFrameEverySec: Math.min(num(options.liveFrameEverySec ?? confLive.extensions?.biliLiveFrameEverySec, 30), 15),
           personaVoice: voice,
         });

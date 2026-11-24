@@ -77,3 +77,25 @@ test('refreshSurfKeywords: no chat → no learning, manual untouched', async () 
   assert.deepEqual(conf.extensions.biliKeywords, ['AI', '编程'], 'manual list untouched');
   assert.deepEqual(conf.extensions.biliLearnedKeywords, [], 'no learned entries written');
 });
+
+test('keyword-learn: host plumbing lines never become interest keywords', async () => {
+  const { proposeSurfKeywords, isPlumbingText, normalizeKeywordList } = await import('../packages/soulmate-bili/keyword-learn.mjs');
+  assert.equal(isPlumbingText('<system-reminder>你是视频内容分析助手，请根据以下画面…</system-reminder>'), true);
+  assert.equal(isPlumbingText('Time sampled while preparing turn 7, step 1: 2026-11-24'), true);
+  assert.equal(isPlumbingText('【Soulmate 插件·主动开口·勿复述】'), true);
+  assert.equal(isPlumbingText('想看装机翻车合集'), false);
+  const next = proposeSurfKeywords({
+    seed: ['AI'],
+    chatTexts: [
+      '你是视频内容分析助手，请根据以下时间线输出总结 mm ss 标题',
+      '<system-reminder>current session describes information of your workspace</system-reminder>',
+      '最近想看装机教程',
+    ],
+  });
+  for (const junk of ['mm', 'ss', '标题', '请根据', '你是视频内容分析', 'current', 'describes']) {
+    assert.ok(!next.includes(junk), `junk keyword leaked: ${junk}`);
+  }
+  assert.ok(next.some((k) => k.includes('装机')), 'real interest survives');
+  // stop-list catches legacy pollution on merge
+  assert.deepEqual(normalizeKeywordList(['mm', 'ss', '标题', '助手', 'AI']), ['AI']);
+});

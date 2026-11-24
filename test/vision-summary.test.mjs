@@ -201,7 +201,8 @@ test('vision prompts carry persona voice and ask for a whole-video opinionated �
   assert.ok(p.includes('【你的性格（只影响观感措辞）】'));
   assert.ok(p.includes('吐槽犀利'));
   assert.match(p, /观感：<2–3 句/);
-  assert.match(p, /总结并评价整个视频/);
+  assert.match(p, /评价这支视频的内容本身/);
+  assert.match(p, /不要评镜头/);
   const plain = buildVisionPrompt({ title: 'T', frames: [] });
   assert.ok(!plain.includes('【你的性格'), '无人设时不加性格块');
   const f = buildTextFallbackPrompt({ title: 'T' }, { persona: voice });

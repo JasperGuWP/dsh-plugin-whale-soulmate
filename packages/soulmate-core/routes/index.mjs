@@ -2,6 +2,7 @@
 // 3D 家园（/soulmate-home）暂停开发：路由不挂载，代码保留在 soulmate-home/ 待重启。
 
 import { personaRoutes } from './persona-routes.mjs';
+import { soulShareRoutes } from './soul-share-routes.mjs';
 import { memoryRoutes } from './memory-routes.mjs';
 import { assetRoutes } from './asset-routes.mjs';
 import { proactiveRoutes } from './proactive-routes.mjs';
@@ -14,10 +15,12 @@ import { imChatRoutes } from './im-chat-routes.mjs';
 import { updateRoutes } from './update-routes.mjs';
 import { chatRoutes } from './chat-routes.mjs';
 import { petRoutes } from './pet-routes.mjs';
+import { neuronRoutes } from './neuron-routes.mjs';
 
 export function buildRoutes(deps) {
   return [
     ...personaRoutes(deps),
+    ...soulShareRoutes(deps),
     ...memoryRoutes(deps),
     ...usageRoutes(deps),
     ...proactiveRoutes(deps),
@@ -30,5 +33,6 @@ export function buildRoutes(deps) {
     ...updateRoutes(deps),
     ...chatRoutes(deps),
     ...petRoutes(deps),
+    ...neuronRoutes(deps),
   ];
 }

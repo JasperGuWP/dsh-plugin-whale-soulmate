@@ -79,6 +79,15 @@ export const CONFIG_PATCH_KEYS = {
     distillLlmEnabled: 'boolean',
     distillLlmDailyCap: 'number',
     distillLlmModel: 'string',
+    intentEnabled: 'boolean',
+    intentLlmDailyCap: 'number',
+    intentLlmModel: 'string',
+    intentMaxDecisionsPerDay: 'number',
+    intentMaxActsPerDay: 'number',
+    intentMinGapMinutes: 'number',
+    experienceEnabled: 'boolean',
+    experienceLlmEnabled: 'boolean',
+    experienceLlmDailyCap: 'number',
   },
   chatHome: {
     maxTurns: 'number',
@@ -88,6 +97,7 @@ export const CONFIG_PATCH_KEYS = {
     handoffSeed: 'boolean',
     rotateOnPersonaChange: 'boolean',
     autoMemory: 'boolean',
+    storeTranscripts: 'boolean',
   },
   extensions: {
     biliEnabled: 'boolean',
@@ -120,6 +130,27 @@ export const CONFIG_PATCH_KEYS = {
     biliLearnedKeywords: 'string-array',
     biliKeywordsUpdatedAt: 'string',
     biliKeywords: 'string-array',
+    biliAutoReplyMaxRounds: 'number',
+    biliCommentMaxChars: 'number',
+    biliCommentDailyCap: 'number',
+    biliLikeDailyCap: 'number',
+    biliFavoriteDailyCap: 'number',
+    biliFollowDailyCap: 'number',
+    biliCoinEnabled: 'boolean',
+    biliCoinDailyCap: 'number',
+    biliEngageLlmEnabled: 'boolean',
+    imProactiveEnabled: 'boolean',
+    imProactiveWhitelist: 'object-array',
+    imProactivePerConvDaily: 'number',
+    imProactiveDailyTotal: 'number',
+    imProactiveMinGapMinutes: 'number',
+    imProactiveMaxChars: 'number',
+    imMemoryStars: 'boolean',
+    imOwnerWeixin: 'string',
+    imOwnerQq: 'string',
+    imOwnerFeishu: 'string',
+    imOwnerDingtalk: 'string',
+    weatherEnabled: 'boolean',
   },
   usage: {
     dailyAutoTokenCap: 'number',
@@ -140,6 +171,9 @@ export const pickPatch = (input, spec) => {
         if (Array.isArray(value)) out[key] = value.filter((v) => typeof v === 'string');
       } else if (rule === 'string-array') {
         if (Array.isArray(value)) out[key] = value.map((v) => String(v).trim()).filter(Boolean);
+      } else if (rule === 'object-array') {
+        // Whitelist-shaped lists: keep only plain objects, copied by value.
+        if (Array.isArray(value)) out[key] = value.filter((v) => isObject(v)).map((v) => ({ ...v }));
       } else if (typeof value === rule) {
         out[key] = value;
       }

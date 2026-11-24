@@ -145,6 +145,24 @@ export function createSessionStarRuntime({ home, ctx, sessionController, warn })
       if (result?.ok === true || result?.reason === 'empty-summary') {
         lastSessionStarFingerprints.set(id, fp);
       }
+      // Verbatim transcript star: the summary above says what the talk was about, this
+      // keeps the actual exchange (local memory, one file per session, rewritten in place).
+      if (
+        result?.ok === true && chatHome.storeTranscripts !== false &&
+        Array.isArray(measure?.full) && measure.full.length
+      ) {
+        const who = String(conf.persona?.callUser || '').trim() || '你';
+        const content = measure.full
+          .map((m) => `${m.role === 'assistant' ? '我' : who}：${m.text}`)
+          .join('\n');
+        await upsertSessionEpisode(home, {
+          sessionId: `transcript:${id}`,
+          title: `原文 · ${title}`,
+          content,
+          kind: 'transcript',
+          nowMs: preset.nowMs,
+        }).catch((err) => warn('transcript star upsert failed', err));
+      }
       return result;
     } catch (err) {
       warn('session star upsert failed', err);

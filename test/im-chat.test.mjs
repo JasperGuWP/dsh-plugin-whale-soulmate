@@ -58,3 +58,63 @@ test('im-reply: persona prompt asks for in-character speech, extract text', () =
   assert.equal(extractImReplyText({ choices: [{ message: { content: '嵌套回复' } }] }), '嵌套回复');
   assert.equal(extractImReplyText({ content: [{ type: 'text', text: '块' }, { type: 'text', text: '拼接' }] }), '块拼接');
 });
+
+test('im-chat: group threads are one conversation, DMs do not leak into them', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'soulmate-im-group-'));
+  const home = { rootDir: root, logsDir: root };
+  try {
+    await appendImChat(home, { platform: 'qq', peerId: 'u1', peerLabel: '主人', groupId: 'g1', role: 'user', text: '群里甲', at: '2026-11-24T01:00:00.000Z' });
+    await appendImChat(home, { platform: 'qq', peerId: 'u2', peerLabel: '群友乙', groupId: 'g1', role: 'user', text: '群里乙', at: '2026-11-24T01:00:01.000Z' });
+    await appendImChat(home, { platform: 'qq', peerId: 'u1', peerLabel: '主人', role: 'user', text: '私聊一句', at: '2026-11-24T01:00:02.000Z' });
+    const group = await listImChat(home, { platform: 'qq', groupId: 'g1', limit: 10 });
+    assert.equal(group.length, 2);
+    assert.ok(group.every((r) => r.groupId === 'g1'));
+    assert.equal(group[0].text, '群里乙');
+    const dm = await listImChat(home, { platform: 'qq', peerId: 'u1', limit: 10 });
+    assert.equal(dm.length, 1);
+    assert.equal(dm[0].text, '私聊一句');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('im-reply: group prompts tell owner from member and forbid private memory', () => {
+  const owner = composeImPersonaPrompt({
+    persona: { name: '小海' }, text: '在吗', platform: 'qq',
+    speaker: { isGroup: true, isOwner: true, name: 'Jasper' },
+  });
+  assert.match(owner, /刚说话的是主人（Jasper本人）/);
+  assert.match(owner, /群聊规则/);
+  assert.match(owner, /不要提任何私密记忆/);
+
+  const member = composeImPersonaPrompt({
+    persona: { name: '小海' }, text: '这是谁', platform: 'qq',
+    speaker: { isGroup: true, isOwner: false, name: '路人丙' },
+  });
+  assert.match(member, /群友「路人丙」/);
+  assert.match(member, /不是主人/);
+  assert.doesNotMatch(member, /刚说话的是主人/);
+
+  const dm = composeImPersonaPrompt({ persona: { name: '小海' }, text: '嗨', platform: 'qq', speaker: { isGroup: false, isOwner: false } });
+  assert.doesNotMatch(dm, /群聊规则|刚说话的是主人/);
+});
+
+test('im-chat: QQ group contacts aggregate by group and thread loads by groupId', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'soulmate-qq-contacts-'));
+  const home = { rootDir: root, logsDir: root };
+  try {
+    await appendImChat(home, { platform: 'qq', peerId: 'u1', peerLabel: '主人', groupId: 'G1', role: 'user', text: '群里一句', at: '2026-11-24T09:02:59.000Z' });
+    await appendImChat(home, { platform: 'qq', peerId: 'G1', peerLabel: '小海', groupId: 'G1', role: 'bot', text: '群里回一句', at: '2026-11-24T09:03:01.000Z' });
+    await appendImChat(home, { platform: 'qq', peerId: 'u1', peerLabel: '主人', role: 'user', text: '私聊一句', at: '2026-11-24T09:04:00.000Z' });
+    const contacts = await listImContacts(home, { platform: 'qq' });
+    assert.equal(contacts.length, 2, 'one group + one DM');
+    const g = contacts.find((c) => c.groupId === 'G1');
+    assert.ok(g, 'group contact present');
+    assert.equal(g.peerId, 'G1');
+    assert.equal(g.count, 2);
+    const thread = await listImChat(home, { platform: 'qq', groupId: 'G1', limit: 10 });
+    assert.equal(thread.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -14,6 +14,7 @@ const NODE_TINT = {
   wiki_star: [255, 213, 148],
   episode_crystal: [186, 228, 255],
   session_star: [255, 179, 71], // warm orange #ffb347 — chat-session episodes
+  transcript_star: [150, 214, 255], // verbatim conversation — cool, quieter than sessions
   private_shielded: [146, 128, 214],
 }
 const NODE_FALLBACK = [172, 202, 255]

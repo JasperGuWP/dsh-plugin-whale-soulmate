@@ -3,6 +3,7 @@
 // only wires it to ctx.systemPrompt and the host session controller.
 
 import { buildDriftAnchor, buildPersonaSystemPrompt, getDisplayName, getNotebookTitles, loadSoulmateState, normalizeGender } from '../persona.mjs';
+import { VOICE_REMINDER } from '../persona-voice-card.mjs';
 import { composePresenceDigest } from '../memory-engine.mjs';
 import { loadInvariants } from '../layers/index.mjs';
 import { loadConfig } from '../state.mjs';
@@ -16,6 +17,7 @@ const MEMORY_GUIDE = [
   '- 写记忆永远用主人翁第一人称（我 / 当前 selfRef）+ 当前人设腔；禁止「用户做了…」「系统记录…」日志腔或第三人称旁白替代。',
   '- 用户透露稳定的偏好、称呼、雷区、约定、技术决策时，用 `soulmate_memory_retain`（kind: fact）记下；新旧冲突时带上 `supersedesId` 让旧事实失效。',
   '- 称呼 / 自称 / 显示名 / 性别声线用 identity 锚点（topic `identity:*`，preference 永不衰减）；雷区与明确纠正用 `boundary:*`。',
+  '- 用户说出自己所在城市或常驻地点时，用 `soulmate_memory_retain` 记一条 topic `identity:city` 的事实；环境只给时区、不给城市，没记过就必须问，不要猜。',
   '- 共同节律与习惯（催睡、饭点、周五复盘等）：用 `soulmate_memory_retain`（kind: fact，topic 前缀 `ritual:`，decayClass preference 或单次 event）；内部路径等价 `retainRitual`。',
   '- 自我演变写 Wiki（slug `self-arc`）；反复出现的工程/仓库惯例 upsert Wiki（category `project-convention`，可用 [[双向链接]]），勿无限堆零散 fact。零散事实多了再用 `soulmate_memory_reflect` 蒸馏（惯例优先落到 `project-convention`），顺手把相处默契写进 `learned`。',
   '- 一天的收尾可用 `soulmate_memory_retain`（kind: to-you）写《给用户的信》，用 kind: inner 写自己的私密小本本；涉及隐私的内容务必 `visibility: "private"`（永不上云）。',
@@ -226,6 +228,9 @@ export function createPromptEngine({ home, warn, sessionController, pushEvent })
     const pOpts = presenceOptions();
     const parts = [];
     if (anchor) parts.push(anchor);
+    // Every turn carries one lightweight voice reminder (the full anchor only lands
+    // every N steps; drift shows up in the turns between).
+    if (!wake && !(anchor && anchor.includes(VOICE_REMINDER))) parts.push(VOICE_REMINDER);
     if (pOpts.enabled !== false) {
       const pEvery = Math.max(1, Math.min(64, Math.floor(Number(pOpts.everyTurns)) || 6));
       const pBucket = Math.floor(Math.max(0, presenceSteps - 1) / pEvery) + 1;

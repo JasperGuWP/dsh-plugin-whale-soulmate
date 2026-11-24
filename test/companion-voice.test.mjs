@@ -343,3 +343,19 @@ test('notify/focus route reports via/windows and stays ok', async () => {
     clearFocusRetryTimers();
   }
 });
+
+test('notify: llm-rerouted shows the user which route failed and what was used instead', async () => {
+  const { toastFor } = await loadBrowserModule('./notify.mjs');
+  const toast = toastFor({
+    type: 'llm-rerouted',
+    kind: 'im-proactive',
+    from: 'deepseek-account/deepseek-flash',
+    to: 'qwen-token-plan-cn/deepseek-v4.1-flash-1017',
+    reason: 'Your api key is invalid',
+  }, '小海');
+  assert.ok(toast, 'reroute must produce a visible toast');
+  assert.match(toast.title, /临时切换/);
+  assert.match(toast.body, /deepseek-account\/deepseek-flash/);
+  assert.match(toast.body, /qwen-token-plan-cn/);
+  assert.match(toast.body, /api key is invalid/);
+});

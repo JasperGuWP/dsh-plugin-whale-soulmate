@@ -204,3 +204,67 @@ test('neuron: session_star has warm tint and lays out near episodes', async () =
   assert.ok(Math.abs(ssR - epR) < 4, `session_star near episode band (ss=${ssR.toFixed(2)} ep=${epR.toFixed(2)})`);
   assert.doesNotThrow(() => neuron.drawNeurons(makeCanvas().canvas, g, 1000));
 });
+
+test('neuron layout: dreams never own facts; unlinked facts drift together by topic', async () => {
+  const neuron = await loadNeuron();
+  const g = {
+    nodes: [
+      { id: 'wiki:theme-a', kind: 'wiki_star', label: '主题', importance: 5 },
+      { id: 'wiki:dream-2026-11-23', kind: 'wiki_star', label: 'soulmate的梦 · 2026-11-23', importance: 5 },
+      { id: 'f-linked', kind: 'fact_neuron', label: '主题', importance: 3 },
+      { id: 'f-dreamlink', kind: 'fact_neuron', label: '主题', importance: 3 },
+      { id: 'f-drift1', kind: 'fact_neuron', label: '零散A', importance: 2 },
+      { id: 'f-drift2', kind: 'fact_neuron', label: '零散A', importance: 2 },
+      { id: 'f-other', kind: 'fact_neuron', label: '零散B', importance: 2 },
+    ],
+    synapses: [
+      { source: 'f-linked', target: 'wiki:theme-a', kind: 'topic_cluster' },
+      { source: 'f-dreamlink', target: 'wiki:dream-2026-11-23', kind: 'topic_cluster' },
+    ],
+  };
+  const l = neuron.layoutMemoryGalaxy(g);
+  const p = (id) => l.world.get(id);
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  const dream = p('wiki:dream-2026-11-23');
+  // A fact that the graph linked to a dream must NOT orbit it — dreams are written
+  // from facts, they do not own them.
+  assert.ok(dist(p('f-dreamlink'), dream) > 1.7, 'dream pages never own children');
+  // Same-topic strays gather into one drift constellation; another topic stays apart.
+  assert.ok(
+    dist(p('f-drift1'), p('f-drift2')) < dist(p('f-drift1'), p('f-other')),
+    'unlinked facts drift together by topic'
+  );
+  // The dream page itself sits well outside the theme band (distance is centroid-invariant).
+  assert.ok(dist(dream, p('wiki:theme-a')) > 6, 'dreams live in the outer band');
+  // And a properly linked fact still orbits its theme.
+  assert.ok(dist(p('f-linked'), p('wiki:theme-a')) < 8, 'linked fact orbits its theme');
+});
+
+test('neuron: fitOverviewZoom frames the core sky into the canvas', async () => {
+  const neuron = await loadNeuron();
+  assert.equal(typeof neuron.fitOverviewZoom, 'function');
+  const zCard = neuron.fitOverviewZoom(18, 720, 360);
+  const zWide = neuron.fitOverviewZoom(18, 1400, 900);
+  assert.ok(zCard >= 1.35 && zCard <= 3.2, `card zoom in range, got ${zCard}`);
+  assert.ok(zWide >= 1.35 && zWide <= 3.2, `wide zoom in range, got ${zWide}`);
+  // A tighter core needs less zoom-out (higher zoom) than a sprawling one.
+  assert.ok(neuron.fitOverviewZoom(10, 720, 360) > neuron.fitOverviewZoom(28, 720, 360));
+});
+
+test('neuron: layout coreExtent ignores the private corner', async () => {
+  const neuron = await loadNeuron();
+  const g = {
+    nodes: [
+      { id: 'wiki:t', kind: 'wiki_star', label: '主题' },
+      { id: 'fact:1', kind: 'fact_neuron', label: '尘' },
+      { id: 'priv:1', kind: 'private_shielded', label: '锁' },
+    ],
+    synapses: [{ source: 'fact:1', target: 'wiki:t', kind: 'topic_cluster', strength: 0.5 }],
+  };
+  const l = neuron.layoutMemoryGalaxy(g);
+  assert.ok(l.coreExtent > 0);
+  assert.ok(l.coreExtent <= l.extent, 'core is never larger than full extent');
+  const priv = l.world.get('priv:1');
+  const privD = Math.hypot(priv.x, priv.y, priv.z);
+  assert.ok(privD > l.coreExtent * 0.9, 'private corner sits outside the living core');
+});

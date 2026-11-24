@@ -24,3 +24,4 @@ Thumbs.db
 
 # Local runtime home (if anyone points DSH_HOME inside the repo)
 .soulmate-home/
+runtime/neuron-window/neuron-bundle.js

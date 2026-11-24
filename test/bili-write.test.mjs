@@ -136,6 +136,8 @@ test('danmaku posts to dm/post with cid', async () => {
 
 test('like / coin / favorite / follow hit the right endpoints', async () => {
   await withHome(async (home) => {
+    // Coin spends real money: it sits behind its own switch (default off).
+    await saveConfigAuto(home, { extensions: { biliCoinEnabled: true } });
     const net = makeNet({
       'GET /x/web-interface/view': () => videoView,
       'GET /x/v3/fav/folder/created/list-all': () => ({ code: 0, data: { list: [{ id: 9001 }] } }),
@@ -170,6 +172,46 @@ test('daily quota and cooldown hold writes', async () => {
     assert.equal(second.ok, true);
     const third = await biliWriteAction(home, { action: 'like', bvid: 'BV1xx411c7mD' }, { ...net, nowMs: T0 + 120_000, maxDailyWrites: 2 });
     assert.equal(third.code, 'daily_limit');
+  });
+});
+
+test('per-action daily caps: comment cap holds even under the total quota', async () => {
+  await withHome(async (home) => {
+    await saveConfigAuto(home, { extensions: { biliCommentDailyCap: 1 } });
+    const net = makeNet({
+      'GET /x/web-interface/view': () => videoView,
+      'POST /x/v2/reply/add': () => ({ code: 0, data: { rpid: 555 } }),
+    });
+    const first = await biliWriteAction(home, { action: 'comment', bvid: 'BV1xx411c7mD', message: '第一条' }, { ...net, nowMs: T0 });
+    assert.equal(first.ok, true);
+    const second = await biliWriteAction(home, { action: 'comment', bvid: 'BV1xx411c7mD', message: '第二条' }, { ...net, nowMs: T0 + 60_000 });
+    assert.equal(second.code, 'action_daily_limit');
+    // A like still goes through — its own cap is separate.
+    const like = await biliWriteAction(home, { action: 'like', bvid: 'BV1xx411c7mD' }, { ...net, nowMs: T0 + 120_000 });
+    assert.equal(like.ok, true);
+  });
+});
+
+test('coin is refused until its own switch is on', async () => {
+  await withHome(async (home) => {
+    const net = makeNet({ 'GET /x/web-interface/view': () => videoView });
+    const res = await biliWriteAction(home, { action: 'coin', bvid: 'BV1xx411c7mD' }, { ...net, nowMs: T0 });
+    assert.equal(res.code, 'coin_disabled');
+  });
+});
+
+test('comment length obeys the configurable cap', async () => {
+  await withHome(async (home) => {
+    await saveConfigAuto(home, { extensions: { biliCommentMaxChars: 20 } });
+    const net = makeNet({
+      'GET /x/web-interface/view': () => videoView,
+      'POST /x/v2/reply/add': () => ({ code: 0, data: { rpid: 556 } }),
+    });
+    const long = '这是一段远远超过二十个字的评论内容，应该被截断到配置的上限。';
+    const res = await biliWriteAction(home, { action: 'comment', bvid: 'BV1xx411c7mD', message: long }, { ...net, nowMs: T0 });
+    assert.equal(res.ok, true);
+    const posted = net.calls.find((c) => c.key === 'POST /x/v2/reply/add').form.message;
+    assert.ok(posted.length <= 20, `posted ${posted.length} chars`);
   });
 });
 

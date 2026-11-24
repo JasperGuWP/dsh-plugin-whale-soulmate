@@ -119,3 +119,43 @@ test('白名单编辑器提供「从最近会话选」，点击拉 /im/known 并
   assert.equal(patches.length, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(patches[0].imProactiveWhitelist[0])), { platform: 'qq', to: 'OPENID123', groupId: '', label: 'QQ私聊 OPENID…' });
 });
+test('im proactive: prefers the conversation whose official window is open', async () => {
+  const { createImProactiveRuntime } = await import('../packages/soulmate-core/runtime/im-proactive-runtime.mjs');
+  const { mkdtemp, rm, mkdir } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { resolveSoulmateHome, saveConfigAuto } = await import('../packages/soulmate-core/state.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'sm-imwin-'));
+  try {
+    const home = resolveSoulmateHome(join(dir, 'home'));
+    await mkdir(home.rootDir, { recursive: true });
+    await saveConfigAuto(home, {
+      persona: { name: '小海', city: '上海' },
+      proactive: { tzOffsetMinutes: 480, quietHours: [] },
+      extensions: {
+        imProactiveEnabled: true,
+        imProactiveWhitelist: [
+          { platform: 'qq', to: 'DM1', label: 'DM' },
+          { platform: 'qq', to: 'G1', groupId: 'G1', label: '群' },
+        ],
+      },
+    });
+    const sent = [];
+    const rt = createImProactiveRuntime({
+      home, warn: () => {}, pushEvent: () => 0,
+      usage: {
+        meteredCall: async ({ call }) => ({ ok: true, out: await call() }),
+        listHostModels: async () => [{ id: 'm' }],
+        oneShotLlm: async () => ({ text: '群里冒个泡。' }),
+      },
+      cfg: {},
+      officialTargets: async () => ({ ok: true, targets: [{ kind: 'group', groupId: 'G1', peer: 'G1', msgId: 'IN', ageMs: 1000 }] }),
+      officialSend: async ({ target, text }) => { sent.push({ target, text }); return { ok: true }; },
+    });
+    const res = await rt.runImProactiveIfDue({ at: Date.parse('2026-11-24T09:06:45Z') });
+    assert.equal(res.sent, true, JSON.stringify(res));
+    assert.equal(sent[0].target.groupId, 'G1', 'must pick the open group, not the closed DM');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -5,7 +5,16 @@
 import { defineTool } from './tool-kit.mjs';
 import { clip, errMsg } from './small-utils.mjs';
 
-export const GENERIC_OUTPUT = { type: 'object', properties: { ok: { type: 'boolean', required: true } } };
+// Valid JSON Schema: `required` is a top-level array, never a property-level boolean.
+// The old shape (`ok: { type:'boolean', required:true }`) is not valid draft-07 and made
+// the host's output validator reject every call — the QQ bot surfaced it as
+// "ToolOutputError: INVALID_TOOL_OUTPUT" on soulmate_memory_recall.
+export const GENERIC_OUTPUT = {
+  type: 'object',
+  properties: { ok: { type: 'boolean' } },
+  required: ['ok'],
+  additionalProperties: true,
+};
 
 export function cardOf(kind, tool, value) {
   const card = { kind, tool, ok: value?.ok !== false };
@@ -93,6 +102,12 @@ export function cardOf(kind, tool, value) {
         lines: [value.error || value.message || value.title || value.bvid || value.to || ''],
       };
     }
+    case 'soulmate_weather':
+      return {
+        ...card,
+        title: `🌤 ${value.city || '天气'}`,
+        lines: [clip(value.summary, 160)],
+      };
     case 'soulmate_im_send':
       return { ...card, title: `💬 已发到${value.platform ?? ''}`, lines: [`via ${value.via ?? value.mode ?? 'api'}`] };
     case 'soulmate_im_manage':
@@ -110,13 +125,34 @@ export function makeToolFactory({ cardKind, ready }) {
       ...def,
       output: {
         schema: GENERIC_OUTPUT,
-        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
-        presentationMeta: (_args, value) => cardOf(cardKind, def.name, value),
+        render: (_args, value) => {
+          // A circular or BigInt payload must not turn into INVALID_TOOL_OUTPUT.
+          let text;
+          try {
+            text = JSON.stringify(value);
+          } catch {
+            text = JSON.stringify({ ok: value?.ok !== false, note: 'tool result not serializable' });
+          }
+          return [{ type: 'text', text }];
+        },
+        presentationMeta: (_args, value) => {
+          try {
+            return cardOf(cardKind, def.name, value);
+          } catch {
+            return { kind: cardKind, tool: def.name, ok: value?.ok !== false };
+          }
+        },
       },
       async execute(args, exec) {
         try {
           await ready;
-          return await run(args, exec);
+          const value = await run(args, exec);
+          // Always hand the host a plain JSON object with a boolean `ok`, whatever the
+          // domain tool returned (undefined, a bare string, or `{ ok }`).
+          if (value && typeof value === 'object' && !Array.isArray(value)) {
+            return { ok: value.ok !== false, ...value };
+          }
+          return { ok: true, value };
         } catch (err) {
           return { ok: false, error: errMsg(err) };
         }

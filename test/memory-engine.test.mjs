@@ -1071,3 +1071,40 @@ test('memory-engine: session star appears in neural graph; forget removes only v
     assert.ok(!g3.nodes.some((n) => n.id === 'episode:session:session-bbb'));
   });
 });
+
+test('memory-engine: transcript and IM conversations surface as their own stars', async () => {
+  await (async () => {
+    const { upsertSessionEpisode } = await import('../packages/soulmate-core/memory-engine.mjs');
+    const dir = await mkdtemp(join(tmpdir(), 'sm-transcript-'));
+    const home = resolveSoulmateHome(join(dir, 'home'));
+    try {
+      const { mkdir } = await import('node:fs/promises');
+      await mkdir(home.rootDir, { recursive: true });
+      await upsertSessionEpisode(home, {
+        sessionId: 'transcript:sess-1',
+        title: '原文 · 大海',
+        kind: 'transcript',
+        content: '主人：今天装机翻车了\n我：第几分钟？',
+        nowMs: T0,
+      });
+      await upsertSessionEpisode(home, {
+        sessionId: 'im:qq:10001',
+        title: 'QQ · 主人',
+        kind: 'im',
+        content: '对方：晚上吃什么\n我：先别饿着',
+        nowMs: T0,
+      });
+      const g = await buildNeuralGraph(home, { nowMs: T0, cloudSynced: false });
+      const transcript = g.nodes.find((n) => n.kind === 'transcript_star');
+      const im = g.nodes.find((n) => n.kind === 'session_star');
+      assert.ok(transcript, 'transcript star present');
+      assert.match(transcript.label, /^原文 · /);
+      assert.match(transcript.content, /装机翻车/);
+      assert.ok(im, 'im thread becomes a session star');
+      assert.match(im.label, /QQ · 主人/);
+      assert.match(im.content, /晚上吃什么/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  })();
+});

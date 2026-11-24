@@ -43,6 +43,8 @@ export function createProactiveDistill({ home, warn, pushEvent, usage, loadFacts
       minCluster: Number(pCfg.distillMinCluster) || 5,
     });
     if (!clusters.length) return { ok: true, ran: true, clusters: 0 };
+    // Star-sea process: the sky shows her clustering while it happens.
+    pushEvent('memory-progress', { stage: 'distill', count: clusters.length });
 
     const llmOn = pCfg.distillLlmEnabled === true;
     let models = [];
@@ -108,6 +110,7 @@ export function createProactiveDistill({ home, warn, pushEvent, usage, loadFacts
       }).catch((err) => warn('distill candidate append failed', err));
     }
     pushEvent('distill-candidates', { count: clusters.length, polished });
+    pushEvent('memory-progress', { stage: 'done', work: 'distill', ids: [] });
     return { ok: true, ran: true, clusters: clusters.length, polished };
   }
 

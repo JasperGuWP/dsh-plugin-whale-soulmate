@@ -15,10 +15,10 @@ import {
   sumSessionAssistantUsage,
   summarizeUsage,
 } from '../usage.mjs';
-import { resolveLlmModel } from '../llm-model-pick.mjs';
+import { isChatModel, resolveLlmModel } from '../llm-model-pick.mjs';
 import { errMsg, str } from '../small-utils.mjs';
 
-export function createUsageRuntime({ home, cfg, warn, pushEvent, sessionController, getLlm }) {
+export function createUsageRuntime({ home, cfg, warn, pushEvent, sessionController, getLlm, desktopSelection }) {
   const loadUsageConfig = async () => {
     const conf = await loadConfig(home);
     const u = conf.usage ?? {};
@@ -141,9 +141,119 @@ export function createUsageRuntime({ home, cfg, warn, pushEvent, sessionControll
     if (typeof cfg.llmOneShot === 'function') {
       return cfg.llmOneShot({ prompt, modelId, kind });
     }
+    // User decision (2026-11-24): every internal call defaults to the model currently
+    // selected in the DSH conversation picker. An explicit modelId (a per-feature
+    // setting the user filled in) still wins; auto-cheapest is only the last resort.
+    const live = typeof desktopSelection?.current === 'function' ? desktopSelection.current() : undefined;
+    if (!str(modelId).trim() && live?.model) modelId = str(live.model);
     const controller = sessionController();
     if (typeof controller?.generateReply === 'function') {
       return controller.generateReply({ text: prompt, model: modelId, purpose: kind });
+    }
+    // Desktop hosts expose no generateReply. The real host `llm` service is an adapter
+    // registry with a streaming API — llm.stream({provider, model, messages, …}) yields
+    // text-delta / usage / finish chunks. (The earlier chat/complete guess never matched
+    // this surface; a real install failed 139 IM proactive attempts in a row.)
+    const llm = typeof getLlm === 'function' ? getLlm() : null;
+    if (llm && typeof llm.stream === 'function') {
+      let provider = str(live?.provider);
+      let model = str(modelId);
+      // The live selection already names its provider. With an explicit modelId but no
+      // live provider, resolve that exact model's provider from the catalog — never a
+      // different model. With neither, there is nothing the user selected: fail loudly.
+      if (!provider && model) {
+        try {
+          const models = await listHostModels();
+          const hit = models.find((m) => str(m?.id || m?.model || m?.name) === model && m?.provider);
+          if (hit) provider = str(hit.provider);
+        } catch { /* fall through */ }
+      }
+      if (!provider || !model) {
+        throw new Error('[soulmate] no DSH model selection available — 请先在 DSH 会话里选择一个模型');
+      }
+      // Account-authenticated routes (deepseek-account) scope their token to a live
+      // session; carrying the tracked session id lets the host attach the account
+      // credential instead of falling back to a (possibly dead) API key.
+      const liveSessionId = str(desktopSelection?.currentSessionId?.());
+      const runStream = async (p, m, effort) => {
+        const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+          ? AbortSignal.timeout(90_000) : undefined;
+        let text = '';
+        let usage = null;
+        const blocks = new Map();
+        let finish = null;
+        for await (const chunk of llm.stream({
+          provider: p,
+          model: m,
+          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+          purpose: kind,
+          ...(liveSessionId && p === str(live?.provider) ? { sessionId: liveSessionId } : {}),
+          ...(effort ? { reasoningEffort: effort } : {}),
+          ...(signal ? { signal } : {}),
+        })) {
+          if (chunk?.type === 'text-delta') text += str(chunk.text);
+          else if (chunk?.type === 'usage' && chunk.usage) usage = chunk.usage;
+          else if (chunk?.type === 'block-end' && chunk.block) blocks.set(chunk.index, chunk.block);
+          else if (chunk?.type === 'finish') finish = chunk.reason;
+        }
+        if (!text.trim()) {
+          for (const b of blocks.values()) {
+            if (b?.type === 'text' && str(b.text).trim()) { text = str(b.text); break; }
+          }
+        }
+        return { text, usage, finish };
+      };
+      const effort = live?.reasoningEffort && str(model) === str(live.model) ? live.reasoningEffort : '';
+      let { text, usage, finish } = await runStream(provider, model, effort);
+      // User rule (final, 2026-11-24): default to the DSH-selected model; a failed route
+      // MAY fall back to another chat route, but every reroute must be surfaced to the
+      // user (toast + audit) — never a silent substitution.
+      const retriable = (f) => f?.kind === 'error'
+        && (/UNKNOWN_MODEL|AUTH|QUOTA|RATE|EXHAUST|INVALID/i.test(`${str(f.failure?.code)} ${str(f.failure?.message)}`));
+      if (!text.trim() && retriable(finish)) {
+        const fromRoute = `${provider}/${model}`;
+        const fromReason = str(finish?.failure?.message) || str(finish?.failure?.code) || 'provider error';
+        try {
+          const models = await listHostModels();
+          const tried = new Set([fromRoute]);
+          const alts = models.filter((m) => m?.provider && isChatModel(m)
+            && !tried.has(`${str(m.provider)}/${str(m.id || m.model || m.name)}`));
+          alts.sort((a, b) => (str(b.provider) === provider ? 1 : 0) - (str(a.provider) === provider ? 1 : 0));
+          for (const alt of alts.slice(0, 2)) {
+            const ap = str(alt.provider);
+            const am = str(alt.id || alt.model || alt.name);
+            const r = await runStream(ap, am, '');
+            provider = ap; model = am;
+            text = r.text; usage = r.usage; finish = r.finish;
+            if (text.trim()) {
+              // Visible notice: the user must know this reply did NOT use their selection.
+              pushEvent('llm-rerouted', {
+                kind,
+                from: fromRoute,
+                to: `${ap}/${am}`,
+                reason: fromReason.slice(0, 160),
+              });
+              warn(`llm rerouted for ${kind}: ${fromRoute} → ${ap}/${am} (${fromReason.slice(0, 80)})`);
+              break;
+            }
+            if (!retriable(finish)) break;
+          }
+        } catch { /* keep original failure */ }
+      }
+      if (finish && finish.kind === 'error') {
+        const f = finish.failure || {};
+        throw new Error(`[soulmate] llm call failed on ${provider}/${model}: ${str(f.message) || 'provider error'}${f.code ? ` (${f.code})` : ''}`);
+      }
+      if (!text.trim()) {
+        throw new Error(`[soulmate] llm stream returned no text (provider=${provider} model=${model})`);
+      }
+      return { text, usage };
+    }
+    if (llm && typeof llm.chat === 'function') {
+      return llm.chat({ model: modelId, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }], purpose: kind });
+    }
+    if (llm && typeof llm.complete === 'function') {
+      return llm.complete({ model: modelId, prompt, purpose: kind });
     }
     throw new Error('[soulmate] no llm one-shot available');
   }

@@ -3,9 +3,58 @@
 const { nodeTint } = require('./palette.mjs')
 const { neuronSky, rebuildNeuronSky, drawSky, drawVignette } = require('./sky.mjs')
 const { layoutMemoryGalaxy } = require('./constellation.mjs')
-const { neuronViewOf, makeProjector, stepFly } = require('./camera.mjs')
+const { neuronViewOf, makeProjector, stepFly, fitOverviewZoom } = require('./camera.mjs')
+const { noteGraph, drawProcess } = require('./process.mjs')
 
 const clampNum = (n, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo))
+
+// '#4facfe' → '79,172,254'; anything else → null (caller falls back to the default blue).
+function hexToRgb(hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''))
+  if (!m) return null
+  const n = parseInt(m[1], 16)
+  return ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255)
+}
+// Stable small hash for per-link pulse phase offsets.
+function hashId(s) {
+  let h = 0
+  const t = String(s || '')
+  for (let i = 0; i < t.length; i += 1) h = (h * 31 + t.charCodeAt(i)) >>> 0
+  return h
+}
+
+// Memory dust gets a small cool palette instead of one printed blue: different themes
+// should read as different tints at a glance. Bright stars stand out by *shape* too.
+const FACT_TINTS = [
+  [158, 196, 255], // azure
+  [120, 214, 232], // cyan
+  [176, 166, 255], // periwinkle
+  [126, 226, 196], // teal
+  [196, 170, 250], // lilac
+  [145, 210, 255], // ice
+]
+function starTint(node) {
+  if (node.kind === 'fact_neuron' || node.kind === 'milestone_spark') {
+    return FACT_TINTS[hashId(node.id) % FACT_TINTS.length]
+  }
+  // Dream pages are diaries in the outer band — cool ice, not theme gold.
+  if (node.kind === 'wiki_star' && String(node.id).startsWith('wiki:dream-')) return [150, 205, 255]
+  return nodeTint(node.kind)
+}
+
+/** Four-point star silhouette — bright memories should not all be circles. */
+function sparklePath(ctx, x, y, outer, inner) {
+  ctx.beginPath()
+  for (let i = 0; i < 8; i += 1) {
+    const a = (Math.PI / 4) * i - Math.PI / 2
+    const r = i % 2 === 0 ? outer : inner
+    const px = x + Math.cos(a) * r
+    const py = y + Math.sin(a) * r
+    if (i === 0) ctx.moveTo(px, py)
+    else ctx.lineTo(px, py)
+  }
+  ctx.closePath()
+}
 
 // Depth response. `near` is 0 for the deepest point of the body and 1 for the part
 // nearest the camera, measured against the whale's own half-depth — a property of the
@@ -39,11 +88,19 @@ const CROWD_FLARE = 0.7
  * @param {number} zoom  camera zoom; star sizes grow with it so pushing in actually
  *   brings you closer to the memories instead of only spreading them apart
  */
-function drawNode(ctx, p, t, focused, calm, zoom = 1) {
+function drawNode(ctx, p, t, focused, calm, zoom = 1, reducedMotion = false, overview = false) {
   const TT = t / 1000
   const node = p.node
-  const tint = nodeTint(node.kind)
-  const rgb = tint[0] + ',' + tint[1] + ',' + tint[2]
+  // Fine temperature variation per star: identical tints across dozens of facts read
+  // as printed dots; a ±18 shift on red/blue gives the field a photographic feel.
+  const warm = ((hashId(node.id) % 100) / 100) * 2 - 1
+  const baseTint = starTint(node)
+  const tint = [
+    clampNum(baseTint[0] + warm * 18, 0, 255),
+    clampNum(baseTint[1] + warm * 3, 0, 255),
+    clampNum(baseTint[2] - warm * 14, 0, 255),
+  ]
+  const rgb = Math.round(tint[0]) + ',' + Math.round(tint[1]) + ',' + Math.round(tint[2])
   const energy = clampNum(node.energy == null ? 0.5 : node.energy, 0, 1)
   const shielded = node.kind === 'private_shielded'
   const near = p.near == null ? 0.5 : p.near
@@ -52,7 +109,10 @@ function drawNode(ctx, p, t, focused, calm, zoom = 1) {
   const zoomGain = 1 + (zoom - 1) * 0.52
   const u = (NEAR_SIZE + NEAR_SIZE_GAIN * near) * zoomGain
   const fog = NEAR_FOG + (1 - NEAR_FOG) * near
-  const tw = 0.72 + 0.28 * Math.sin(TT * 1.6 + p.x * 0.05 + p.y * 0.07)
+  // Idle twinkle used to sit in ±14% — below the "is this moving?" threshold on a still
+  // screenshot and at a glance. Wider envelope keeps hierarchy readable while the field
+  // visibly breathes; prefers-reduced-motion collapses to a steady core.
+  const tw = reducedMotion ? 0.85 : (0.52 + 0.48 * Math.sin(TT * 1.85 + p.x * 0.05 + p.y * 0.07))
   const crowd = calm ? CROWD_CORE : 1
 
   // core = which layer, then salience *within* that layer. The previous formula
@@ -71,10 +131,20 @@ function drawNode(ctx, p, t, focused, calm, zoom = 1) {
     wiki_star: [3.3, 5.2],        // the gold suns
     episode_crystal: [1.4, 2.4],  // diary crystals
     session_star: [1.55, 2.7],    // chat-session stars — slightly larger/warmer than diary
+    transcript_star: [1.3, 2.2],  // verbatim transcripts — quiet cool stars
     fact_neuron: [0.7, 1.9],      // the blue dust
     private_shielded: [0.9, 1.7],
   }
-  const band = LAYER_BAND[node.kind] || LAYER_BAND.fact_neuron
+  let band = LAYER_BAND[node.kind] || LAYER_BAND.fact_neuron
+  // Overview (card / default orbit): pull gold suns forward and hush dust so the
+  // silhouette reads as a constellation, not a central blot of equal dots.
+  if (overview) {
+    if (node.kind === 'wiki_star') band = [band[0] * 1.22, band[1] * 1.28]
+    else if (node.kind === 'session_star') band = [band[0] * 1.08, band[1] * 1.12]
+    else if (node.kind === 'fact_neuron' || node.kind === 'milestone_spark') {
+      band = [band[0] * 0.78, band[1] * 0.84]
+    }
+  }
   const rank = Math.pow(salience, 0.7)
   // Floor raised to 0.75: at 0.45 a minor fact was a sub-pixel speck that vanished once
   // the canvas was shown at panel size (~0.55 scale).
@@ -91,6 +161,18 @@ function drawNode(ctx, p, t, focused, calm, zoom = 1) {
   const wantHalo = !calm || shielded === false && (node.kind === 'wiki_star' || focused)
   const hr = clampNum(cr * (2.6 + 1.6 * energy), 1.4, 13 * zoomGain) * (shielded ? 0.7 : 1) * haloGain
   const ha = (0.10 + 0.20 * energy) * tw * (shielded ? 0.5 : 1) * (wantHalo ? 1 : 0) * fog * (calm ? CROWD_HALO : 1) * 0.8 * haloGain
+  // Ambient bloom under every star: a wide, very soft breath of the star's own colour.
+  // This is what makes the field read as light in a sky instead of stickers on black.
+  const bloomR = clampNum(cr * (5.5 + 3.2 * energy), 3, 26 * zoomGain)
+  const bloomA = (0.030 + 0.055 * energy) * tw * fog * (shielded ? 0.6 : 1) * (calm ? 0.72 : 1)
+  const bg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, bloomR)
+  bg.addColorStop(0, 'rgba(' + rgb + ',' + bloomA.toFixed(3) + ')')
+  bg.addColorStop(0.55, 'rgba(' + rgb + ',' + (bloomA * 0.45).toFixed(3) + ')')
+  bg.addColorStop(1, 'rgba(' + rgb + ',0)')
+  ctx.fillStyle = bg
+  ctx.beginPath()
+  ctx.arc(p.x, p.y, bloomR, 0, Math.PI * 2)
+  ctx.fill()
   const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, hr)
   g.addColorStop(0, 'rgba(' + rgb + ',' + ha.toFixed(3) + ')')
   g.addColorStop(1, 'rgba(' + rgb + ',0)')
@@ -100,9 +182,19 @@ function drawNode(ctx, p, t, focused, calm, zoom = 1) {
   ctx.fill()
 
   ctx.fillStyle = 'rgba(' + rgb + ',' + ((shielded ? 0.55 : 0.95) * fog * crowd).toFixed(3) + ')'
-  ctx.beginPath()
-  ctx.arc(p.x, p.y, cr, 0, Math.PI * 2)
-  ctx.fill()
+  const shaped = !shielded && (
+    node.kind === 'wiki_star' || node.kind === 'session_star' ||
+    (node.kind === 'episode_crystal' && cr > 2) ||
+    (node.kind === 'transcript_star' && cr > 1.6) || focused
+  )
+  if (shaped) {
+    sparklePath(ctx, p.x, p.y, cr * 1.2, cr * 0.55)
+    ctx.fill()
+  } else {
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, cr, 0, Math.PI * 2)
+    ctx.fill()
+  }
 
   // White core: the tiny hot centre that makes a dot read as a *star* rather than a
   // coloured disc. It deliberately ignores `crowd` (a highlight is not "more memory
@@ -124,15 +216,29 @@ function drawNode(ctx, p, t, focused, calm, zoom = 1) {
   }
 
   // four-point constellation flare (crowded skies: only the truly bright)
-  const wantFlare = !shielded && (!calm || node.kind === 'wiki_star' || focused || (node.importance || 0) >= 5)
+  // Flares belong to stars that are actually bright: giving every dust mote a
+  // four-point cross turned clusters into trails of little dashes.
+  const wantFlare = !shielded && (node.kind === 'wiki_star' || node.kind === 'session_star' || focused || cr >= 2.4)
   if (wantFlare) {
-    const len = cr * (2.2 + 0.7 * Math.min(5, node.importance || 1)) * tw
-    ctx.strokeStyle = 'rgba(' + rgb + ',' + ((calm ? 0.28 : 0.40) * tw * fog * (calm ? CROWD_FLARE : 1)).toFixed(3) + ')'
-    ctx.lineWidth = 0.55 + 0.35 * u
+    const len = cr * (2.0 + 0.7 * Math.min(5, node.importance || 1)) * tw
+    const flareA = (calm ? 0.30 : 0.45) * tw * fog * (calm ? CROWD_FLARE : 1)
+    ctx.strokeStyle = 'rgba(' + rgb + ',' + flareA.toFixed(3) + ')'
+    ctx.lineWidth = 0.6 + 0.35 * u
     ctx.beginPath()
     ctx.moveTo(p.x - len, p.y); ctx.lineTo(p.x + len, p.y)
     ctx.moveTo(p.x, p.y - len); ctx.lineTo(p.x, p.y + len)
     ctx.stroke()
+    // diagonal secondary spikes — the diamond sparkle of a real bright star
+    if (node.kind === 'wiki_star' || node.kind === 'session_star' || focused) {
+      const d2 = len * 0.42
+      ctx.strokeStyle = 'rgba(255,255,255,' + (flareA * 0.5).toFixed(3) + ')'
+      ctx.lineWidth = 0.5
+      const dd = d2 * 0.7071
+      ctx.beginPath()
+      ctx.moveTo(p.x - dd, p.y - dd); ctx.lineTo(p.x + dd, p.y + dd)
+      ctx.moveTo(p.x - dd, p.y + dd); ctx.lineTo(p.x + dd, p.y - dd)
+      ctx.stroke()
+    }
   }
 
   if (focused) {
@@ -141,10 +247,63 @@ function drawNode(ctx, p, t, focused, calm, zoom = 1) {
     ctx.beginPath()
     ctx.arc(p.x, p.y, cr + 4.5, 0, Math.PI * 2)
     ctx.stroke()
-    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace'
-    ctx.fillStyle = 'rgba(226,236,255,0.88)'
-    ctx.fillText(String(node.label || node.id), p.x + 9, p.y - 7)
+    drawInfoCard(ctx, p, node)
   }
+}
+
+// Focus card: type / age / recall count / one-line summary. A memory you can *read*
+// is a memory that feels lived-in — the old single 10px label said almost nothing.
+const KIND_LABEL = {
+  wiki_star: '主题恒星',
+  episode_crystal: '日记水晶',
+  session_star: '会话窗星',
+  fact_neuron: '记忆',
+  milestone_spark: '里程碑',
+  memento_relic: '纪念物',
+  private_shielded: '私密',
+}
+function ageText(iso, t) {
+  const at = Date.parse(iso || '')
+  if (!Number.isFinite(at)) return ''
+  const days = Math.max(0, Math.floor((Date.now() - at) / 86400000))
+  if (days === 0) return '今天记下'
+  if (days < 30) return days + ' 天前记下'
+  return Math.floor(days / 30) + ' 个月前记下'
+}
+function drawInfoCard(ctx, p, node) {
+  const lines = []
+  const title = String(node.label || node.id)
+  lines.push({ text: title.length > 22 ? title.slice(0, 21) + '…' : title, bold: true })
+  const meta = [KIND_LABEL[node.kind] || '记忆', ageText(node.createdAt || node.updatedAt),
+    Number(node.recallCount) > 0 ? '被想起 ' + node.recallCount + ' 次' : ''].filter(Boolean).join(' · ')
+  if (meta) lines.push({ text: meta })
+  const summary = String(node.summary || '').replace(/\s+/g, ' ').trim()
+  if (summary) lines.push({ text: summary.length > 26 ? summary.slice(0, 25) + '…' : summary })
+  ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace'
+  let wMax = 0
+  for (const l of lines) wMax = Math.max(wMax, ctx.measureText(l.text).width)
+  const padX = 8, padY = 6, lh = 14
+  const cw = wMax + padX * 2
+  const ch = lines.length * lh + padY * 2
+  let cx = p.x + 12
+  let cy = p.y - ch - 8
+  const W = ctx.canvas.width, H = ctx.canvas.height
+  if (cx + cw > W - 6) cx = p.x - cw - 12
+  if (cx < 6) cx = 6
+  if (cy < 6) cy = p.y + 12
+  if (cy + ch > H - 6) cy = H - ch - 6
+  ctx.fillStyle = 'rgba(10,14,26,0.82)'
+  ctx.strokeStyle = 'rgba(168,200,255,0.35)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.roundRect ? ctx.roundRect(cx, cy, cw, ch, 6) : ctx.rect(cx, cy, cw, ch)
+  ctx.fill()
+  ctx.stroke()
+  lines.forEach((l, i) => {
+    ctx.fillStyle = l.bold ? 'rgba(236,242,255,0.95)' : 'rgba(196,210,240,0.8)'
+    ctx.font = (l.bold ? '600 ' : '') + '10px ui-monospace, SFMono-Regular, Menlo, monospace'
+    ctx.fillText(l.text, cx + padX, cy + padY + 10 + i * lh)
+  })
 }
 
 // `drawGrain` used to live here: a 0.08-alpha mote for every memory below importance 4.
@@ -161,6 +320,9 @@ function drawNeurons(canvas, graph, t) {
   if (!(w > 0) || !(h > 0)) return
   if (neuronSky.w !== w || neuronSky.h !== h) rebuildNeuronSky(w, h)
   const view = neuronViewOf(canvas)
+  const dtMs = Math.min(120, Math.max(1, t - (view.lastT == null ? t - 16.7 : view.lastT)))
+  const reducedMotion = typeof matchMedia === 'function'
+    && matchMedia('(prefers-reduced-motion: reduce)').matches
 
   // coasting inertia after a drag
   if (view.vy || view.vp) {
@@ -172,12 +334,18 @@ function drawNeurons(canvas, graph, t) {
     if (Math.abs(view.vp) < 0.0002) view.vp = 0
   }
 
+  // Idle drift: empty sky should still breathe. Skip while flying, while the user is
+  // still coasting, or when the OS asks for reduced motion.
+  if (!reducedMotion && !view.flying && Math.abs(view.vy) < 0.0005 && Math.abs(view.vp) < 0.0005) {
+    view.yaw += 0.000055 * dtMs
+  }
+
   // Fly-to animation (double-click a star). It has to run *before* the sky is drawn: each
   // step nudges the pan, and the projection used for this frame must already include that
   // nudge or the star would trail one frame behind the movement.
   if (view.flying) {
     const target = view.lastProjected && view.lastProjected.find((p) => p.node.id === view.flying.id)
-    stepFly(view, target, w, h, t - (view.lastT == null ? t - 16.7 : view.lastT))
+    stepFly(view, target, w, h, dtMs)
   }
   view.lastT = t
 
@@ -186,7 +354,25 @@ function drawNeurons(canvas, graph, t) {
   const TT = t / 1000
 
   const layout = layoutMemoryGalaxy(graph)
-  const nodes = ((graph && graph.nodes) || []).slice(0, 240)
+
+  // Auto-frame the living sky into the canvas. Skip once the user has dragged/zoomed,
+  // or while a fly-to / pin is active — those own the camera.
+  if (!view.userFramed && !view.flying && !view.pinned) {
+    const want = fitOverviewZoom(layout.coreExtent || layout.extent, w, h)
+    const dz = want - view.zoom
+    if (Math.abs(dz) > 0.035) view.zoom += dz * 0.14
+    else view.zoom = want
+  }
+  const overview = view.zoom < 2.55
+
+  // The old flat slice(0, 240) silently deleted old memories from the sky — exactly the
+  // ones a growth trajectory needs. Rank by importance+energy instead, and let the cap
+  // grow with zoom: pushing in earns more stars, overview stays readable.
+  const allNodes = (graph && graph.nodes) || []
+  const cap = Math.min(900, Math.round(240 + (view.zoom - 1) * 60))
+  const nodes = allNodes.length <= cap ? allNodes : allNodes.slice().sort((a, b) =>
+    ((b.importance || 1) + (b.energy || 0.5) * 2) - ((a.importance || 1) + (a.energy || 0.5) * 2)
+  ).slice(0, cap)
   const projected = []
   const byId = new Map()
   const halfDepth = layout.halfDepth || 8
@@ -215,9 +401,10 @@ function drawNeurons(canvas, graph, t) {
     if (p.node.kind !== 'wiki_star') continue
     const d = deg.get(p.node.id) || 1
     const u = NEAR_SIZE + NEAR_SIZE_GAIN * p.near
-    const hr = clampNum((12 + 2.6 * Math.sqrt(d)) * u, 12, 52)
+    const hr = clampNum((12 + 2.6 * Math.sqrt(d)) * u * (overview ? 1.15 : 1), 12, 58)
     const g2 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, hr)
-    g2.addColorStop(0, 'rgba(255,213,148,0.065)')
+    const coreA = overview ? 0.095 : 0.065
+    g2.addColorStop(0, 'rgba(255,213,148,' + coreA.toFixed(3) + ')')
     g2.addColorStop(0.6, 'rgba(180,205,255,0.030)')
     g2.addColorStop(1, 'rgba(180,205,255,0)')
     ctx.fillStyle = g2
@@ -230,6 +417,7 @@ function drawNeurons(canvas, graph, t) {
   // memories. Drawn between the actual projected nodes, so a line never appears unless
   // both of its endpoints exist.
   const focusId = view.hoverId || view.pinned
+  const denseSky = projected.length > 300
   // Line width compensates for zoom: at 6× a fixed 0.6px stroke became a 4px cable that
   // buried the dots it connected.
   const lineScale = 1 / Math.max(1, view.zoom * 0.55)
@@ -239,17 +427,74 @@ function drawNeurons(canvas, graph, t) {
     const b = byId.get(link.target)
     if (!a || !b) continue
     const touched = focusId && (link.source === focusId || link.target === focusId)
-    const base = projected.length > 300 ? 0.02 + 0.025 * clampNum(link.strength || 0.5, 0, 1) : 0.04 + 0.04 * clampNum(link.strength || 0.5, 0, 1)
+    const s = clampNum(link.strength || 0.5, 0, 1)
+    // Old alpha topped out near 0.08 — on the panel-sized dark canvas the whole network
+    // was effectively invisible. Lines now carry their kind colour and enough weight to
+    // read as connections, while a faint wide under-stroke gives them a soft glow.
+    // Cloud-sync beams are the exception: dozens of them cut straight across every
+    // local cluster, so they render as a whisper (or not at all while untouched).
+    const isBeam = link.kind === 'warp_sync_beam'
+    const isDream = (id) => {
+      const rec = byId.get(id)
+      return !!(rec && rec.node.kind === 'wiki_star' && String(id).startsWith('wiki:dream-'))
+    }
+    // Dreams no longer own facts: the old fact→dream links still exist in the graph but
+    // their endpoints sit in different bands now, so drawing them only adds cables.
+    const dreamLink = link.kind === 'topic_cluster' && (isDream(link.source) || isDream(link.target))
+    const base0 = denseSky ? 0.05 + 0.06 * s : 0.12 + 0.15 * s
+    const base = isBeam ? base0 * 0.16 : base0
     const ndLink = nearOf((a.z + b.z) / 2, halfDepth)
-    const alpha = touched ? 0.24 + 0.08 * Math.sin(TT * 2.4) : base * (0.35 + 0.85 * ndLink)
-    ctx.strokeStyle = 'rgba(168,200,255,' + alpha.toFixed(3) + ')'
-    ctx.lineWidth = 0.6 * lineScale
-    const mx = (a.x + b.x) / 2 + (w / 2 - (a.x + b.x) / 2) * 0.10
-    const my = (a.y + b.y) / 2 + (h / 2 - (a.y + b.y) / 2) * 0.10
+    const alpha = touched ? 0.42 + 0.10 * Math.sin(TT * 2.4) : base * (0.5 + 0.5 * ndLink)
+    const rgbLink = hexToRgb(link.pulseColor) || '168,200,255'
+    const distPx = Math.hypot(b.x - a.x, b.y - a.y)
+    const farLink = distPx > Math.max(w, h) * 0.30
+    const midLink = distPx > Math.max(w, h) * 0.16
+    // Short cluster links draw straight: bowed curves between neighbours read as
+    // comet crescents around the sun, which is exactly the ugly artefact to avoid.
+    const shortLink = distPx < Math.max(w, h) * 0.06
+    const pull = shortLink ? 0 : 0.10
+    const mx = (a.x + b.x) / 2 + (w / 2 - (a.x + b.x) / 2) * pull
+    const my = (a.y + b.y) / 2 + (h / 2 - (a.y + b.y) / 2) * pull
+    // Structure that spans the sky reads as stray cables, not as connection. Until the
+    // user focuses one of its endpoints it is not drawn at all.
+    if (!touched && (isBeam || dreamLink || farLink)) continue
+    // Overview: keep only short/cluster spines — mid arcs turn the card into a hairball.
+    if (!touched && overview && (midLink || (link.strength || 0) < 0.34)) continue
+    const aFinal = touched ? alpha : midLink ? alpha * 0.45 : alpha
+    if (!denseSky && !isBeam && !farLink && !shortLink) {
+      ctx.strokeStyle = 'rgba(' + rgbLink + ',' + (alpha * 0.10).toFixed(3) + ')'
+      ctx.lineWidth = 1.4 * lineScale
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
+      ctx.quadraticCurveTo(mx, my, b.x, b.y)
+      ctx.stroke()
+    }
+    if (isBeam) ctx.setLineDash([4, 7])
+    ctx.strokeStyle = 'rgba(' + rgbLink + ',' + aFinal.toFixed(3) + ')'
+    ctx.lineWidth = (touched ? 1.1 : 0.8) * lineScale
     ctx.beginPath()
     ctx.moveTo(a.x, a.y)
     ctx.quadraticCurveTo(mx, my, b.x, b.y)
     ctx.stroke()
+    if (isBeam) ctx.setLineDash([])
+
+    // Synapse pulse: a light mote travels the curve. Short cluster links get a quieter
+    // mote so the overview still feels alive without turning into a strobe; dense skies
+    // stay calm (readable dust, not fireworks).
+    if (!reducedMotion && !denseSky && !isBeam && (link.strength || 0) >= 0.22) {
+      const speed = 0.10 + 0.16 * clampNum(link.strength || 0.5, 0, 1)
+      const phase = ((TT * speed) + (hashId(link.id) % 100) / 100) % 1
+      const it = 1 - phase
+      const px = it * it * a.x + 2 * it * phase * mx + phase * phase * b.x
+      const py = it * it * a.y + 2 * it * phase * my + phase * phase * b.y
+      const pc = hexToRgb(link.pulseColor) || '168,200,255'
+      const quiet = shortLink ? 0.55 : 1
+      const pa = (touched ? 0.7 : 0.4) * (0.35 + 0.65 * ndLink) * quiet
+      ctx.fillStyle = 'rgba(' + pc + ',' + pa.toFixed(3) + ')'
+      ctx.beginPath()
+      ctx.arc(px, py, (touched ? 1.4 : 0.9) * lineScale * 2 * (shortLink ? 0.75 : 1), 0, Math.PI * 2)
+      ctx.fill()
+    }
   }
 
   // far → near. Every memory is drawn as a real star: the old split sent everything
@@ -260,7 +505,21 @@ function drawNeurons(canvas, graph, t) {
   for (const p of order) {
     const node = p.node
     const dense = projected.length > 300
-    drawNode(ctx, p, t, node.id === focusId, dense, view.zoom)
+    drawNode(ctx, p, t, node.id === focusId, dense, view.zoom, reducedMotion, overview)
+  }
+
+  // Process layer: births ignite, working stars breathe, intent ripples. Graph diff is
+  // keyed on identity — a poll that returns the same sky adds nothing.
+  noteGraph(canvas, graph, Date.now())
+  drawProcess(ctx, canvas, projected, byId, Date.now(), w, h)
+
+  // The locked corner: shielded memories keep their shape, never their content. A quiet
+  // labelled arc says "her secrets live here" and points at the notebook, not the data.
+  const shieldedCount = allNodes.filter((n) => n && n.kind === 'private_shielded').length
+  if (shieldedCount > 0) {
+    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace'
+    ctx.fillStyle = 'rgba(150,170,220,0.5)'
+    ctx.fillText('上锁的角落 · ' + shieldedCount + ' 条 · 内容在小本本', 10, h - 12)
   }
 
   drawVignette(ctx, w, h)

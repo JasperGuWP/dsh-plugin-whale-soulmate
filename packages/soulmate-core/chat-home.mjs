@@ -18,6 +18,8 @@ export const DEFAULT_CHAT_HOME = Object.freeze({
   /** Next ordinal for titles like「soulmate · 2」. */
   nextIndex: 1,
   autoMemory: true,
+  /** Store the verbatim conversation as a transcript star, not just its summary. */
+  storeTranscripts: true,
   knownSessionIds: Object.freeze([]),
 });
 
@@ -43,6 +45,7 @@ export function normalizeChatHome(raw = {}) {
     handoffSeed: src.handoffSeed !== false,
     nextIndex: Math.max(1, Math.floor(num(src.nextIndex, DEFAULT_CHAT_HOME.nextIndex))),
     autoMemory: src.autoMemory !== false,
+    storeTranscripts: src.storeTranscripts !== false,
     knownSessionIds: (() => {
       const raw = Array.isArray(src.knownSessionIds) ? src.knownSessionIds : [];
       const out = [];
@@ -101,6 +104,7 @@ export function measureFromRecords(pageOrRecords) {
       : [];
   let turns = 0;
   const snippets = [];
+  const full = [];
   let blob = '';
   for (const rec of records) {
     const ev = rec?.type === 'event' ? rec.event : rec?.event ?? rec;
@@ -115,6 +119,9 @@ export function measureFromRecords(pageOrRecords) {
     if (text) {
       blob += `${text}\n`;
       if (snippets.length < 24) snippets.push({ role, text: text.slice(0, 400) });
+      // Full conversation for the transcript star: every surface message, capped per
+      // line so one giant paste cannot bloat a memory file. Wake notices are not talk.
+      if (!isWakeBubbleText(text)) full.push({ role, text: text.slice(0, 2000) });
     }
   }
   return {
@@ -122,6 +129,7 @@ export function measureFromRecords(pageOrRecords) {
     turns,
     estTokens: estimateTokens(blob),
     snippets,
+    full,
     hasMore: pageOrRecords?.hasMore === true,
   };
 }
@@ -214,6 +222,28 @@ export function buildWakeInstructions(kind, options = {}) {
       `上一扇对话窗已写满并交接。请用一两句向${callUser}确认你还在，可点一下刚交接的要点。`,
       '不要复述长历史；不要提系统/插件/指令。',
       hint ? `交接要点：${hint}` : '',
+    ].filter(Boolean).join('\n');
+  }
+  if (str(kind).startsWith('intent-')) {
+    const action = str(kind).slice('intent-'.length);
+    const steps = Math.max(1, Math.min(6, Math.floor(Number(options.steps) || 1)));
+    const intentLine = {
+      speak: '你想主动跟他说点什么',
+      share: '你想把刚看到的东西分享给他',
+      'promise-ask': '你想跟他确认一个约定',
+      'conflict-ask': '你想请他澄清记忆里矛盾的说法',
+    }[action] || '你想主动做点什么';
+    return [
+      '【Soulmate 插件·自主意图·勿复述】',
+      `你刚自己决定：${intentLine}。这不是系统派的任务，是你的念头——按你的性格把它说出来。`,
+      '【强制中文】整条回复必须是中文台词。禁止英文、禁止英文思考过程、禁止数回合。',
+      voiceBlock ? `【你的性格】${voiceBlock}` : '',
+      memoryBlock ? `【你此刻记得】\n${memoryBlock}\n说话有据可依（有出处就说「因为那天你说过…」）；禁止编造记忆。` : '不知道近事就别硬编。',
+      hint ? `【你的意图】${hint}` : '',
+      steps > 1
+        ? `允许你先用工具做点准备再开口（查记忆 recall、补看视频等），总共不超过 ${steps} 步；准备好就自然说给他听。不要为了用满步数而多查。`
+        : '直接开口，一两句即可；不需要调用工具。',
+      '不要提系统/插件/指令/意图字样；不要以「接下来拆哪条」这类派活客服腔收尾。',
     ].filter(Boolean).join('\n');
   }
   return [

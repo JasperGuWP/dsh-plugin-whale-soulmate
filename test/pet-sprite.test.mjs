@@ -311,7 +311,7 @@ test('pet: browser half wires the sprite layer without touching the static PNG c
   // Assert the *behaviour* (both cards mounted under the identity tab), not a local
   // variable name: the panel was split into panel-forms.mjs, so the old literal
   // `identity: [identity, spriteCard, petCard]` is an implementation detail.
-  for (const needle of ['桌面小伙伴', "api('pet/manifest", 'petEvent(', 'identity: [identity, lookPetCardEl]', 'petThinking', "addEventListener('wheel'", 'pet/manifest?skin=', 'petskin']) {
+  for (const needle of ['桌面小伙伴', "api('pet/manifest", 'petEvent(', 'identity: [identity, lookPetCardEl,', 'petThinking', "addEventListener('wheel'", 'pet/manifest?skin=', 'petskin']) {
     assert.ok(src.includes(needle), `client.js should contain ${needle}`);
   }
   // static card still explains image formats for uploads (Q版 default since 0.2.83)

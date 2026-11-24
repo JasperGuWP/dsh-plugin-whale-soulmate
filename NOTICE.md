@@ -36,6 +36,7 @@ and community practice (**no third-party source trees are vendored here**):
 | Karpathy-style LLM Wiki pattern | Structured Markdown wiki pages with `[[slug]]` links; Retain → Recall → Reflect memory loop. |
 | Cordis / Schemastery ecosystem | Reversible plugin lifecycle & config schemas. |
 | [soldair/node-qrcode](https://github.com/soldair/node-qrcode) | QR encoding dependency (`qrcode` npm package). |
+| [Open-Meteo](https://open-meteo.com/) | Weather data for `soulmate_weather`（geocoding + forecast，免密钥）。Data by Open-Meteo.com, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the free API is for non-commercial use — commercial distributions should subscribe to an Open-Meteo plan. 天气数据来自 Open-Meteo（CC BY 4.0）；免费接口限非商业用途，商业分发请订阅其付费方案。 |
 
 MBTI type labels appearing in the persona quiz are a **public typology vocabulary** used for UX only; they are not an endorsement of any proprietary assessment product.
 
