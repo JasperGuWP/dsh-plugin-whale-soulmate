@@ -12,12 +12,11 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { zstdDecodeAll } from '../zstd-frames.mjs';
-import { appendImChat, listImChat } from '../im-chat.mjs';
-import { upsertSessionEpisode } from '../memory-engine.mjs';
+import { appendImChat } from '../im-chat.mjs';
 import { atomicWriteJson, appendJsonl, loadConfig } from '../state.mjs';
 import { clip } from '../small-utils.mjs';
 import { importLiveQqInbound, importQqLifecycleAndInteractions, getSeenRealIds } from './qqbot-live-source.mjs';
-import { describeAttachments, readQqVisionDescriptions } from './qq-vision-runtime.mjs';
+import { refreshImMemoryStar } from './im-proactive-context.mjs';
 
 const PREF_PATH = join(homedir(), '.dsh-qqbot', 'model-prefs.json');
 const SESSIONS_ROOT = join(homedir(), '.dsh', 'sessions');
@@ -203,27 +202,20 @@ export function createQqbotBridgeRuntime({ home, warn, pushEvent, prefsPath = PR
     if (!imported) return { ok: true, ran: true, imported: 0, conversations: 0, lifecycle: extra.lifecycle, buttons: extra.buttons };
 
     // Refresh one memory star per conversation that had new lines (live or transcript).
-    const vision = await readQqVisionDescriptions(home).catch(() => ({}));
+    // Shared renderer with the proactive send: vision-joined media, cleaned plumbing
+    // text, owner labeled by openid — one conversation = one star, same id both paths.
+    const tz = Number(conf?.proactive?.tzOffsetMinutes) || 480;
     for (const key of touched) {
       const isGroup = key.startsWith('group:');
       const id = key.slice(isGroup ? 6 : 4);
       try {
-        const thread = isGroup
-          ? await listImChat(home, { platform: 'qq', groupId: id, limit: 40 })
-          : await listImChat(home, { platform: 'qq', peerId: id, limit: 40 });
-        if (!Array.isArray(thread) || !thread.length) continue;
-        const content = thread
-          .map((r) => {
-            const media = describeAttachments(r.media, { descriptions: vision });
-            const line = [r.text, media].filter(Boolean).join(' ');
-            return r.role === 'bot' ? `我：${line}` : `${r.peerLabel || (isGroup ? '群友' : '对方')}：${line}`;
-          })
-          .join('\n');
-        await upsertSessionEpisode(home, {
-          sessionId: isGroup ? `im:group:qq:${id}` : `im:qq:${id}`,
-          title: isGroup ? `QQ群 · ${id.slice(0, 8)}` : 'QQ · 主人',
-          content,
-          kind: 'im',
+        await refreshImMemoryStar(home, {
+          platform: 'qq',
+          groupId: isGroup ? id : '',
+          peerId: isGroup ? '' : id,
+          label: isGroup ? id.slice(0, 8) : '主人',
+          tzOffsetMinutes: tz,
+          ownerId,
         });
       } catch (err) {
         warn('qqbot bridge star failed', err);

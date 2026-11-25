@@ -15,8 +15,8 @@ import { composePresenceDigest } from '../memory-engine.mjs';
 import { inRanges, localClock } from '../proactive.mjs';
 import { resolveLlmModel } from '../llm-model-pick.mjs';
 import { sendImMessage } from '../../soulmate-im/index.mjs';
-import { appendImChat, listImChat } from '../im-chat.mjs';
-import { upsertSessionEpisode } from '../memory-engine.mjs';
+import { appendImChat } from '../im-chat.mjs';
+import { composeImProactiveContext, refreshImMemoryStar } from './im-proactive-context.mjs';
 import { clip, errMsg, str } from '../small-utils.mjs';
 
 const MINUTE = 60_000;
@@ -85,18 +85,27 @@ export function evaluateImProactiveGate({ nowMs = Date.now(), tzOffsetMinutes = 
   return { ok: true, send: true, reason: 'due', targets, dateKey: clock.dateKey, clock: clock.clock };
 }
 
-/** The message brief: her intent angle + persona + memory; the IM line is hers to write. */
-export function composeImProactivePrompt({ target, angle, voice, memory, persona = {}, maxChars = 120, clock = '' } = {}) {
+/** The message brief: her intent angle + persona + real conversation context; the IM line is hers to write. */
+export function composeImProactivePrompt({ target, angle, voice, context = {}, persona = {}, maxChars = 120, clock = '' } = {}) {
   const displayName = str(persona.name).trim() || 'soulmate';
   const callUser = str(persona.callUser).trim() || '你';
   const selfRef = str(persona.selfRef).trim() || '我';
-  const where = target?.groupId ? '群聊（所有人可见：不要提私密记忆，说话注意分寸）' : '私聊';
+  const isGroup = Boolean(target?.groupId);
+  const where = isGroup ? '群聊（所有人可见：说话注意分寸，别把私聊内容原样搬进群）' : '私聊';
+  const recent = str(context.recent).trim();
+  const dm = str(context.dm).trim();
+  const memory = str(context.memory).trim();
+  const material = str(context.material).trim();
+  const freshness = context.lastActivity ? `最近一条消息在 ${context.lastActivity}` : '这个会话还没有任何聊天记录';
   return [
     `你是${displayName}（自称「${selfRef}」），想主动给${callUser}发一条${str(target?.platform)}消息（${where}）。现在是 ${clock}。`,
     voice ? `【你的性格】${voice}` : '',
+    recent ? `【会话近况】（${freshness}）\n${recent}` : `【会话近况】${freshness}。`,
+    dm ? `【你和他的私聊近况】（只有你俩可见；群里发言可以据此关心他，但不得复述私聊原话）\n${dm}` : '',
     memory ? `【你此刻记得】\n${memory}` : '',
-    angle ? `【你想说的】${angle}` : '按你的性格自然说一两句近事。',
-    `要求：口语、真实、不超过 ${maxChars} 字；禁止编造记忆；不要提系统/插件/AI；不要客服腔。`,
+    material ? `【你今天的真实见闻】（可当新话题聊）\n${material}` : '',
+    angle ? `【你想说的】${angle}` : '自主挑一种：接着近况里的真事聊一句／用今天的真实见闻开个新话题／按性格聊聊你此刻在想什么。保持你自己的个性，别缩成客套问候。',
+    `要求：口语、真实、不超过 ${maxChars} 字；事实只能来自上面给出的近况、记忆与见闻——可以聊想法、感受、新话题，但不得编造发生过的事件（比如「有人在起哄/欺负你」这类近况里没有的事）；不要提系统/插件/AI；不要客服腔；不要用「@你」这类假 at。`,
     '觉得现在不该发就只输出两个字：不发。只输出消息正文或「不发」，不要解释。',
   ].filter(Boolean).join('\n');
 }
@@ -161,12 +170,19 @@ export function createImProactiveRuntime({ home, warn, pushEvent, usage, cfg, of
     } catch (err) {
       warn('im proactive brief failed', err);
     }
+    // Ground the line in what actually happened: recent target-conversation lines,
+    // the owner's DM, her memory digest (user decision 2026-11-25 — both chats fed).
+    let context = { recent: '', dm: '', memory, lastActivity: '' };
+    try {
+      context = await composeImProactiveContext(home, { target, ext, nowMs: at, tzOffsetMinutes: tz, memory });
+    } catch (err) {
+      warn('im proactive context failed', err);
+    }
     const prompt = composeImProactivePrompt({
       target,
       angle,
       voice,
-      // Group chats are readable by strangers: never feed the private memory digest.
-      memory: target.groupId ? '' : memory,
+      context,
       persona: conf.persona ?? {},
       maxChars,
       clock: gate.clock,
@@ -256,27 +272,15 @@ export function createImProactiveRuntime({ home, warn, pushEvent, usage, cfg, of
           // it the same send landed twice (here + qq-outbound.jsonl).
           messageId: str(res?.messageId),
         });
-        const thread = target.groupId
-          ? await listImChat(home, { platform: target.platform, groupId: target.groupId, limit: 40 })
-          : await listImChat(home, { platform: target.platform, peerId: target.to, limit: 40 });
-        const rows = Array.isArray(thread) ? thread : [];
-        if (rows.length) {
-          const content = rows
-            .map((r) => (r.role === 'bot'
-              ? `我：${str(r.text)}`
-              : `${target.groupId ? (str(r.peerLabel) || '群友') : '对方'}：${str(r.text)}`))
-            .join('\n');
-          await upsertSessionEpisode(home, {
-            sessionId: target.groupId
-              ? `im:group:${target.platform}:${target.groupId}`
-              : `im:${target.platform}:${target.to}`,
-            title: target.groupId
-              ? `${target.platform}群 · ${target.label || target.groupId}`
-              : `${target.platform} · ${target.label || target.to}`,
-            content,
-            kind: 'im',
-          });
-        }
+        await refreshImMemoryStar(home, {
+          platform: target.platform,
+          groupId: target.groupId,
+          peerId: target.to,
+          label: target.label,
+          tzOffsetMinutes: tz,
+          ownerId: str(ext.imOwnerQq).trim().toUpperCase(),
+          nowMs: at,
+        });
       } catch (err) {
         warn('im proactive memory star failed', err);
       }

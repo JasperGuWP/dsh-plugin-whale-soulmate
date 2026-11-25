@@ -329,7 +329,7 @@ async function readWikiPages(home) {
   return pages;
 }
 
-async function readEpisodes(home, { includePrivate = false } = {}) {
+export async function readEpisodes(home, { includePrivate = false } = {}) {
   const out = [];
   const dirs = [{ dir: home.episodesDir, visibility: 'syncable' }];
   if (includePrivate) dirs.push({ dir: home.privateDir, visibility: 'private' });

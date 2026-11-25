@@ -32,7 +32,9 @@ export function personaVoiceBrief(persona = {}, state = {}) {
   else if (Number(t.brevity) <= 30) notes.push('可以写细');
   if (notes.length) bits.push(`分寸：${notes.join('、')}`);
   const catchphrases = (preset?.catchphrases ?? []).slice(0, 2).map((s) => `「${str(s)}」`).join(' ');
-  if (catchphrases) bits.push(`口吻参考：${catchphrases}`);
+  // 2026-11-25 群事故：dark-hunter 的口癖样例情境（有人起哄/有人过界）被 flash 模型
+  // 当成真实事件编进主动消息。样例必须显式标注「只学语气」。
+  if (catchphrases) bits.push(`口吻参考（只学语气，样例里的情境不是真事，不得当成发生过复述）：${catchphrases}`);
   const mood = MOOD_SHORT[str(state?.mood).trim()];
   if (mood) bits.push(`当下心情：${mood}`);
   return bits.join('。');
