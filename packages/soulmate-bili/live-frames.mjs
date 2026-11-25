@@ -8,11 +8,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 
-export const LIVE_FRAME_EVERY_SEC_PRESETS = Object.freeze([15, 20, 30, 45, 60, 90, 120]);
-export const LIVE_FRAME_EVERY_SEC_MIN = 15;
+export const LIVE_FRAME_EVERY_SEC_MIN = 5;
 export const LIVE_FRAME_EVERY_SEC_MAX = 120;
 export const LIVE_FRAME_MAX_COUNT = 240;
-export const LIVE_FRAME_DEFAULT_EVERY_SEC = 30;
+export const LIVE_FRAME_DEFAULT_EVERY_SEC = 15;
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 soulmate-bili-live/0.1';
 
@@ -25,18 +24,7 @@ const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 export function clampLiveFrameEverySec(raw) {
   const n = Math.round(num(raw, LIVE_FRAME_DEFAULT_EVERY_SEC));
-  const clamped = clamp(n, LIVE_FRAME_EVERY_SEC_MIN, LIVE_FRAME_EVERY_SEC_MAX);
-  // Snap to nearest preset when close; otherwise keep clamped integer.
-  let best = LIVE_FRAME_EVERY_SEC_PRESETS[0];
-  let bestDiff = Math.abs(best - clamped);
-  for (const p of LIVE_FRAME_EVERY_SEC_PRESETS) {
-    const d = Math.abs(p - clamped);
-    if (d < bestDiff) {
-      best = p;
-      bestDiff = d;
-    }
-  }
-  return bestDiff <= 5 ? best : clamped;
+  return clamp(n, LIVE_FRAME_EVERY_SEC_MIN, LIVE_FRAME_EVERY_SEC_MAX);
 }
 
 /** How many frames to request for a video of given duration. */

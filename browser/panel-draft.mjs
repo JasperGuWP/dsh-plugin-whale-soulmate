@@ -231,15 +231,8 @@ function draftFromSummary(snap) {
       biliSurfIncludeArticles: !(config.extensions && config.extensions.biliSurfIncludeArticles === false),
       biliLiveFrameWatch: !!(config.extensions && config.extensions.biliLiveFrameWatch),
       biliLiveFrameEverySec: (() => {
-        const presets = [15, 20, 30, 45, 60, 90, 120]
-        const cur = Number(config.extensions && config.extensions.biliLiveFrameEverySec) || 30
-        let best = 30
-        let bestDiff = Infinity
-        for (const p of presets) {
-          const d = Math.abs(p - cur)
-          if (d < bestDiff) { best = p; bestDiff = d }
-        }
-        return best
+        const cur = Number(config.extensions && config.extensions.biliLiveFrameEverySec) || 15
+        return Math.min(120, Math.max(5, Math.round(cur)))
       })(),
       biliFfmpegPath: (config.extensions && config.extensions.biliFfmpegPath) || '',
       biliVisionSummary: !(config.extensions && config.extensions.biliVisionSummary === false),

@@ -13,13 +13,16 @@ import {
   LIVE_FRAME_EVERY_SEC_MIN,
 } from '../packages/soulmate-bili/live-frames.mjs';
 
-test('clampLiveFrameEverySec: densest is 15s, snaps to presets', () => {
-  assert.equal(clampLiveFrameEverySec(5), LIVE_FRAME_EVERY_SEC_MIN);
-  assert.equal(clampLiveFrameEverySec(14), 15);
+test('clampLiveFrameEverySec: densest is 5s, fine-grained 5–120 integers', () => {
+  assert.equal(clampLiveFrameEverySec(1), LIVE_FRAME_EVERY_SEC_MIN);
+  assert.equal(clampLiveFrameEverySec(5), 5);
+  assert.equal(clampLiveFrameEverySec(7), 7);
+  assert.equal(clampLiveFrameEverySec(14), 14);
   assert.equal(clampLiveFrameEverySec(15), 15);
   assert.equal(clampLiveFrameEverySec(30), 30);
   assert.equal(clampLiveFrameEverySec(120), 120);
   assert.equal(clampLiveFrameEverySec(999), 120);
+  assert.equal(clampLiveFrameEverySec(undefined), 15);
 });
 
 test('liveFrameBudget: duration / everySec with hard cap', () => {

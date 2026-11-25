@@ -26,6 +26,7 @@ import { afterSurfWatch } from './engage.mjs';
 import {
   extractLiveFrames,
   LIVE_FRAME_DEFAULT_EVERY_SEC,
+  LIVE_FRAME_EVERY_SEC_MIN,
   pickPlayurlAudio,
 } from './live-frames.mjs';
 import {
@@ -77,7 +78,6 @@ export {
   liveFrameBudget,
   liveFramePublicUrl,
   LIVE_FRAME_DEFAULT_EVERY_SEC,
-  LIVE_FRAME_EVERY_SEC_PRESETS,
   LIVE_FRAME_MAX_COUNT,
   pickPlayurlStream,
   probeFfmpeg,
@@ -1060,6 +1060,7 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
         visionSummarize,
         model: options.visionModel ?? confLive.extensions?.biliVisionModel ?? '',
         persona: voiceBrief,
+        deepWatch: options.deepWatch === true,
         ...(Number.isFinite(options.visionMaxFrames) ? { maxFrames: Math.floor(options.visionMaxFrames) } : {}),
       });
       const visionChannel = vision.ok && vision.textOnly ? 'ok:text-only' : vision.channel;
@@ -1132,7 +1133,7 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
       const boardCount = (digest.storyboardFrames || []).length;
       const fedCount = (digest.visionSummary?.frames || []).length;
       const durSec = num(digest.durationSec);
-      const everySecTarget = num(options.liveFrameEverySec ?? confLive.extensions?.biliLiveFrameEverySec, 30);
+      const everySecTarget = num(options.liveFrameEverySec ?? confLive.extensions?.biliLiveFrameEverySec, LIVE_FRAME_DEFAULT_EVERY_SEC);
       const fedSparse = fedCount > 0 && durSec > 0 && durSec / fedCount > everySecTarget * 2;
       const thin = subChars < 800 || (liveCount > 0 ? liveCount < 12 : boardCount < 24) || fedSparse;
       if (verdict.deep && thin) {
@@ -1142,7 +1143,7 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
           deepJudge: false,
           maxStoryboardFrames: Math.max(36, num(options.maxStoryboardFrames, 0)),
           visionMaxFrames: Math.max(20, num(options.visionMaxFrames, 0)),
-          liveFrameEverySec: Math.min(num(options.liveFrameEverySec ?? confLive.extensions?.biliLiveFrameEverySec, 30), 15),
+          liveFrameEverySec: Math.min(num(options.liveFrameEverySec ?? confLive.extensions?.biliLiveFrameEverySec, LIVE_FRAME_DEFAULT_EVERY_SEC), LIVE_FRAME_EVERY_SEC_MIN),
           personaVoice: voice,
         });
         if (deeper.ok) {

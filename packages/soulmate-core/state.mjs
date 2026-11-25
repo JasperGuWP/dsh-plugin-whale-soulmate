@@ -208,8 +208,8 @@ export const DEFAULT_CONFIG = Object.freeze({
      * Off by default; needs B 站登录 + system ffmpeg (see biliFfmpegPath).
      */
     biliLiveFrameWatch: false,
-    /** Seconds per live frame; clamped to [15, 120], presets 15/20/30/45/60/90/120. */
-    biliLiveFrameEverySec: 30,
+    /** Seconds per live frame; any integer in [5, 120]. */
+    biliLiveFrameEverySec: 15,
     /** Optional absolute path to ffmpeg; empty = PATH lookup. */
     biliFfmpegPath: '',
     /** Vision timeline takeaway after watch (soft-falls back when no frames/model). */

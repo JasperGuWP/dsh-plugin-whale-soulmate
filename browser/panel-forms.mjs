@@ -464,7 +464,7 @@ function autoSurfSection({ draft, patchExtensions }) {
       h('label', {
         key: 'live-frame',
         className: 'sm-rhythm-check',
-        title: '登录 B 站后用本机 ffmpeg 从播放流抽真实画面帧（最密每 15 秒一帧）。未安装 ffmpeg 时不会抽帧，仅提示；画面总结可改用分镜。',
+        title: '登录 B 站后用本机 ffmpeg 从播放流抽真实画面帧（最密每 5 秒一帧）。未安装 ffmpeg 时不会抽帧，仅提示；画面总结可改用分镜。',
       }, [
         h('input', {
           key: 'i', type: 'checkbox', checked: !!ext.biliLiveFrameWatch,
@@ -474,27 +474,19 @@ function autoSurfSection({ draft, patchExtensions }) {
       ]),
       (ext.biliVisionSummary !== false || ext.biliLiveFrameWatch) ? field(
         'live-frame-every',
-        '看片/总结密度：每 ' + (ext.biliLiveFrameEverySec || 30) + ' 秒一帧（最密 15 秒，送模最多 16 帧）',
+        '看片/总结密度：每 ' + (ext.biliLiveFrameEverySec || 15) + ' 秒一帧（最密 5 秒，送模最多 16 帧）',
         h('input', {
           key: 'control',
           type: 'range',
-          min: 0,
-          max: 6,
+          min: 5,
+          max: 120,
           step: 1,
           value: (() => {
-            const presets = [15, 20, 30, 45, 60, 90, 120]
-            const cur = Number(ext.biliLiveFrameEverySec) || 30
-            let best = 2
-            let bestDiff = Infinity
-            presets.forEach((p, i) => {
-              const d = Math.abs(p - cur)
-              if (d < bestDiff) { best = i; bestDiff = d }
-            })
-            return best
+            const cur = Number(ext.biliLiveFrameEverySec) || 15
+            return Math.min(120, Math.max(5, Math.round(cur)))
           })(),
           onChange: (event) => {
-            const presets = [15, 20, 30, 45, 60, 90, 120]
-            const sec = presets[Number(event.target.value)] || 30
+            const sec = Math.min(120, Math.max(5, Math.round(Number(event.target.value) || 15)))
             patchExtensions({ biliLiveFrameEverySec: sec })
           },
         }),

@@ -238,7 +238,7 @@ const { SoulShareCard } = require('./panel-soul-share.mjs')
                 biliSurfDeepJudge: current.extensions.biliSurfDeepJudge !== false,
                 biliSurfIncludeArticles: current.extensions.biliSurfIncludeArticles !== false,
                 biliLiveFrameWatch: !!current.extensions.biliLiveFrameWatch,
-                biliLiveFrameEverySec: Number(current.extensions.biliLiveFrameEverySec) || 30,
+                biliLiveFrameEverySec: Number(current.extensions.biliLiveFrameEverySec) || 15,
                 biliFfmpegPath: String(current.extensions.biliFfmpegPath || ''),
                 biliVisionSummary: current.extensions.biliVisionSummary !== false,
                 biliVisionModel: String(current.extensions.biliVisionModel || ''),

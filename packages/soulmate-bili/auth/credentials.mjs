@@ -111,7 +111,7 @@ export async function getBiliAuthStatus(home) {
     ffmpegVersion,
     ffmpegError,
     liveFrameWatchEnabled: liveOn,
-    liveFrameEverySec: Number(ext.biliLiveFrameEverySec) || 30,
+    liveFrameEverySec: Number(ext.biliLiveFrameEverySec) || 15,
     liveFrameWatchBlockedReason,
   };
 }

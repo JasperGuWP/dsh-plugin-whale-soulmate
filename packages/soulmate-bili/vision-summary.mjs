@@ -280,6 +280,7 @@ export async function composeVisionTimelineSummary({
   model = '',
   maxFrames = VISION_FRAME_MAX,
   persona = '',
+  deepWatch = false,
 } = {}) {
   if (typeof visionSummarize !== 'function') {
     return { ok: false, channel: 'skip:no-vision-model', takeaway: '', error: 'no-vision-callback' };
@@ -291,11 +292,14 @@ export async function composeVisionTimelineSummary({
     || digest.liveFrames?.frames
     || [];
   const board = digest.storyboardFrames || [];
+  // 采样密度只决定抽帧/时间点候选；喂帧上限内全部喂入（含分镜），
+  // 否则粗档位下短视频只喂两三帧。深看（含二刷）字幕摘录放宽到 2400 字。
+  const deep = deepWatch === true || maxFrames > VISION_FRAME_MAX;
   const picked = pickVisionFrames({
     liveFrames: live,
     storyboardFrames: board,
     durationSec: digest.durationSec,
-    everySec,
+    everySec: 1,
     maxFrames,
   });
 
@@ -306,7 +310,7 @@ export async function composeVisionTimelineSummary({
     frames: picked.frames,
     worthScore: digest.worthScore,
     persona,
-    transcriptChars: maxFrames > VISION_FRAME_MAX ? 2400 : 800,
+    transcriptChars: deep ? 2400 : 800,
   });
 
   try {

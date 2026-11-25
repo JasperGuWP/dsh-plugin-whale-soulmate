@@ -338,7 +338,7 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     biliSurfDeepJudge: true,
     biliSurfIncludeArticles: true,
     biliLiveFrameWatch: false,
-    biliLiveFrameEverySec: 30,
+    biliLiveFrameEverySec: 15,
     biliFfmpegPath: '',
     biliVisionSummary: true,
     biliVisionModel: '',
