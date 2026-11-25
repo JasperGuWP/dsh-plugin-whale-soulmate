@@ -51,7 +51,15 @@
 
 ![自主意图与相处经验面板](docs/showcase/intent-experience.png)
 
-## 新版亮点 · v0.2.199
+## 新版亮点 · v0.2.208
+
+- **长片分批看图**（v0.2.208）：画面帧超过单批上限时自动按时间切批多轮送模（每批 ≤16 帧、最多 10 批），上一批的看图结论与末帧锚点带进下一批，最后一批给出全片总览与性格化观感，各批时间线合并——长片不再"抽得多、看得少"，37 分钟片也能全程看画面。
+- **抽帧密度细粒度**（v0.2.207）：5–120 秒/帧任选（步长 1 秒），默认 15 秒；细看二刷尊重你设的密度；上限内的帧全部喂入，不再被档位二次节流。
+- **定时冲浪修复**（v0.2.204+）：自动冲浪轮次接上真实记忆服务，不再"记了已看却一部没看"；台账细分 watched / no-picks / failed，失败带错误明细。
+- **观感去影评腔**：评价内容本身而非镜头运镜；细看裁决接通桌面宿主模型，不再永远落启发式模板。
+- **每日自动 token 帽默认 200 万**；工具输出清洗 undefined 键，避免宿主整条拒收。
+
+<details><summary>历史亮点 · v0.2.199</summary>
 
 - **QQ 官方通道全能力**（v0.2.197+）：
   - **实时消息镜像**：入站消息（真实 id / 昵称 / 附件）即到即进时间线与星图，不再依赖 2 分钟转录轮询；被拉进群 / 加好友 / 被拒收等动态实时感知。
@@ -61,6 +69,8 @@
   - **7 个新工具**：`soulmate_qq_send_media / recall / typing / wakeup / buttons / stream / events`；所有主动外发文本先过隐私防火墙。
 - **白屏修复**（v0.2.197–199）：IM 主动搭话开关与白名单编辑器改为正规组件挂载，切换开关不再触发 React #310 整页白屏。
 - **主动发送时间线去重**（v0.2.198）：同一条外发经双镜像只落一行。
+
+</details>
 
 <details><summary>历史亮点 · v0.2.195</summary>
 
@@ -150,11 +160,21 @@
 
 ### 动作预览
 
-| 汉风 · 襦裙 | Q版 · 冬装男孩 |
+7 套皮肤各选一段实机动作：
+
+| 汉风 · 襦裙 — 舞 | Q版 · 冬装男孩 — 滑雪 |
 |:---:|:---:|
 | ![汉风·襦裙 — 舞](docs/showcase/hanfu-dance.gif) | ![Q版·冬装男孩 — 滑雪](docs/showcase/winterboy-ski.gif) |
 
-| 蓝色冬装 |
+| 高冷眼镜执事 — 牛排用餐 | 深海经典 — 舞 |
+|:---:|:---:|
+| ![高冷眼镜执事 — 牛排用餐](docs/showcase/butler-eat.gif) | ![深海经典 — 舞](docs/showcase/deepsea-dance.gif) |
+
+| 海盐苏打 — 舞 | 午夜星空 — 舞 |
+|:---:|:---:|
+| ![海盐苏打 — 舞](docs/showcase/soda-dance.gif) | ![午夜星空 — 舞](docs/showcase/starnight-dance.gif) |
+
+| 蓝色冬装 — 卖火柴的小女孩 |
 |:---:|
 | ![蓝色冬装 — 卖火柴的小女孩](docs/showcase/bluewinter-game.gif) |
 
@@ -323,7 +343,15 @@ Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./N
 
 ![Intent autonomy and experience panel](docs/showcase/intent-experience.png)
 
-### What's new in v0.2.199
+### What's new in v0.2.208
+
+- **Batched vision for long videos** (v0.2.208): frames beyond the per-message image cap are split into time-ordered batches (≤16 frames each, up to 10 batches); each batch carries the previous batch's notes plus its last frame as a visual anchor, and the final batch writes the whole-video overview and in-character opinion. Timelines merge across batches — long videos are finally watched end to end.
+- **Fine-grained frame density** (v0.2.207): any integer from 5 to 120 seconds per frame (default 15); deep second passes honor your density; every frame within the cap is fed to the model.
+- **Scheduled surf fixed** (v0.2.204+): auto-surf rounds now run through the real memory service — no more "marked watched but watched nothing"; the ledger distinguishes watched / no-picks / failed with error details.
+- **Content-first opinions**: she reviews the content, not the cinematography; the deep-watch judge reaches the desktop host model instead of always falling back to heuristics.
+- **Daily auto-token cap defaults to 2M**; tool outputs strip undefined keys so the host no longer rejects whole calls.
+
+<details><summary>Previous highlights · v0.2.199</summary>
 
 - **Full official-QQ capability surface** (v0.2.197+):
   - **Real-time message mirror:** inbound messages (real ids / nicknames / attachments) reach the timeline and star map the moment they arrive — no more 2-minute transcript polling; group-join / friend-add / message-reject lifecycle events are sensed live.
@@ -333,6 +361,8 @@ Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./N
   - **7 new tools:** `soulmate_qq_send_media / recall / typing / wakeup / buttons / stream / events`; every proactive outbound text passes the privacy firewall first.
 - **White-screen fixes** (v0.2.197–199): the IM-proactive toggle and whitelist editor are now properly mounted components — flipping the switch no longer triggers a React #310 full-page crash.
 - **Proactive timeline dedupe** (v0.2.198): one outbound send mirrored through two paths lands as one row.
+
+</details>
 
 <details><summary>Previous highlights · v0.2.195</summary>
 
@@ -385,11 +415,19 @@ Seven skins share the same one-click picker in Settings → Identity. Static ava
 | Winter Boy | Chibi white-and-blue winter outfit with skiing and seasonal motions | Bundled offline |
 | Blue Winter | Whale-hood winter outfit with playful snow-day actions | On first use |
 
-| Hanfu · Ruqun | Chibi · Winter Boy |
+| Hanfu · Ruqun — ribbon dance | Chibi · Winter Boy — skiing |
 |:---:|:---:|
 | ![Hanfu skin — ribbon dance](docs/showcase/hanfu-dance.gif) | ![Winter boy skin — skiing](docs/showcase/winterboy-ski.gif) |
 
-| Blue Winter |
+| Cool Butler — steak dinner | Deep-sea Classic — dance |
+|:---:|:---:|
+| ![Cool butler skin — steak dinner](docs/showcase/butler-eat.gif) | ![Deep-sea classic skin — dance](docs/showcase/deepsea-dance.gif) |
+
+| Sea-salt Soda — dance | Midnight Stars — dance |
+|:---:|:---:|
+| ![Sea-salt soda skin — dance](docs/showcase/soda-dance.gif) | ![Midnight stars skin — dance](docs/showcase/starnight-dance.gif) |
+
+| Blue Winter — match girl |
 |:---:|
 | ![Blue winter skin — match girl](docs/showcase/bluewinter-game.gif) |
 
