@@ -138,9 +138,11 @@ export function createImProactiveRuntime({ home, warn, pushEvent, usage, cfg, of
     });
     if (!gate.send) return { ok: true, ran: false, reason: gate.reason };
 
-    // Prefer a conversation whose official passive window is actually open. When NO
-    // whitelisted conversation is reachable, stay silent instead of generating a line
-    // for a closed window — burning quota and journaling a doomed send every tick.
+    // Prefer a conversation whose official passive window is open (replies ride the
+    // inbound msg_id). With no open window the platform's ACTIVE-message quota still
+    // accepts id-less pushes (1000/user/day, 1000/group/day — verified live), so a
+    // closed window no longer silences her; our own gate (per-conv/day, min gap) is
+    // the throttle. imProactiveActivePush=false restores the old window-only behavior.
     let target = gate.targets[0];
     if (target.platform === 'qq' && typeof officialTargets === 'function') {
       try {
@@ -150,12 +152,11 @@ export function createImProactiveRuntime({ home, warn, pushEvent, usage, cfg, of
         const openKeys = new Set(open.map((t) => (t.kind === 'group' ? `group:${t.groupId}` : `c2c:${t.peer}`)));
         const hit = gate.targets.find((t) => openKeys.has(keyOf(t)));
         if (hit) target = hit;
-        else if (info?.ok) {
-          // No open window. Private chats still have the platform's legal wakeup
-          // recall push (30 days after contact); groups have nothing — stay silent.
+        else if (info?.ok && ext.imProactiveActivePush === false) {
+          // Legacy window-only mode: c2c may still use the wakeup recall push.
           const c2c = gate.targets.find((t) => t.platform === 'qq' && !t.groupId);
           if (c2c && ext.imProactiveWakeup !== false) target = c2c;
-          else return { ok: true, ran: false, reason: 'no-open-window', hint: 'QQ 被动窗口都关着：对方 60 分钟内说过话才会尝试（群/私聊同限；私聊另有 wakeup 召回，平台按 30 天 4 周期各 1 条限频）' };
+          else return { ok: true, ran: false, reason: 'no-open-window', hint: 'QQ 被动窗口都关着且 imProactiveActivePush=false：对方 60 分钟内说过话才会尝试' };
         }
       } catch { /* keep whitelist order */ }
     }

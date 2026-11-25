@@ -388,6 +388,7 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     imProactiveMinGapMinutes: 90,
     imProactiveMaxChars: 120,
     imProactiveWakeup: true,
+    imProactiveActivePush: true,
     qqVisionEnabled: true,
     imOwnerWeixin: '',
     imOwnerQq: '',

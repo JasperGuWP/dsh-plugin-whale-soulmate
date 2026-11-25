@@ -183,7 +183,7 @@ export function qqTools({ makeTool, home, pushEvent, qqOps }) {
           const ids = targetId ? await readQqReplyIds(scope, targetId).catch(() => []) : [];
           out.window = {
             scope, targetId, open: ids.length > 0, freshIds: ids.length,
-            note: ids.length ? '被动窗口开着，可以主动发' : '被动窗口关闭：群5分钟/私聊30分钟内对方没说话（私聊仍可尝试 wakeup）',
+            note: ids.length ? '被动窗口开着，回复走 msg_id' : '被动窗口关闭（对方 60 分钟内没说话）：文本仍可走平台主动消息配额直发；媒体/按钮/流式仍需窗口',
           };
         }
         return out;

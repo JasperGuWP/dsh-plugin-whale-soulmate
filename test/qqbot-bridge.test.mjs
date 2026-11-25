@@ -122,16 +122,36 @@ test('qqbot bridge: latestInboundIds respects the passive window (official 60min
   assert.equal(latestInboundIds([], { kind: 'group', nowMs: now }), null);
 });
 
-test('official sender: closed window is an honest failure; absent creds fall back to soulmate-im', async () => {
+test('official sender: closed window now rides the active quota; absent creds fall back to soulmate-im', async () => {
   const { createOfficialQqSender } = await import('../packages/soulmate-core/runtime/qq-official-send.mjs');
-  const closed = createOfficialQqSender({
-    bridge: { officialSendTargets: async () => ({ ok: true, creds: { appId: '1', appSecret: 's' }, targets: [] }) },
-    cfg: {}, warn: () => {},
-  });
-  const res = await closed({ target: { platform: 'qq', to: 'u1', groupId: '' }, text: 'hi' });
-  assert.equal(res.ok, false);
-  assert.match(res.error, /被动窗口/);
-  assert.ok(!res.trySoulmateIm, 'configured channel must not silently reroute');
+  const { setQqMsgIdStore } = await import('../packages/soulmate-core/qqbot-msgid-mirror.mjs');
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(join(tmpdir(), 'sm-active-'));
+  setQqMsgIdStore(join(dir, 'qq-msgids.json'));
+  try {
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      calls.push({ url, init });
+      if (String(url).includes('getAppAccessToken')) {
+        return { status: 200, text: async () => JSON.stringify({ access_token: 'TOK', expires_in: 7200 }) };
+      }
+      return { status: 200, text: async () => JSON.stringify({ id: 'ACTIVE-9' }) };
+    };
+    const closed = createOfficialQqSender({
+      bridge: { officialSendTargets: async () => ({ ok: true, creds: { appId: '1', appSecret: 's' }, targets: [] }) },
+      cfg: { fetch: fetchImpl }, warn: () => {}, outboundRecord: async () => {},
+    });
+    const res = await closed({ target: { platform: 'qq', to: 'u1', groupId: '' }, text: 'hi' });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.mode, 'official-active');
+    const body = JSON.parse(calls.find((c) => String(c.url).includes('/messages')).init.body);
+    assert.equal(body.msg_id, undefined);
+    assert.ok(!res.trySoulmateIm, 'configured channel must not silently reroute');
+  } finally {
+    setQqMsgIdStore(null);
+    await rm(dir, { recursive: true, force: true });
+  }
 
   const absent = createOfficialQqSender({
     bridge: { officialSendTargets: async () => ({ ok: false, reason: 'no-official-creds', targets: [] }) },

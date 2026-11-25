@@ -277,8 +277,11 @@ export const DEFAULT_CONFIG = Object.freeze({
     imProactiveDailyTotal: 4,
     imProactiveMinGapMinutes: 90,
     imProactiveMaxChars: 120,
-    // 私聊被动窗口关闭后走官方 wakeup 召回（30 天内、平台限频）；false = 只在窗口内发。
+    // 私聊被动窗口关闭后走官方 wakeup 召回（30 天内、平台限频）；false = 跳过召回直发主动。
     imProactiveWakeup: true,
+    // 窗口外直发平台主动消息（1000 条/用户/日、1000 条/群/日配额，2026-11-25 实测可行）。
+    // false = 旧行为：只在被动窗口内发（私聊仍可 wakeup）。
+    imProactiveActivePush: true,
     // QQ 入站图片交给宿主多模态模型写描述（时间线/记忆星可见图片内容）。
     qqVisionEnabled: true,
     // Owner identity per platform (the human's own account id). In a group this is how

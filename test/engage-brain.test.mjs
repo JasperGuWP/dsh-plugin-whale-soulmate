@@ -158,7 +158,7 @@ test('im gate: failed sends do not burn quota', () => {
   assert.equal(go.send, true);
 });
 
-test('im runtime: open group window wins over closed DM; all-closed skips without authoring', async () => {
+test('im runtime: open group window wins; closed windows use active push; legacy mode stays silent', async () => {
   const { createImProactiveRuntime } = await import('../packages/soulmate-core/runtime/im-proactive-runtime.mjs');
   const { resolveSoulmateHome, saveConfigAuto } = await import('../packages/soulmate-core/state.mjs');
   const { mkdtemp, rm, mkdir } = await import('node:fs/promises');
@@ -195,19 +195,23 @@ test('im runtime: open group window wins over closed DM; all-closed skips withou
       .runImProactiveIfDue({ at: AT });
     assert.equal(r1.sent, true, JSON.stringify(r1));
     assert.equal(sent[0].target.groupId, 'G1');
-    // Every window closed + wakeup disabled: no authoring, no doomed send, honest reason.
-    await saveConfigAuto(home, { extensions: { imProactiveWakeup: false } });
-    const before = authored;
+    // Every window closed, DEFAULT (active push on): still authors and sends —
+    // the platform's daily active quota takes id-less pushes.
     const r2 = await mk([]).runImProactiveIfDue({ at: AT + 10 * 60_000 });
-    assert.equal(r2.ran, false);
-    assert.equal(r2.reason, 'no-open-window');
-    assert.equal(authored, before, 'closed windows must not burn a generation');
-    assert.equal(sent.length, 1);
-    // Wakeup enabled (default): the closed-window DM is still reachable via the
-    // platform's legal recall push — authors and sends to the c2c target.
+    assert.equal(r2.sent, true, JSON.stringify(r2));
+    assert.equal(sent.length, 2);
+    // Legacy window-only mode (imProactiveActivePush=false), wakeup off: honest silence.
+    await saveConfigAuto(home, { extensions: { imProactiveActivePush: false, imProactiveWakeup: false } });
+    const before = authored;
+    const r3 = await mk([]).runImProactiveIfDue({ at: AT + 20 * 60_000 });
+    assert.equal(r3.ran, false);
+    assert.equal(r3.reason, 'no-open-window');
+    assert.equal(authored, before, 'legacy closed windows must not burn a generation');
+    assert.equal(sent.length, 2);
+    // Legacy mode + wakeup enabled: the closed-window DM is still reachable.
     await saveConfigAuto(home, { extensions: { imProactiveWakeup: true } });
-    const r3 = await mk([]).runImProactiveIfDue({ at: AT + 200 * 60_000 });
-    assert.equal(r3.sent, true, JSON.stringify(r3));
+    const r4 = await mk([]).runImProactiveIfDue({ at: AT + 200 * 60_000 });
+    assert.equal(r4.sent, true, JSON.stringify(r4));
     assert.equal(sent[sent.length - 1].target.to, 'OWNER1');
     assert.equal(sent[sent.length - 1].target.groupId, '');
   } finally {

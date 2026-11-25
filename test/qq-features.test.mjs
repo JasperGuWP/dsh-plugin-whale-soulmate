@@ -282,28 +282,69 @@ test('official ops: wakeup posts is_wakeup without msg_id; recall DELETEs; typin
   } finally { await cleanup(dir); }
 });
 
-test('official sender: firewall blocks secrets; closed c2c window falls back to wakeup', async () => {
+test('official sender: firewall blocks secrets; closed window falls back to the active-message quota', async () => {
   const { dir, store } = await tmp();
   try {
     const calls = [];
     const ops = createOfficialQqOps({ bridge: bridgeWith(), cfg: { fetch: okFetch(calls) }, warn: () => {}, outboundRecord: async () => {} });
     const send = createOfficialQqSender({ bridge: bridgeWith(), cfg: { fetch: okFetch(calls) }, warn: () => {}, ops, outboundRecord: async () => {} });
-    // window closed → wakeup path (no msg_id, is_wakeup true)
+    // closed c2c window → wakeup recall first (no msg_id, is_wakeup true)
     const res = await send({ target: { platform: 'qq', to: OWNER, groupId: '' }, text: '半天没说话了，冒个泡' });
     assert.equal(res.ok, true, JSON.stringify(res));
     assert.equal(res.mode, 'official-wakeup');
     const body = JSON.parse(calls.find((c) => c.url.includes('/messages')).init.body);
     assert.equal(body.is_wakeup, true);
-    // group window closed → honest refusal (no wakeup for groups)
+    // closed GROUP window → active push (no msg_id, no is_wakeup), platform daily quota
     const g = await send({ target: { platform: 'qq', to: GROUP, groupId: GROUP }, text: 'hi' });
-    assert.equal(g.ok, false);
-    assert.match(g.error, /被动窗口/);
+    assert.equal(g.ok, true, JSON.stringify(g));
+    assert.equal(g.mode, 'official-active');
+    const gBody = JSON.parse(calls.filter((c) => c.url.includes('/messages')).pop().init.body);
+    assert.equal(gBody.msg_id, undefined, 'active push needs NO msg_id');
+    assert.equal(gBody.is_wakeup, undefined);
+    assert.ok(Number.isFinite(gBody.msg_seq));
     // secret text is refused before any network call
     const before = calls.length;
     const blocked = await send({ target: { platform: 'qq', to: OWNER }, text: '我的密码是 sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ' });
     assert.equal(blocked.ok, false);
     assert.ok(blocked.blockedReason || /防火墙/.test(blocked.error || ''));
     assert.equal(calls.length, before, 'firewall refusal must not hit the network');
+  } finally { await cleanup(dir); }
+});
+
+test('official sender: wakeup quota refusal falls through to active push; both failing is honest', async () => {
+  const { dir } = await tmp();
+  try {
+    // wakeup → 400 quota; the follow-up id-less active post succeeds.
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (String(url).includes('getAppAccessToken')) {
+        return { status: 200, text: async () => JSON.stringify({ access_token: 'TOK', expires_in: 7200 }) };
+      }
+      const body = JSON.parse(init.body || '{}');
+      if (body.is_wakeup) {
+        return { status: 400, text: async () => JSON.stringify({ message: '消息发送失败，召回消息已达区间上限' }) };
+      }
+      return { status: 200, text: async () => JSON.stringify({ id: 'ACTIVE-1' }) };
+    };
+    const ops = createOfficialQqOps({ bridge: bridgeWith(), cfg: { fetch: fetchImpl }, warn: () => {}, outboundRecord: async () => {} });
+    const send = createOfficialQqSender({ bridge: bridgeWith(), cfg: { fetch: fetchImpl }, warn: () => {}, ops, outboundRecord: async () => {} });
+    const r = await send({ target: { platform: 'qq', to: OWNER, groupId: '' }, text: '召回额度没了也要说话' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.mode, 'official-active');
+    // both paths refused → honest combined error, no fake success
+    const deadFetch = async (url, init) => {
+      if (String(url).includes('getAppAccessToken')) {
+        return { status: 200, text: async () => JSON.stringify({ access_token: 'TOK', expires_in: 7200 }) };
+      }
+      return { status: 400, text: async () => JSON.stringify({ message: '主动消息超过每日上限' }) };
+    };
+    const ops2 = createOfficialQqOps({ bridge: bridgeWith(), cfg: { fetch: deadFetch }, warn: () => {}, outboundRecord: async () => {} });
+    const send2 = createOfficialQqSender({ bridge: bridgeWith(), cfg: { fetch: deadFetch }, warn: () => {}, ops: ops2, outboundRecord: async () => {} });
+    const dead = await send2({ target: { platform: 'qq', to: OWNER, groupId: '' }, text: 'hi' });
+    assert.equal(dead.ok, false);
+    assert.match(dead.error, /wakeup 召回失败/);
+    assert.match(dead.error, /主动消息也失败/);
   } finally { await cleanup(dir); }
 });
 
