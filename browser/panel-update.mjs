@@ -1,8 +1,11 @@
-// 设置页头部的自更新徽章:定时拉 update-status,有新包显示「更新到 x」,
-// 点击走 self-update(pnpm add 新 tarball),装完显示「重启生效」。无更新时不占位。
+// 设置页头部的自更新徽章:定时拉 update-status(本地 tgz / npm / GitHub Releases 三渠道),
+// 有新包显示「更新到 x · 来源」,点击走 self-update(远程包下载校验后 pnpm add),
+// 装完显示「重启生效」。无更新时不占位。
 const React = require('react')
 const h = React.createElement
 const { api } = require('./util.mjs')
+
+const CHANNEL_LABELS = { local: '本地包', npm: 'npm', github: 'GitHub Release' }
 
 function UpdateBadge() {
   const [st, setSt] = React.useState(null)
@@ -41,9 +44,13 @@ function UpdateBadge() {
     ])
   }
   if (!st.available) return null
+  const via = CHANNEL_LABELS[st.channel] || st.channel || ''
   return h('div', { key: 'upd', className: 'sm-panel-update' }, [
-    h('button', { key: 'b', type: 'button', className: 'sm-panel-btn primary', onClick: doUpdate, disabled: busy },
-      busy ? '安装中…' : `更新到 ${st.latest}`),
+    h('button', {
+      key: 'b', type: 'button', className: 'sm-panel-btn primary', onClick: doUpdate, disabled: busy,
+      title: via ? `更新来源：${via}${st.channel !== 'local' ? '（下载后先校验再安装）' : ''}` : '',
+    }, busy ? (st.channel === 'local' ? '安装中…' : '下载安装中…') : `更新到 ${st.latest}`),
+    via ? h('span', { key: 'via', className: 'sm-panel-muted', style: { marginLeft: 6, fontSize: 12 } }, `来源 ${via}`) : null,
   ])
 }
 

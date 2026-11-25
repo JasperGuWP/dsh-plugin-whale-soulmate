@@ -178,7 +178,9 @@ export const DEFAULT_CONFIG = Object.freeze({
     ambientWalkChance: 0.35,
   },
   // 自更新:sourceDir 指向打包源目录(含 *.tgz)才启用检查;空 = 关闭。
-  update: { enabled: true, sourceDir: '', intervalSec: 300 },
+  // 自更新:三渠道——sourceDir 本地 tgz(开发/发布机)、npm registry、GitHub Releases。
+  // 远程渠道默认开;取最高版本,远程包下载后先校验(npm sha512 / GitHub 字节数)再安装。
+  update: { enabled: true, sourceDir: '', intervalSec: 300, checkNpm: true, checkGithub: true },
   extensions: {
     biliEnabled: true,
     // Scheduled Bilibili patrol (auto surf). Read-only watching: notes + seen ledger,

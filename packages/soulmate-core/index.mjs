@@ -299,7 +299,7 @@ export function apply(ctx, config = {}) {
   // ------------------------------------------------------------------ HTTP routes
   // 3D 家园（/soulmate-home）暂停开发：路由不挂载，代码保留在 soulmate-home/ 待重启。
   // ------------------------------------------------------------------ self-update
-  // 定时对照打包源目录的最新 tarball;面板一键 pnpm add + 桌面端自重启。
+  // 三渠道检查(本地 tgz / npm / GitHub Releases);面板一键下载校验 + pnpm add + 自重启。
   const selfUpdate = createSelfUpdate({
     getConfig: () => loadConfig(home),
     home,
@@ -307,6 +307,8 @@ export function apply(ctx, config = {}) {
     warn,
     spawnImpl: cfg.updateSpawnImpl,
     execPath: cfg.updateExecPath,
+    fetchImpl: cfg.updateFetchImpl,
+    cacheDir: cfg.updateCacheDir,
   });
 
   // 星空独立大窗:手动开(面板放大按钮),关窗即收, bounds 记忆。与桌宠窗互不干扰。

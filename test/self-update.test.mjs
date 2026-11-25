@@ -39,7 +39,7 @@ async function env({ version = '0.2.119', inProfile = true, source = true, cfg =
     await writeFile(join(src, 'dsh-plugin-whale-soulmate-0.2.120.tgz'), 'x');
     await writeFile(join(src, 'unrelated-1.0.0.tgz'), 'x');
   }
-  const conf = { update: { enabled: true, sourceDir: src, intervalSec: 3600 }, ...cfg };
+  const conf = { update: { enabled: true, sourceDir: src, intervalSec: 3600, checkNpm: false, checkGithub: false }, ...cfg };
   return { base, pkgRoot, src, conf };
 }
 
