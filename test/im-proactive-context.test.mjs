@@ -38,12 +38,15 @@ test('renderImContextRows: owner by openid, sender names for members, bot as 我
     { at: '2026-11-25T07:53:34Z', role: 'bot', text: '你这表情包库存有一拼' },
     { at: '2026-11-25T07:52:08Z', role: 'user', senderId: 'D4C2', senderName: '星☯辰', peerLabel: 'QQ群', text: '哈哈' },
   ];
-  const out = renderImContextRows(rows, { ownerId: OWNER, vision: { u1: '一盘白灼虾和烧肉' }, isGroup: true });
+  const out = renderImContextRows(rows, { ownerId: OWNER, nowMs: AT, vision: { u1: '一盘白灼虾和烧肉' }, isGroup: true });
   const lines = out.split('\n');
   assert.equal(lines.length, 3);
   assert.match(lines[0], /15:52 星☯辰：哈哈/);
   assert.match(lines[1], /15:52 等风：\[图片\] 一盘白灼虾和烧肉/);
   assert.match(lines[2], /15:53 我：你这表情包库存有一拼/);
+  // Older-than-today lines carry MM-DD so yesterday never reads as fresh gossip.
+  const old = renderImContextRows([{ at: '2026-11-23T09:37:43Z', role: 'user', text: '你好' }], { nowMs: AT });
+  assert.match(old, /^11-23 17:37 /);
 });
 
 test('im prompt: grounded context blocks, autonomy preserved, fabrication and fake-at banned', () => {

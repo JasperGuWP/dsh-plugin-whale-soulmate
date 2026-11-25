@@ -35,11 +35,19 @@ const hhmm = (atMs, tz) => {
   return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 };
 
+// Older lines carry MM-DD: yesterday's "17:37" read as today's fresh gossip otherwise.
+const dayKey = (atMs, tz) => {
+  const d = new Date(atMs + tz * MINUTE);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+};
+
 /** Newest-first im-chat rows → one readable line each, oldest-first block. */
-export function renderImContextRows(rows, { tzOffsetMinutes = 480, ownerId = '', ownerName = '', vision = {}, maxLineChars = 90, isGroup = false } = {}) {
+export function renderImContextRows(rows, { tzOffsetMinutes = 480, nowMs = Date.now(), ownerId = '', ownerName = '', vision = {}, maxLineChars = 90, isGroup = false } = {}) {
   const list = (Array.isArray(rows) ? rows : [])
     .slice()
     .sort((a, b) => Date.parse(a?.at) - Date.parse(b?.at));
+  const today = dayKey(nowMs, tzOffsetMinutes);
   const lines = [];
   for (const r of list) {
     const t = Date.parse(r?.at);
@@ -51,7 +59,8 @@ export function renderImContextRows(rows, { tzOffsetMinutes = 480, ownerId = '',
     if (r.role === 'bot') who = '我';
     else if (ownerId && str(r.senderId).toUpperCase() === ownerId) who = str(r.senderName) || ownerName || '他';
     else who = str(r.senderName) || str(r.peerLabel) || (isGroup ? '群友' : '他');
-    lines.push(`${hhmm(t, tzOffsetMinutes)} ${who}：${clip(text, maxLineChars)}`);
+    const stamp = dayKey(t, tzOffsetMinutes) === today ? hhmm(t, tzOffsetMinutes) : `${dayKey(t, tzOffsetMinutes)} ${hhmm(t, tzOffsetMinutes)}`;
+    lines.push(`${stamp} ${who}：${clip(text, maxLineChars)}`);
   }
   return lines.join('\n');
 }
@@ -94,7 +103,7 @@ export async function composeImProactiveContext(home, {
   const platform = str(target.platform) || 'qq';
   const ownerId = str(ext.imOwnerQq).trim().toUpperCase();
   const vision = platform === 'qq' ? await readQqVisionDescriptions(home).catch(() => ({})) : {};
-  const render = (rows, isGroup) => renderImContextRows(rows, { tzOffsetMinutes, ownerId, vision, isGroup });
+  const render = (rows, isGroup) => renderImContextRows(rows, { tzOffsetMinutes, nowMs, ownerId, vision, isGroup });
 
   const targetRows = target.groupId
     ? await listImChat(home, { platform, groupId: target.groupId, limit: recentLines }).catch(() => [])
@@ -126,7 +135,7 @@ export async function refreshImMemoryStar(home, { platform = 'qq', groupId = '',
     : await listImChat(home, { platform, peerId: id, limit }).catch(() => []);
   if (!Array.isArray(rows) || !rows.length) return { ok: false, error: 'empty-thread' };
   const vision = platform === 'qq' ? await readQqVisionDescriptions(home).catch(() => ({})) : {};
-  const content = renderImContextRows(rows, { tzOffsetMinutes, ownerId, vision, isGroup: Boolean(groupId) });
+  const content = renderImContextRows(rows, { tzOffsetMinutes, nowMs, ownerId, vision, isGroup: Boolean(groupId) });
   if (!content) return { ok: false, error: 'empty-content' };
   return upsertSessionEpisode(home, {
     sessionId: groupId ? `im:group:${platform}:${groupId}` : `im:${platform}:${id}`,
