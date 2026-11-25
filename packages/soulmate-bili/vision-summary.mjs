@@ -6,6 +6,10 @@ import { clampLiveFrameEverySec, LIVE_FRAME_DEFAULT_EVERY_SEC } from './live-fra
 import { composeVideoTakeaway } from './subtitle-align.mjs';
 
 export const VISION_FRAME_MAX = 16;
+/** 分批看图：每批帧数上限（宿主单条消息图片上限 20，末帧锚点占 1 席也够）。 */
+export const VISION_BATCH_SIZE = 16;
+/** 分批看图：单次看片最多批数，防超长片把 token 烧穿；超出部分均匀降采样覆盖全片。 */
+export const VISION_BATCH_MAX = 10;
 
 const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
 const num = (v, d = 0) => {
@@ -138,27 +142,49 @@ export function pickVisionFrames({
   };
 }
 
-export function buildVisionPrompt({ title = '', desc = '', transcript = '', frames = [], worthScore = 0, persona = '', transcriptChars = 800 } = {}) {
+export function buildVisionPrompt({ title = '', desc = '', transcript = '', frames = [], worthScore = 0, persona = '', transcriptChars = 800, segment = null } = {}) {
   const voice = str(persona).trim();
-  const lines = [
-    '请以当前人设的身份看这支视频：根据【标题】【简介】【可选字幕】以及按时间顺序给出的画面帧，写出能让读者完整了解本片内容的中文总结。',
-    '要求：以画面为准；字幕仅在与标题相符时参考；不要编造与画面无关的情节。总览与时间线保持客观准确，性格只体现在「观感」里。',
-    '输出格式（严格）：',
-    '总览：<一句话，这片子整体讲了什么>',
-    '时间线：',
-    '· mm:ss–mm:ss <章标题>：<要点>',
-    '· …（3–6 段）',
-    voice
+  const seg = segment && num(segment.total, 1) > 1 ? segment : null;
+  const lines = [];
+  if (seg) {
+    const idx = Math.max(1, Math.floor(num(seg.index, 1)));
+    const total = Math.floor(num(seg.total, 1));
+    lines.push(`这是同一支视频的分段看图：第 ${idx}/${total} 批画面（按时间顺序切批，本批只覆盖视频的一段）。`);
+    lines.push(idx < total
+      ? '本批只输出「总览」（本批画面讲了什么，一句话）和「时间线」（本批时间段内的章节，2–5 段）；不要写观感——全片评价在最后一批统一给。'
+      : '这是最后一批：请结合【前情】里之前各批的结论，输出覆盖全片的「总览」、补全本批时间段的「时间线」，并给出全片「观感」。');
+    lines.push('其余要求与单批看片相同：以画面为准，字幕仅在相符时参考，不编造画面外情节；时间线客观准确。');
+  } else {
+    lines.push('请以当前人设的身份看这支视频：根据【标题】【简介】【可选字幕】以及按时间顺序给出的画面帧，写出能让读者完整了解本片内容的中文总结。');
+    lines.push('要求：以画面为准；字幕仅在与标题相符时参考；不要编造与画面无关的情节。总览与时间线保持客观准确，性格只体现在「观感」里。');
+  }
+  lines.push('输出格式（严格）：');
+  lines.push('总览：<一句话，' + (seg ? '本批画面' : '这片子整体') + '讲了什么>');
+  lines.push('时间线：');
+  lines.push('· mm:ss–mm:ss <章标题>：<要点>');
+  lines.push('· …（' + (seg ? '2–5 段，只写本批时间段' : '3–6 段') + '）');
+  if (!seg || num(seg.index, 1) >= num(seg.total, 1)) {
+    lines.push(voice
       ? '观感：<2–3 句，用你的口吻评价这支视频的内容本身：讲了什么、值不值、亮点或槽点在哪、推不推荐对方看。像跟搭档聊你刚看完的东西，不是影评——不要评镜头/机位/剪辑/运镜，除非片子本身就是讲拍摄的。必须带当前性格的措辞与态度，不是中性分析报告。>'
-      : '观感：<2–3 句，评价这支视频的内容本身：讲了什么、值不值、亮点或槽点、推不推荐看。聊内容，不要评镜头/机位/剪辑，除非片子本身就是讲拍摄的。>',
-  ];
-  if (voice) lines.push(`【你的性格（只影响观感措辞）】${clip(voice, 300)}`);
+      : '观感：<2–3 句，评价这支视频的内容本身：讲了什么、值不值、亮点或槽点、推不推荐看。聊内容，不要评镜头/机位/剪辑，除非片子本身就是讲拍摄的。>');
+    if (voice) lines.push(`【你的性格（只影响观感措辞）】${clip(voice, 300)}`);
+  }
   lines.push('');
   lines.push(`标题：${clip(title, 120)}`);
   lines.push(`简介：${clip(desc, 400) || '（无）'}`);
   lines.push(`评分参考：${num(worthScore, 0)}/20`);
   const tx = str(transcript).trim();
   if (tx) lines.push(`字幕摘录：${clip(tx, Math.max(800, Math.floor(num(transcriptChars, 800))))}`);
+  if (seg) {
+    const prev = str(seg.prevNotes).trim();
+    if (prev) {
+      lines.push('【前情（你之前看完各批后写下的结论，按批排列）】');
+      lines.push(clip(prev, 2600));
+    }
+    if (num(seg.anchorTSec, -1) >= 0 && num(seg.index, 1) > 1) {
+      lines.push(`（本批第一张图是上一批的最后一帧 ${formatClock(seg.anchorTSec)}，仅作衔接锚点，时间线不要重复计入它。）`);
+    }
+  }
   lines.push('画面帧（按时间）：');
   for (const f of frames) {
     lines.push(`- ${formatClock(f.tSec)} ${f.label || ''}`.trim());
@@ -269,9 +295,16 @@ export function buildTextFallbackPrompt(digest = {}, { persona = '' } = {}) {
   return lines.join('\n');
 }
 
+/** 相邻批共享的衔接锚点帧：同 url 同时间戳才算同一帧。 */
+function sameVisionFrame(a, b) {
+  return !!a && !!b && frameUrl(a) === frameUrl(b) && frameTimeSec(a, -1) === frameTimeSec(b, -2);
+}
+
 /**
  * Full pipeline. visionSummarize required for success.
- * @returns {{ ok, channel, takeaway, frames?, error? }}
+ * 超过单批上限的帧按时间切批多轮送模：上一批的结论 + 末帧锚点带进下一批，
+ * 最后一批出全片总览与观感；各批时间线合并为完整时间线。
+ * @returns {{ ok, channel, takeaway, frames?, error?, batches?, partial? }}
  */
 export async function composeVisionTimelineSummary({
   digest = {},
@@ -285,122 +318,188 @@ export async function composeVisionTimelineSummary({
   if (typeof visionSummarize !== 'function') {
     return { ok: false, channel: 'skip:no-vision-model', takeaway: '', error: 'no-vision-callback' };
   }
-  // 深看二刷可放宽到 20 帧（宿主单条消息图片上限 20，再多会被整批拒收）；常规 16。
+  // 单批上限（宿主单条消息图片上限 20，再多会被整批拒收）；深看二刷 20，常规 16。
   maxFrames = Math.min(20, Math.max(4, Math.floor(num(maxFrames, VISION_FRAME_MAX))));
 
   const live = digest.liveFrameStills
     || digest.liveFrames?.frames
     || [];
   const board = digest.storyboardFrames || [];
-  // 采样密度只决定抽帧/时间点候选；喂帧上限内全部喂入（含分镜），
-  // 否则粗档位下短视频只喂两三帧。深看（含二刷）字幕摘录放宽到 2400 字。
+  // 采样密度只决定抽帧/时间点候选；这里取全片候选（≤240），超过单批上限就分批喂。
+  // 深看（含二刷）字幕摘录放宽到 2400 字。
   const deep = deepWatch === true || maxFrames > VISION_FRAME_MAX;
+  const totalCap = Math.min(240, VISION_BATCH_SIZE * VISION_BATCH_MAX);
   const picked = pickVisionFrames({
     liveFrames: live,
     storyboardFrames: board,
     durationSec: digest.durationSec,
     everySec: 1,
-    maxFrames,
+    maxFrames: totalCap,
   });
-
-  const prompt = buildVisionPrompt({
+  const transcriptChars = deep ? 2400 : 800;
+  const modelArg = str(model).trim() || undefined;
+  const basePrompt = {
     title: digest.title,
     desc: digest.desc,
     transcript: digest.transcript || digest.subtitle?.text || '',
-    frames: picked.frames,
     worthScore: digest.worthScore,
     persona,
-    transcriptChars: deep ? 2400 : 800,
+    transcriptChars,
+  };
+  const toImages = (frames) => frames.map((f) => ({
+    tSec: f.tSec,
+    url: f.url,
+    label: f.label,
+    ...(f.path ? { path: f.path } : {}),
+  }));
+  const callOnce = async (frames, segment) => visionSummarize({
+    model: modelArg,
+    prompt: buildVisionPrompt({ ...basePrompt, frames, ...(segment ? { segment } : {}) }),
+    images: toImages(frames),
   });
 
-  try {
-    const images = picked.frames.map((f) => ({
-      tSec: f.tSec,
-      url: f.url,
-      label: f.label,
-      ...(f.path ? { path: f.path } : {}),
-    }));
-    const out = await visionSummarize({
-      model: str(model).trim() || undefined,
-      prompt,
-      images,
-    });
-    const raw = str(out?.text ?? out?.content ?? out).trim();
-    const textOnly = !picked.frames.length || out?.textOnly === true;
-    if (!raw) {
+  // 单批路径：帧数不超过单批上限，行为与旧版一致。
+  if (picked.frames.length <= maxFrames) {
+    try {
+      const out = await callOnce(picked.frames, null);
+      const raw = str(out?.text ?? out?.content ?? out).trim();
+      const textOnly = !picked.frames.length || out?.textOnly === true;
+      if (!raw) {
+        return {
+          ok: false,
+          channel: textOnly ? 'skip:no-frames' : 'skip:vision-error',
+          takeaway: '',
+          error: textOnly ? 'no-frames' : 'empty-response',
+          frames: picked.frames,
+        };
+      }
+      // Model saw only timestamp list (images never attached) — treat as soft failure.
+      if (visionResponseLooksBlind(raw)) {
+        return {
+          ok: false,
+          channel: 'skip:vision-error',
+          takeaway: '',
+          error: 'blind-no-pixels',
+          frames: picked.frames,
+          raw,
+        };
+      }
+      const parsed = parseVisionTimelineText(raw);
+      const takeaway = formatVisionTakeaway({
+        overview: parsed?.overview,
+        chapters: parsed?.chapters,
+        opinion: parsed?.opinion,
+        worthScore: digest.worthScore,
+      });
       return {
-        ok: false,
-        channel: textOnly ? 'skip:no-frames' : 'skip:vision-error',
-        takeaway: '',
-        error: textOnly ? 'no-frames' : 'empty-response',
-        frames: picked.frames,
-      };
-    }
-    // Model saw only timestamp list (images never attached) — treat as soft failure.
-    if (visionResponseLooksBlind(raw)) {
-      return {
-        ok: false,
-        channel: 'skip:vision-error',
-        takeaway: '',
-        error: 'blind-no-pixels',
+        ok: true,
+        channel: textOnly ? 'ok:text-only' : (picked.source === 'live' ? 'ok:live' : 'ok:storyboard'),
+        takeaway,
         frames: picked.frames,
         raw,
+        ...(textOnly ? { textOnly: true } : {}),
       };
+    } catch (err) {
+      return visionTextFallback({ digest, persona, modelArg, visionSummarize, picked, err });
     }
-    const parsed = parseVisionTimelineText(raw);
-    const takeaway = formatVisionTakeaway({
-      overview: parsed?.overview,
-      chapters: parsed?.chapters,
-      opinion: parsed?.opinion,
-      worthScore: digest.worthScore,
-    });
-    return {
-      ok: true,
-      channel: textOnly ? 'ok:text-only' : (picked.source === 'live' ? 'ok:live' : 'ok:storyboard'),
-      takeaway,
-      frames: picked.frames,
-      raw,
-      ...(textOnly ? { textOnly: true } : {}),
-    };
-  } catch (err) {
-    // 画面模型不可用/拒收图片时,退一步用纯文本推断(字幕/热评/弹幕高峰锚点),
-    // 保证总结与时间线不缺席;明确标注未看画面,不编造画面细节。
-    if (picked.frames.length && typeof visionSummarize === 'function') {
-      try {
-        const out2 = await visionSummarize({
-          model: str(model).trim() || undefined,
-          prompt: buildTextFallbackPrompt(digest, { persona }),
-          images: [],
-        });
-        const raw2 = str(out2?.text ?? out2?.content ?? out2).trim();
-        if (raw2) {
-          const parsed2 = parseVisionTimelineText(raw2);
-          return {
-            ok: true,
-            channel: 'ok:text-only',
-            takeaway: formatVisionTakeaway({
-              overview: parsed2?.overview,
-              chapters: parsed2?.chapters,
-              opinion: parsed2?.opinion,
-              worthScore: digest.worthScore,
-            }),
-            frames: picked.frames,
-            raw: raw2,
-            textOnly: true,
-            fallback: 'text-infer',
-          };
-        }
-      } catch { /* fall through to the original failure */ }
-    }
-    const textOnly = !picked.frames.length;
-    return {
-      ok: false,
-      channel: textOnly ? 'skip:no-frames' : 'skip:vision-error',
-      takeaway: '',
-      error: textOnly ? 'no-frames' : (err instanceof Error ? err.message : String(err)),
-      frames: picked.frames,
-    };
   }
+
+  // 分批路径：按时间切 ≤VISION_BATCH_SIZE 帧一批（批数封顶 VISION_BATCH_MAX，
+  // 超出时全片均匀降采样）。批 k(k>1) 开头重复上一批末帧作衔接锚点。
+  const batchSize = Math.min(VISION_BATCH_SIZE, Math.max(4, maxFrames));
+  const batches = [];
+  for (let i = 0; i < picked.frames.length; i += batchSize) {
+    batches.push(picked.frames.slice(i, i + batchSize));
+  }
+  const notes = [];
+  const chapters = [];
+  const raws = [];
+  let finalParsed = null;
+  let failedBatches = 0;
+  for (let bi = 0; bi < batches.length; bi += 1) {
+    const anchor = bi > 0 ? batches[bi - 1][batches[bi - 1].length - 1] : null;
+    const frames = anchor && !sameVisionFrame(anchor, batches[bi][0]) ? [anchor, ...batches[bi]] : batches[bi];
+    try {
+      const out = await callOnce(frames, {
+        index: bi + 1,
+        total: batches.length,
+        prevNotes: notes.join('\n'),
+        anchorTSec: anchor ? anchor.tSec : -1,
+      });
+      const raw = str(out?.text ?? out?.content ?? out).trim();
+      if (!raw || visionResponseLooksBlind(raw)) { failedBatches += 1; continue; }
+      raws.push(raw);
+      const parsed = parseVisionTimelineText(raw);
+      for (const c of parsed?.chapters || []) {
+        if (c.start || c.text) chapters.push(c);
+      }
+      notes.push(`第${bi + 1}批（${formatClock(frames[0].tSec)}–${formatClock(frames[frames.length - 1].tSec)}）：${clip(parsed?.overview || raw.split('\n')[0], 160)}`);
+      finalParsed = parsed;
+    } catch {
+      failedBatches += 1;
+    }
+  }
+  if (!raws.length) {
+    return visionTextFallback({ digest, persona, modelArg, visionSummarize, picked, err: new Error('all-batches-failed') });
+  }
+  const lastBatchOk = notes.length === batches.length;
+  const overview = lastBatchOk && finalParsed?.overview
+    ? finalParsed.overview
+    : notes.map((n) => n.replace(/^第\d+批（[^）]*）：/, '')).join('；');
+  const takeaway = formatVisionTakeaway({
+    overview,
+    chapters: chapters.slice(0, 16),
+    opinion: finalParsed?.opinion,
+    worthScore: digest.worthScore,
+  });
+  return {
+    ok: true,
+    channel: picked.source === 'live' ? 'ok:live' : 'ok:storyboard',
+    takeaway,
+    frames: picked.frames,
+    raw: raws.join('\n\n'),
+    batches: { total: batches.length, ok: raws.length, failed: failedBatches, frames: picked.frames.length },
+    ...(failedBatches ? { partial: true } : {}),
+  };
+}
+
+/** 画面模型不可用/拒收图片时的纯文本推断兜底（原 catch 分支，单批与分批共用）。 */
+async function visionTextFallback({ digest, persona, modelArg, visionSummarize, picked, err }) {
+  if (picked.frames.length && typeof visionSummarize === 'function') {
+    try {
+      const out2 = await visionSummarize({
+        model: modelArg,
+        prompt: buildTextFallbackPrompt(digest, { persona }),
+        images: [],
+      });
+      const raw2 = str(out2?.text ?? out2?.content ?? out2).trim();
+      if (raw2) {
+        const parsed2 = parseVisionTimelineText(raw2);
+        return {
+          ok: true,
+          channel: 'ok:text-only',
+          takeaway: formatVisionTakeaway({
+            overview: parsed2?.overview,
+            chapters: parsed2?.chapters,
+            opinion: parsed2?.opinion,
+            worthScore: digest.worthScore,
+          }),
+          frames: picked.frames,
+          raw: raw2,
+          textOnly: true,
+          fallback: 'text-infer',
+        };
+      }
+    } catch { /* fall through to the original failure */ }
+  }
+  const textOnly = !picked.frames.length;
+  return {
+    ok: false,
+    channel: textOnly ? 'skip:no-frames' : 'skip:vision-error',
+    takeaway: '',
+    error: textOnly ? 'no-frames' : (err instanceof Error ? err.message : String(err)),
+    frames: picked.frames,
+  };
 }
 
 /** True when the model admits it never saw frame pixels (only timestamps / labels). */

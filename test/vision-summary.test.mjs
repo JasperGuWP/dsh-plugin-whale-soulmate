@@ -231,3 +231,72 @@ test('parseVisionTimelineText keeps multi-line 观感 and compose passes persona
   assert.equal(res.ok, true);
   assert.ok(seenPrompt.includes('嘴硬心软'), 'persona 传进视觉 prompt');
 });
+
+test('composeVisionTimelineSummary: 超过单批上限的帧分批送模，批间携带前情与末帧锚点', async () => {
+  const live = Array.from({ length: 40 }, (_, i) => ({
+    tSec: i * 15,
+    url: `https://example.test/live/${i}.jpg`,
+  }));
+  const calls = [];
+  const res = await composeVisionTimelineSummary({
+    digest: { title: '四十帧长片全记录', durationSec: 600, worthScore: 15, liveFrameStills: live },
+    persona: '嘴硬心软',
+    visionSummarize: async ({ prompt, images }) => {
+      calls.push({ prompt, images });
+      const n = calls.length;
+      const opinion = n === 3 ? '\n观感：全程干货，值得看。' : '';
+      return { text: `总览：第${n}段讲了主题${n}\n时间线：\n· 0${n}:00–0${n}:30 章节${n}：要点${n}${opinion}` };
+    },
+  });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(calls.length, 3, '40 帧 → 16+16+8 三批');
+  assert.ok(calls.every((c) => c.images.length <= 20), '每批不超宿主图片上限');
+  assert.equal(res.batches.total, 3);
+  assert.equal(res.batches.ok, 3);
+  assert.equal(res.frames.length, 40, '全片 40 帧都被看过（不再压到 16）');
+  // 批间锚点：第 2 批第一张 = 第 1 批最后一张
+  assert.equal(calls[1].images[0].url, calls[0].images[calls[0].images.length - 1].url, '末帧锚点衔接');
+  assert.equal(calls[2].images[0].url, calls[1].images[calls[1].images.length - 1].url);
+  // 前情传递：第 2/3 批 prompt 带上前面各批结论
+  assert.match(calls[1].prompt, /第1批/, '第 2 批带第 1 批结论');
+  assert.match(calls[2].prompt, /第2批/, '第 3 批带第 2 批结论');
+  assert.match(calls[1].prompt, /第 2\/3 批/);
+  assert.match(calls[2].prompt, /最后一批/);
+  assert.ok(!calls[0].prompt.includes('观感：<'), '非末批不要求输出观感');
+  assert.match(calls[0].prompt, /不要写观感/);
+  // 合并：各批章节都在最终时间线里，观感来自末批
+  assert.match(res.takeaway, /章节1/);
+  assert.match(res.takeaway, /章节2/);
+  assert.match(res.takeaway, /章节3/);
+  assert.match(res.takeaway, /观感：全程干货/);
+});
+
+test('composeVisionTimelineSummary: 分批中间一批失败 → 其余批保留并标 partial；全失败落文本兜底', async () => {
+  const live = Array.from({ length: 40 }, (_, i) => ({ tSec: i * 15, url: `https://example.test/p/${i}.jpg` }));
+  let n = 0;
+  const res = await composeVisionTimelineSummary({
+    digest: { title: 'X', durationSec: 600, worthScore: 10, liveFrameStills: live },
+    visionSummarize: async () => {
+      n += 1;
+      if (n === 2) throw new Error('batch-2-rejected');
+      return { text: `总览：段${n}\n时间线：\n· 00:00–00:30 章${n}：要点` };
+    },
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.partial, true);
+  assert.equal(res.batches.ok, 2);
+  assert.equal(res.batches.failed, 1);
+  assert.match(res.takeaway, /章1/);
+  assert.match(res.takeaway, /章3/);
+
+  const fallback = await composeVisionTimelineSummary({
+    digest: { title: 'Y', durationSec: 600, worthScore: 5, liveFrameStills: live, transcript: '字幕内容' },
+    visionSummarize: async ({ images }) => {
+      if (images.length) throw new Error('no-vision');
+      return { text: '总览：按文案推断\n时间线：\n· 00:00–01:00 推断章：内容\n观感：未看画面，按文案聊。' };
+    },
+  });
+  assert.equal(fallback.ok, true);
+  assert.equal(fallback.channel, 'ok:text-only');
+  assert.equal(fallback.fallback, 'text-infer');
+});

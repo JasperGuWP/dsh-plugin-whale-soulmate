@@ -1065,6 +1065,12 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
       });
       const visionChannel = vision.ok && vision.textOnly ? 'ok:text-only' : vision.channel;
       digest.channels = { ...(digest.channels || {}), visionSummary: visionChannel };
+      if (vision.batches?.total > 1) {
+        const b = vision.batches;
+        const extra = `分批看图 ${b.ok}/${b.total} 批，共 ${b.frames} 帧`;
+        const report = digest.coverage?.report || '';
+        digest.coverage = { ...(digest.coverage || {}), report: report ? `${report}；${extra}` : extra };
+      }
       if (vision.ok && vision.takeaway) {
         digest.takeaway = vision.takeaway;
         digest.summary = `《${digest.title}》 @${digest.author}（${formatClock(digest.durationSec)}）：${vision.takeaway}`;

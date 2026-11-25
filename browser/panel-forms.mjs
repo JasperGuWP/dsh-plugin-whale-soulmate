@@ -474,7 +474,7 @@ function autoSurfSection({ draft, patchExtensions }) {
       ]),
       (ext.biliVisionSummary !== false || ext.biliLiveFrameWatch) ? field(
         'live-frame-every',
-        '看片/总结密度：每 ' + (ext.biliLiveFrameEverySec || 15) + ' 秒一帧（最密 5 秒，送模最多 16 帧）',
+        '看片/总结密度：每 ' + (ext.biliLiveFrameEverySec || 15) + ' 秒一帧（最密 5 秒；超过单批 16 帧自动分批看图，最多 10 批）',
         h('input', {
           key: 'control',
           type: 'range',

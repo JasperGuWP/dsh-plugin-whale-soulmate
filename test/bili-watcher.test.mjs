@@ -1057,9 +1057,13 @@ test('watchAndRecordVideo: 细看裁决 — agent 判 deep 且初扫没看够 �
     assert.equal(judgeCalls.length, 1, '裁决只问一次');
     assert.equal(judgeCalls[0].purpose, 'bili-deep-judge');
     assert.match(judgeCalls[0].text, /【你的性格】戏谑/);
-    assert.equal(visionCalls.length, 2, '初扫 + 二刷各一次视觉总结');
-    assert.ok(visionCalls[1].imageCount > visionCalls[0].imageCount, '二刷帧更密');
+    // 分批看图后：初扫 8 帧一批；二刷 36 帧分 3 批（16+16+4），共 4 次调用。
+    assert.equal(visionCalls.length, 4, '初扫 1 批 + 二刷 3 批');
+    assert.ok(visionCalls.every((c) => c.imageCount <= 20), '每批不超宿主图片上限');
+    const secondPassFrames = visionCalls.slice(1).reduce((s, c) => s + c.imageCount, 0);
+    assert.ok(secondPassFrames > visionCalls[0].imageCount, '二刷看的帧更多');
     assert.match(visionCalls[1].prompt, /字幕摘录/);
+    assert.match(visionCalls[3].prompt, /第2批/, '二刷批间带前情');
     assert.equal(res.digest.deepJudge.deep, true);
     assert.equal(res.digest.deepJudge.secondPass, true);
     assert.equal(res.digest.deepJudge.via, 'agent');
@@ -1119,9 +1123,9 @@ test('watchAndRecordVideo: 细看裁决走 judgeOneShot（桌面宿主无 genera
   });
 });
 
-test('watchAndRecordVideo: 长片分镜充足但喂进模型的帧稀疏 → 判 deep 时仍二刷（fedSparse）', async () => {
-  // 37 分钟长片：分镜 36 张（≥24 不算 thin）、字幕充足（≥800），但视觉初扫只喂 16 张
-  // → 每帧间隔 ~139s，远超 15s 采样密度 → fedSparse 触发二刷。
+test('watchAndRecordVideo: 长片初扫分批看全后不再 fedSparse 二刷；喂帧仍稀疏时二刷', async () => {
+  // 37 分钟长片：分镜 36 张、字幕充足。分批看图后初扫已看全 36 帧
+  // → 每帧间隔 ~62s ≤ 2×36s 采样密度 → 不再因 fedSparse 重复二刷。
   const longVideo = makeVideo(BV_GOOD, 1001, { duration: 2220, title: 'AI 产业深度复盘：三十七分钟讲透' });
   await withEnv([longVideo], {}, async ({ service, net }) => {
     const visionCalls = [];
@@ -1137,11 +1141,59 @@ test('watchAndRecordVideo: 长片分镜充足但喂进模型的帧稀疏 → 判
         return { text: '总览：一期讲透智能体\n时间线：\n· 00:00–00:30 开场：点题\n观感：这片子有点东西，值得你看。' };
       },
       maxStoryboardFrames: 36,
-      liveFrameEverySec: 15,
+      liveFrameEverySec: 36,
     });
     assert.equal(res.ok, true, JSON.stringify(res.recorded?.surf || res));
-    assert.equal(res.digest.deepJudge.secondPass, true, '喂帧稀疏的长片必须二刷');
-    assert.ok(visionCalls.length >= 2, '初扫 + 二刷');
-    assert.ok(visionCalls[1].imageCount <= 20, '二刷帧数不超过宿主单条消息图片上限 20');
+    assert.equal(visionCalls.length, 3, '初扫 36 帧分 3 批看全');
+    assert.ok(!res.digest.deepJudge.secondPass, '看全后不再 fedSparse 二刷');
+
+    // 采样密度设 15s：36 帧覆盖 37min 仍稀疏（62s > 2×15s）→ 二刷补真帧。
+    const visionCalls2 = [];
+    const res2 = await watchAndRecordVideo(service, { target: BV_GOOD }, {
+      ...net,
+      keywords: ['AI'],
+      liveFrameWatch: false,
+      llmController: {
+        generateReply: async () => ({ text: '{"deep":true,"reason":"信息量长片，值得认真看完"}' }),
+      },
+      visionSummarize: async ({ prompt, images }) => {
+        visionCalls2.push({ prompt, imageCount: (images || []).length });
+        return { text: '总览：一期讲透智能体\n时间线：\n· 00:00–00:30 开场：点题\n观感：这片子有点东西，值得你看。' };
+      },
+      maxStoryboardFrames: 36,
+      liveFrameEverySec: 15,
+    });
+    assert.equal(res2.ok, true, JSON.stringify(res2.recorded?.surf || res2));
+    assert.equal(res2.digest.deepJudge.secondPass, true, '喂帧稀疏的长片必须二刷');
+    assert.ok(visionCalls2.length > 3, '初扫 + 二刷');
+    assert.ok(visionCalls2.every((c) => c.imageCount <= 20), '每批不超宿主图片上限');
+  });
+});
+
+test('watchAndRecordVideo: 36 张分镜的长片分批看图（3 批），批间带前情，日志 coverage 记录批数', async () => {
+  const longVideo = makeVideo(BV_GOOD, 1001, { duration: 2220, title: 'AI 产业深度复盘：三十七分钟讲透' });
+  await withEnv([longVideo], {}, async ({ service, net }) => {
+    const visionCalls = [];
+    const res = await watchAndRecordVideo(service, { target: BV_GOOD }, {
+      ...net,
+      keywords: ['AI'],
+      liveFrameWatch: false,
+      deepJudge: false,
+      visionSummarize: async ({ prompt, images }) => {
+        visionCalls.push({ prompt, imageCount: (images || []).length });
+        const n = visionCalls.length;
+        return { text: `总览：第${n}段内容\n时间线：\n· 0${n}:00–0${n}:30 章${n}：要点${n}` + (n === 3 ? '\n观感：全程看完，干货扎实。' : '') };
+      },
+      maxStoryboardFrames: 36,
+    });
+    assert.equal(res.ok, true, JSON.stringify(res.recorded?.surf || res));
+    assert.equal(visionCalls.length, 3, '36 帧 → 16+16+4 三批');
+    assert.ok(visionCalls.every((c) => c.imageCount <= 20), '每批不超宿主图片上限');
+    assert.match(visionCalls[1].prompt, /第1批/, '第 2 批带第 1 批结论');
+    assert.match(visionCalls[2].prompt, /第2批/, '第 3 批带第 2 批结论');
+    assert.match(res.digest.takeaway, /章1/);
+    assert.match(res.digest.takeaway, /章3/);
+    assert.match(res.digest.coverage.report, /分批看图 3\/3 批，共 36 帧/);
+    assert.equal((res.digest.visionSummary.frames || []).length, 36, '全部帧计入 vision frames');
   });
 });
