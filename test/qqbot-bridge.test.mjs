@@ -95,11 +95,11 @@ test('qqbot bridge: imports new lines once, labels owner vs member, refreshes th
     await rm(dir, { recursive: true, force: true });
   }
 });
-test('qqbot bridge: latestInboundIds respects the passive window (group 5min / c2c 30min)', async () => {
+test('qqbot bridge: latestInboundIds respects the passive window (official 60min, group and c2c)', async () => {
   const { latestInboundIds } = await import('../packages/soulmate-core/runtime/qqbot-bridge-runtime.mjs');
   const now = Date.parse('2026-11-24T08:00:00Z');
   const lines = [
-    { seq: 1, type: 'user/message', time: now - 40 * 60_000, data: { id: 'old', content: [{ type: 'text', text: '旧消息' }] } },
+    { seq: 1, type: 'user/message', time: now - 70 * 60_000, data: { id: 'old', content: [{ type: 'text', text: '旧消息' }] } },
     { seq: 2, type: 'user/message', time: now - 4 * 60_000, data: { id: 'fresh', content: [{ type: 'text', text: '[等风 (A1B2C3D4E5F60718293A4B5C6D7E8F90)] 在吗' }] } },
     { seq: 3, type: 'user/message', time: now - 3 * 60_000, data: { id: 'sys', content: [{ type: 'text', text: 'Time sampled while preparing turn 2' }] } },
     { seq: 4, type: 'assistant/message', time: now - 2 * 60_000, data: { message: { content: [{ type: 'text', text: '在' }] } } },
@@ -109,10 +109,15 @@ test('qqbot bridge: latestInboundIds respects the passive window (group 5min / c
   assert.equal(g.fresh, true);
   const c = latestInboundIds(lines, { kind: 'c2c', nowMs: now });
   assert.equal(c.fresh, true);
-  // 6 minutes later: group window closed, c2c still open
-  const later = now + 2 * 60_000;
+  // 40 minutes later: still inside the official 60-minute window for BOTH kinds
+  // (the old 5/30-min SDK cache TTL wrongly closed these).
+  const mid = now + 36 * 60_000;
+  assert.equal(latestInboundIds(lines, { kind: 'group', nowMs: mid }).fresh, true);
+  assert.equal(latestInboundIds(lines, { kind: 'c2c', nowMs: mid }).fresh, true);
+  // 61 minutes after the inbound: closed for both.
+  const later = now + 57 * 60_000 + 60_000;
   assert.equal(latestInboundIds(lines, { kind: 'group', nowMs: later }).fresh, false);
-  assert.equal(latestInboundIds(lines, { kind: 'c2c', nowMs: later }).fresh, true);
+  assert.equal(latestInboundIds(lines, { kind: 'c2c', nowMs: later }).fresh, false);
   // nothing inbound at all
   assert.equal(latestInboundIds([], { kind: 'group', nowMs: now }), null);
 });

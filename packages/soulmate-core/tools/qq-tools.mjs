@@ -23,7 +23,7 @@ export function qqTools({ makeTool, home, pushEvent, qqOps }) {
       timeoutMs: 90_000,
       description:
         'Send an image / video / voice / file through the OFFICIAL QQ bot to a private chat (to = openid) or group (groupId). ' +
-        'Requires the passive-reply window (group 5min / c2c 30min after their last message). ' +
+        'Requires the passive-reply window (60min after their last message, group and c2c alike). ' +
         'Provide url (public https) OR filePath (local file). Voice must be silk/wav the platform accepts. ' +
         'caption is optional text sent with the media; it passes the privacy firewall.',
       parameters: {

@@ -155,7 +155,7 @@ export function createImProactiveRuntime({ home, warn, pushEvent, usage, cfg, of
           // recall push (30 days after contact); groups have nothing — stay silent.
           const c2c = gate.targets.find((t) => t.platform === 'qq' && !t.groupId);
           if (c2c && ext.imProactiveWakeup !== false) target = c2c;
-          else return { ok: true, ran: false, reason: 'no-open-window', hint: 'QQ 被动窗口都关着：主人在群里 5 分钟内 / 私聊 30 分钟内说过话才会尝试（私聊可走 wakeup 召回）' };
+          else return { ok: true, ran: false, reason: 'no-open-window', hint: 'QQ 被动窗口都关着：对方 60 分钟内说过话才会尝试（群/私聊同限；私聊另有 wakeup 召回，平台按 30 天 4 周期各 1 条限频）' };
         }
       } catch { /* keep whitelist order */ }
     }

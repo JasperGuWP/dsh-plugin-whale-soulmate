@@ -34,7 +34,8 @@ export function parseConversationKey(key) {
 /**
  * Latest inbound message id + age per conversation, from the session transcripts.
  * QQ's official API only accepts a proactive push inside the passive-reply window
- * (group 5min / c2c 30min, ≤4 replies per msg_id) — an id-less send is rejected with
+ * (60min for group and c2c per official docs; ≤4 c2c / ≤5 group replies per msg_id,
+ * 50 when the bot owner admins the group) — an id-less send is rejected with
  * 40034005. The official plugin keeps its msg-id cache in memory, so we re-derive the
  * ids from the transcript envelopes instead.
  */
@@ -52,7 +53,7 @@ export function latestInboundIds(lines, { kind = 'c2c', nowMs = Date.now() } = {
     if (!best || time > best.time) best = { msgId: id, time };
   }
   if (!best) return null;
-  const windowMs = kind === 'group' ? 5 * 60_000 : 30 * 60_000;
+  const windowMs = 60 * 60_000; // official passive-reply validity: 60min for group and c2c
   return { ...best, fresh: nowMs - best.time < windowMs, ageMs: nowMs - best.time };
 }
 
@@ -243,7 +244,7 @@ export function createQqbotBridgeRuntime({ home, warn, pushEvent, prefsPath = PR
       for (const [key, list] of Object.entries(mirror?.targets || {})) {
         const m = /^(c2c|group):(.+)$/.exec(key);
         if (!m || !Array.isArray(list) || !list.length) continue;
-        const ttl = m[1] === 'group' ? 5 * 60_000 : 30 * 60_000;
+        const ttl = 60 * 60_000; // official passive-reply validity (group and c2c)
         const fresh = list.filter((e) => e && nowMs - (Number(e.at) || 0) < ttl);
         if (!fresh.length) continue;
         const newest = fresh.reduce((a, b) => ((Number(b.at) || 0) > (Number(a.at) || 0) ? b : a));

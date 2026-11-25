@@ -14,8 +14,11 @@ const DEFAULT_STORE = join(homedir(), '.dsh', 'soulmate', 'logs', 'qq-msgids.jso
 let STORE = DEFAULT_STORE;
 /** Test seam: point the mirror at a temp file. */
 export function setQqMsgIdStore(p) { STORE = p || DEFAULT_STORE; }
-const TTL_GROUP = 5 * 60_000;
-const TTL_C2C = 30 * 60_000;
+// Platform passive-reply validity (official docs, message overview): group AND c2c
+// msg_id stay replyable for 60 minutes. The old 5/30-min values came from the SDK's
+// conservative cache TTL and silently closed reachable windows an hour early.
+const TTL_GROUP = 60 * 60_000;
+const TTL_C2C = 60 * 60_000;
 const MAX_PER_TARGET = 10;
 
 let patched = false;
