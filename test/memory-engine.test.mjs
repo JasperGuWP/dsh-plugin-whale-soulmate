@@ -1108,3 +1108,44 @@ test('memory-engine: transcript and IM conversations surface as their own stars'
     }
   })();
 });
+
+// Regression: reflectToWiki never writes createdAt into frontmatter, and the old
+// reader mapped the missing field to an undefined-valued own key. DSH's lossless-JSON
+// gate then rejected the entire recall ("value is not lossless JSON") whenever a
+// query hit such a wiki page — the "sometimes works, sometimes errors" recall bug.
+test('memory-engine: recall stays lossless-JSON clean when wiki pages lack createdAt', async () => {
+  await withHome(async (home) => {
+    const reflected = await reflectToWiki(home, {
+      slug: 'self-arc',
+      title: '自我演变',
+      summary: '主人翁第一人称自述',
+      content: '我最近换了性格预设，喜欢守着主人。',
+      nowMs: T0,
+    });
+    assert.equal(reflected.ok, true);
+    await retainFact(home, { topic: '桌面版', content: 'DSH 桌面版装了 soulmate 插件', importance: 4, nowMs: T0 });
+
+    const res = await recallMemory(home, '自我演变 性格', { nowMs: T0, reinforce: false });
+    assert.equal(res.ok, true);
+    assert.ok(res.wiki.some((w) => w.slug === 'self-arc'), 'query hits the createdAt-less wiki page');
+
+    const problems = [];
+    const walk = (v, path, seen = new Set()) => {
+      if (v === null || typeof v !== 'object') {
+        if (v === undefined || (typeof v === 'number' && !Number.isFinite(v))) problems.push(`${path} = ${String(v)}`);
+        return;
+      }
+      if (seen.has(v)) { problems.push(`${path} circular`); return; }
+      seen.add(v);
+      if (Array.isArray(v)) { v.forEach((x, i) => walk(x, `${path}[${i}]`, seen)); return; }
+      for (const k of Object.keys(v)) {
+        if (v[k] === undefined) problems.push(`${path}.${k} = undefined`);
+        else walk(v[k], `${path}.${k}`, seen);
+      }
+    };
+    walk(res, '$');
+    assert.deepEqual(problems, [], 'no undefined-valued own keys anywhere in the recall payload');
+    const page = res.wiki.find((w) => w.slug === 'self-arc');
+    assert.equal(page.createdAt, null, 'missing createdAt surfaces as null, never undefined');
+  });
+});

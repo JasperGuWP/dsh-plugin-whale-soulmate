@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { appendPrivacyAudit, inspectAndScrub } from './privacy-firewall.mjs';
 import { fitMemoryDigest } from './budget.mjs';
+import { jsonSafe } from './small-utils.mjs';
 import {
   CONFIDENCE_BANDS,
   MEMORY_KINDS,
@@ -322,7 +323,9 @@ async function readWikiPages(home) {
       links: Array.isArray(meta.links) ? meta.links : extractWikiLinks(body),
       sourceFactIds: Array.isArray(meta.sourceFactIds) ? meta.sourceFactIds : [],
       updatedAt: await fileUpdatedAt(path, meta.updatedAt),
-      createdAt: str(meta.createdAt) || undefined,
+      // DSH rejects tool results whose own keys hold undefined ("value is not lossless
+      // JSON"), so an absent createdAt must be null, never an undefined-valued key.
+      createdAt: str(meta.createdAt) || null,
       content: body.trim(),
     });
   }
@@ -1035,7 +1038,10 @@ export async function recallMemory(home, query, options = {}) {
       .filter((c) => c.f.kind === 'promise' && (c.f.promise?.status ?? 'made') === 'made')
       .slice(0, 5)
       .map((c) => ({ id: c.f.id, text: c.f.text, dueAt: c.f.promise?.dueAt ?? null }));
-    return { ok: true, facts, wiki, linkedWiki, episodes: mergedEpisodes, promises, temporalWindow: window?.label ?? null };
+    // jsonSafe: facts loaded from jsonl may carry undefined-valued keys (e.g. an
+    // unset halfLifeDays/conflictOpenedConfidence); DSH's lossless-JSON gate rejects
+    // the whole recall over any one of them.
+    return jsonSafe({ ok: true, facts, wiki, linkedWiki, episodes: mergedEpisodes, promises, temporalWindow: window?.label ?? null });
   };
 
   return options.reinforce === true ? withLock(home, run) : run();

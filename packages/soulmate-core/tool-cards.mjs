@@ -3,7 +3,7 @@
 // per-apply ready gate / error funnel handed in by the assembly.
 
 import { defineTool } from './tool-kit.mjs';
-import { clip, errMsg } from './small-utils.mjs';
+import { clip, errMsg, jsonSafe } from './small-utils.mjs';
 
 // Valid JSON Schema: `required` is a top-level array, never a property-level boolean.
 // The old shape (`ok: { type:'boolean', required:true }`) is not valid draft-07 and made
@@ -162,11 +162,13 @@ export function makeToolFactory({ cardKind, ready }) {
           await ready;
           const value = await run(args, exec);
           // Always hand the host a plain JSON object with a boolean `ok`, whatever the
-          // domain tool returned (undefined, a bare string, or `{ ok }`).
+          // domain tool returned (undefined, a bare string, or `{ ok }`). jsonSafe strips
+          // undefined-valued own keys — the host's lossless-JSON gate runs before
+          // serialization and rejects the whole call over a single `createdAt: undefined`.
           if (value && typeof value === 'object' && !Array.isArray(value)) {
-            return { ok: value.ok !== false, ...value };
+            return jsonSafe({ ok: value.ok !== false, ...value });
           }
-          return { ok: true, value };
+          return { ok: true, value: jsonSafe(value) ?? null };
         } catch (err) {
           return { ok: false, error: errMsg(err) };
         }
