@@ -18,6 +18,8 @@ const MINUTE = 60_000;
 export function cleanImRowText(text) {
   let t = str(text);
   t = t.replace(/^- Image:.*$/gm, '');
+  // Transcript imports embed the speaker tag in the text: `[等风 (openid)] …`.
+  t = t.replace(/\[[^\[\]()]{1,24}\s*\([0-9A-Fa-f]{16,}\)\]\s*/g, '');
   t = t.replace(/<faceType=[^>]*ext="([A-Za-z0-9+/=]*)"[^>]*>/g, (_m, b64) => {
     try {
       const j = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
@@ -27,6 +29,12 @@ export function cleanImRowText(text) {
   });
   t = t.replace(/<faceType=[^>]*>/g, '[表情]');
   return t.replace(/\n{2,}/g, '\n').trim();
+}
+
+/** Speaker tag inside imported transcript text → { name, openid } (empty when absent). */
+export function extractSpeakerTag(text) {
+  const m = /\[([^\[\]()]{1,24})\s*\(([0-9A-Fa-f]{16,})\)\]/.exec(str(text));
+  return m ? { name: m[1].trim(), openid: m[2].toUpperCase() } : { name: '', openid: '' };
 }
 
 const hhmm = (atMs, tz) => {
@@ -57,8 +65,13 @@ export function renderImContextRows(rows, { tzOffsetMinutes = 480, nowMs = Date.
     if (!text) continue;
     let who;
     if (r.role === 'bot') who = '我';
-    else if (ownerId && str(r.senderId).toUpperCase() === ownerId) who = str(r.senderName) || ownerName || '他';
-    else who = str(r.senderName) || str(r.peerLabel) || (isGroup ? '群友' : '他');
+    else {
+      // Transcript-import rows lack senderId but carry `[名字 (openid)]` in the text.
+      const tag = extractSpeakerTag(r?.text);
+      const sid = str(r.senderId).toUpperCase() || tag.openid;
+      if (ownerId && sid === ownerId) who = str(r.senderName) || tag.name || ownerName || '他';
+      else who = str(r.senderName) || tag.name || str(r.peerLabel) || (isGroup ? '群友' : '他');
+    }
     const stamp = dayKey(t, tzOffsetMinutes) === today ? hhmm(t, tzOffsetMinutes) : `${dayKey(t, tzOffsetMinutes)} ${hhmm(t, tzOffsetMinutes)}`;
     lines.push(`${stamp} ${who}：${clip(text, maxLineChars)}`);
   }

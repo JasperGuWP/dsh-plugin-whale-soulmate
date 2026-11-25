@@ -47,6 +47,12 @@ test('renderImContextRows: owner by openid, sender names for members, bot as 我
   // Older-than-today lines carry MM-DD so yesterday never reads as fresh gossip.
   const old = renderImContextRows([{ at: '2026-11-23T09:37:43Z', role: 'user', text: '你好' }], { nowMs: AT });
   assert.match(old, /^11-23 17:37 /);
+  // Transcript-import rows: speaker tag in text identifies the owner, tag stripped from speech.
+  const imported = renderImContextRows([
+    { at: '2026-11-25T07:52:41Z', role: 'user', peerLabel: '群友', text: `- Image: C:/x/a.jpg\n\n[等风 (${OWNER})] [图片]` },
+  ], { ownerId: OWNER, nowMs: AT, isGroup: true });
+  assert.match(imported, /15:52 等风：\[图片\]/);
+  assert.doesNotMatch(imported, /Image:|7C1158/);
 });
 
 test('im prompt: grounded context blocks, autonomy preserved, fabrication and fake-at banned', () => {
