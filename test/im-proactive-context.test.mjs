@@ -53,6 +53,13 @@ test('renderImContextRows: owner by openid, sender names for members, bot as 我
   ], { ownerId: OWNER, nowMs: AT, isGroup: true });
   assert.match(imported, /15:52 等风：\[图片\]/);
   assert.doesNotMatch(imported, /Image:|7C1158/);
+  // Live + transcript twins (same words seconds apart, one without senderId) → one line, identified label wins.
+  const twins = renderImContextRows([
+    { at: '2026-11-25T07:52:08.000Z', role: 'user', senderId: OWNER, senderName: '等风', peerLabel: '主人', text: '你好啊' },
+    { at: '2026-11-25T07:52:08.954Z', role: 'user', peerLabel: '主人', text: '你好啊' },
+  ], { ownerId: OWNER, nowMs: AT, isGroup: true });
+  assert.equal(twins.split('\n').length, 1);
+  assert.match(twins, /等风：你好啊/);
 });
 
 test('im prompt: grounded context blocks, autonomy preserved, fabrication and fake-at banned', () => {

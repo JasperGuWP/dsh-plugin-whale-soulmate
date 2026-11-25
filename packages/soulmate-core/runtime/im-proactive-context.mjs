@@ -57,6 +57,7 @@ export function renderImContextRows(rows, { tzOffsetMinutes = 480, nowMs = Date.
     .sort((a, b) => Date.parse(a?.at) - Date.parse(b?.at));
   const today = dayKey(nowMs, tzOffsetMinutes);
   const lines = [];
+  const seen = [];
   for (const r of list) {
     const t = Date.parse(r?.at);
     if (!Number.isFinite(t)) continue;
@@ -69,11 +70,22 @@ export function renderImContextRows(rows, { tzOffsetMinutes = 480, nowMs = Date.
       // Transcript-import rows lack senderId but carry `[名字 (openid)]` in the text.
       const tag = extractSpeakerTag(r?.text);
       const sid = str(r.senderId).toUpperCase() || tag.openid;
-      if (ownerId && sid === ownerId) who = str(r.senderName) || tag.name || ownerName || '他';
-      else who = str(r.senderName) || tag.name || str(r.peerLabel) || (isGroup ? '群友' : '他');
+      const named = str(r.senderName) || tag.name;
+      if (ownerId && sid === ownerId) who = named || ownerName || '主人';
+      else who = named || str(r.peerLabel) || (isGroup ? '群友' : '他');
     }
+    // Live-mirror + transcript-import twins: same speaker/words seconds apart, one
+    // row lacking senderId. Collapse to ONE line; the identified twin wins the label.
+    const rich = Boolean(str(r.senderId) || extractSpeakerTag(r?.text).openid);
+    const dup = seen.find((s) => s.role === r.role && s.text === text && Math.abs(s.t - t) <= 5000);
     const stamp = dayKey(t, tzOffsetMinutes) === today ? hhmm(t, tzOffsetMinutes) : `${dayKey(t, tzOffsetMinutes)} ${hhmm(t, tzOffsetMinutes)}`;
-    lines.push(`${stamp} ${who}：${clip(text, maxLineChars)}`);
+    const line = `${stamp} ${who}：${clip(text, maxLineChars)}`;
+    if (dup) {
+      if (!dup.rich && rich) { lines[dup.index] = line; dup.rich = true; }
+      continue;
+    }
+    seen.push({ role: r.role, text, t, index: lines.length, rich });
+    lines.push(line);
   }
   return lines.join('\n');
 }
