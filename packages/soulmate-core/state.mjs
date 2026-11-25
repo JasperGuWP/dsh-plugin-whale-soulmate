@@ -67,7 +67,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   // in front of you to save tokens is the wrong trade. 0 = no cap.
   usage: {
     // Daily token cap for automatic work (proactive / im / dream / distill).
-    dailyAutoTokenCap: 200_000,
+    // 200万 (user decision 2026-11-25): one boot alone costs ~80k, so the old 20万
+    // default starved proactive speech after two restarts in a day.
+    dailyAutoTokenCap: 2_000_000,
     // Behaviour once the cap is hit: 'block' refuses the call, 'warn' only records it.
     onCapReached: 'block',
     // Keep the ledger compact; older lines are pruned on read.

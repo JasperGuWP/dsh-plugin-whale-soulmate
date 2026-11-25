@@ -52,7 +52,7 @@ function usageCard(p) {
   const today = u.today || {}
   const cap = u.cap || {}
   const cfg = u.config || {}
-  const d = draft || { dailyAutoTokenCap: cfg.dailyAutoTokenCap ?? 200000, onCapReached: cfg.onCapReached || 'block' }
+  const d = draft || { dailyAutoTokenCap: cfg.dailyAutoTokenCap ?? 2000000, onCapReached: cfg.onCapReached || 'block' }
 
   const unlimited = Boolean(cap.unlimited)
   const pct = unlimited || !cap.limit ? 0 : Math.min(100, Math.round((Number(cap.used) / Number(cap.limit)) * 100))

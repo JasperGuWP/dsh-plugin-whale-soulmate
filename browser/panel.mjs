@@ -355,7 +355,7 @@ const { SoulShareCard } = require('./panel-soul-share.mjs')
         if (res && res.ok !== false) {
           setUsage(res)
           setUsageDraft({
-            dailyAutoTokenCap: res.config ? res.config.dailyAutoTokenCap : 200000,
+            dailyAutoTokenCap: res.config ? res.config.dailyAutoTokenCap : 2000000,
             onCapReached: (res.config && res.config.onCapReached) || 'block',
           })
         }
