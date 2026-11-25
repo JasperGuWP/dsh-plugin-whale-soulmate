@@ -265,6 +265,7 @@ export function apply(ctx, config = {}) {
     listHostModels: usage.listHostModels,
     get chatHome() { return chatHome; },
     promptEngine,
+    qqOps: proactive.qqOps,
   };
   const toolSet = buildTools(toolDeps);
   for (const tool of toolSet.tools) {

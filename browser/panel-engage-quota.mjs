@@ -221,7 +221,9 @@ function ownerRow({ key, platform, value, onChange, candidates, onFetch, fetchin
   ])
 }
 
-function imProactiveSection({ ext, patchExtensions }) {
+// 必须经 h() 挂载（内含 hooks）：直接函数调用会把 hooks 记到父组件头上，
+// 开关切换时子树挂载/卸载导致 hook 数变化 → React #310 整页白屏。
+function ImProactiveSection({ ext, patchExtensions }) {
   const on = ext.imProactiveEnabled === true
   const [speakers, setSpeakers] = React.useState([])
   const [wxContacts, setWxContacts] = React.useState([])
@@ -326,4 +328,4 @@ function imProactiveSection({ ext, patchExtensions }) {
   ])
 }
 
-module.exports = { biliQuotaSection, imProactiveSection }
+module.exports = { biliQuotaSection, ImProactiveSection }

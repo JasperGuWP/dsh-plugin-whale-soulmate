@@ -274,6 +274,10 @@ export const DEFAULT_CONFIG = Object.freeze({
     imProactiveDailyTotal: 4,
     imProactiveMinGapMinutes: 90,
     imProactiveMaxChars: 120,
+    // 私聊被动窗口关闭后走官方 wakeup 召回（30 天内、平台限频）；false = 只在窗口内发。
+    imProactiveWakeup: true,
+    // QQ 入站图片交给宿主多模态模型写描述（时间线/记忆星可见图片内容）。
+    qqVisionEnabled: true,
     // Owner identity per platform (the human's own account id). In a group this is how
     // she tells 主人 apart from 群友; empty = everyone in the group is a stranger.
     imOwnerWeixin: '',

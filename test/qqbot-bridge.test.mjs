@@ -12,6 +12,12 @@ import {
   parseQqSession,
 } from '../packages/soulmate-core/runtime/qqbot-bridge-runtime.mjs';
 
+const { setQqInboundStore } = await import('../packages/soulmate-core/qqbot-inbound-mirror.mjs');
+const { mkdtemp: mkTmp } = await import('node:fs/promises');
+const { tmpdir: tmpOs } = await import('node:os');
+// Never read/write the developer's real mirror files during tests.
+setQqInboundStore(await mkTmp(join(tmpOs(), 'sm-qqmirror-')));
+
 const OWNER = 'A1B2C3D4E5F60718293A4B5C6D7E8F90';
 const GROUP = 'F0E1D2C3B4A5968778695A4B3C2D1E0F';
 const MEMBER = '0F1E2D3C4B5A69788796A5B4C3D2E1F0';

@@ -4,7 +4,7 @@ const React = require('react')
 const h = React.createElement
 const { api } = require('./util.mjs')
 const { QqBotColumn } = require('./panel-qqbot.mjs')
-const { imProactiveSection } = require('./panel-engage-quota.mjs')
+const { ImProactiveSection } = require('./panel-engage-quota.mjs')
 
 const QR_POLL_MS = 1500
 
@@ -306,7 +306,32 @@ function DsBotCard({ ext, patchExtensions } = {}) {
               key: m.id,
               className: 'sm-dsbot-bubble-row ' + (m.role === 'bot' ? 'bot' : 'user'),
             }, [
-              h('div', { key: 'b', className: 'sm-dsbot-bubble' }, m.text),
+              h('div', { key: 'b', className: 'sm-dsbot-bubble' }, [
+                m.text || null,
+                ...(Array.isArray(m.media) ? m.media.map((md, i) => {
+                  const ct = String(md.contentType || '')
+                  if (/^image\//i.test(ct) || ct === 'image') {
+                    return h('div', { key: `m${i}`, className: 'sm-dsbot-media' }, [
+                      md.url ? h('img', {
+                        key: 'img',
+                        src: md.url,
+                        alt: '图片',
+                        loading: 'lazy',
+                        style: { maxWidth: '220px', maxHeight: '220px', borderRadius: '8px', display: 'block', marginTop: m.text ? '6px' : '0' },
+                      }) : null,
+                      md.description ? h('div', { key: 'd', className: 'sm-panel-muted', style: { fontSize: '12px', marginTop: '4px' } }, `[图片] ${md.description}`) : null,
+                    ])
+                  }
+                  if (/voice|audio|silk/i.test(ct)) {
+                    return h('div', { key: `m${i}`, className: 'sm-panel-muted', style: { fontSize: '12px', marginTop: '4px' } },
+                      md.asrText ? `🎤 ${md.asrText}` : '🎤 语音')
+                  }
+                  if (/video/i.test(ct)) {
+                    return h('div', { key: `m${i}`, className: 'sm-panel-muted', style: { fontSize: '12px', marginTop: '4px' } }, '🎬 视频')
+                  }
+                  return h('div', { key: `m${i}`, className: 'sm-panel-muted', style: { fontSize: '12px', marginTop: '4px' } }, `📎 ${md.filename || '文件'}`)
+                }) : []),
+              ]),
               h('time', { key: 't' }, formatTime(m.at)),
             ]))
             : h('p', { key: 'empty', className: 'sm-panel-muted' }, chatBusy ? '加载中…' : '此会话暂无记录'))
@@ -437,7 +462,7 @@ function DsBotCard({ ext, patchExtensions } = {}) {
       ]),
     // IM 主动搭话是 IM 通道行为，归 DsBot 管（原来误挂在冲浪页）。
     typeof patchExtensions === 'function'
-      ? imProactiveSection({ ext: ext || {}, patchExtensions })
+      ? h(ImProactiveSection, { key: 'im-pro', ext: ext || {}, patchExtensions })
       : null,
   ])
 }

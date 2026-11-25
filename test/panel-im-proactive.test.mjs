@@ -77,9 +77,49 @@ test('IM 主动搭话卡挂在 DsBot 标签，冲浪页不再渲染它', async (
   assert.doesNotMatch(texts(bare), /IM 主动搭话/);
 
   const surfSrc = await readFile(new URL('../browser/panel-surf.mjs', import.meta.url), 'utf8');
-  assert.ok(!surfSrc.includes('imProactiveSection'), '冲浪页不再引用 IM 主动搭话');
+  assert.ok(!surfSrc.includes('ProactiveSection'), '冲浪页不再引用 IM 主动搭话');
   const dsbotSrc = await readFile(new URL('../browser/panel-dsbot.mjs', import.meta.url), 'utf8');
-  assert.ok(dsbotSrc.includes('imProactiveSection'), 'DsBot 页引用 IM 主动搭话');
+  assert.ok(dsbotSrc.includes("h(ImProactiveSection, { key: 'im-pro'"), 'DsBot 页必须经 h() 挂载 IM 主动搭话（含 hooks，直接调用会白屏）');
+});
+
+// 真实 React 语义回归：DsBotCard 的 hook 数不得随 imProactiveEnabled 开关变化。
+// 直接函数调用含 hooks 的子组件（旧写法）会把子组件 hooks 记到父组件头上，
+// 开关一翻 hook 数变化 → React #310，整页白屏。
+test('IM 开关切换不改变 DsBotCard 的 hook 数（防 #310 白屏）', async () => {
+  let calls = 0;
+  const countingReact = {
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useState: (init) => { calls++; return [typeof init === 'function' ? init() : init, () => {}]; },
+    useRef: (init) => { calls++; return { current: init }; },
+    useEffect: () => { calls++; },
+    useCallback: (fn) => { calls++; return fn; },
+    useMemo: (fn) => { calls++; return fn(); },
+  };
+  const renderDsBot = async (ext) => {
+    const src = await readFile(new URL('../browser/panel-dsbot.mjs', import.meta.url), 'utf8');
+    const module = { exports: {} };
+    calls = 0;
+    vm.runInNewContext(src, {
+      module, exports: module.exports,
+      fetch: async () => ({ status: 200, text: async () => '{}' }),
+      setInterval: () => 0, clearInterval: () => {}, setTimeout: () => 0, clearTimeout: () => {},
+      require: (id) => {
+        if (id === 'react') return countingReact;
+        if (id.endsWith('util.mjs')) return { api: async () => ({ ok: true }), companionPronoun: () => ({ third: '他' }) };
+        if (id.endsWith('panel-qqbot.mjs')) return { QqBotColumn: () => null };
+        if (id.endsWith('panel-engage-quota.mjs')) return realQuota;
+        throw new Error('unexpected require ' + id);
+      },
+      console,
+      window: { addEventListener: () => {}, removeEventListener: () => {} },
+      document: { addEventListener: () => {}, removeEventListener: () => {} },
+    }, { filename: 'panel-dsbot.mjs' });
+    module.exports.DsBotCard({ ext, patchExtensions: () => {} });
+    return calls;
+  };
+  const off = await renderDsBot({ imProactiveEnabled: false });
+  const on = await renderDsBot({ imProactiveEnabled: true, imProactiveWhitelist: [] });
+  assert.equal(on, off, '开关前后 DsBotCard 调用的 hooks 数必须一致');
 });
 
 test('白名单编辑器提供「从最近会话选」，点击拉 /im/known 并可加白', async () => {
@@ -94,9 +134,9 @@ test('白名单编辑器提供「从最近会话选」，点击拉 /im/known 并
       },
     },
   }, slots);
-  // 直接渲染内部编辑器不可得（未导出）；经 imProactiveSection 开启态渲染。
+  // 直接渲染内部编辑器不可得（未导出）；经 ImProactiveSection 开启态渲染。
   const patches = [];
-  const tree = quota.imProactiveSection({
+  const tree = quota.ImProactiveSection({
     ext: { imProactiveEnabled: true, imProactiveWhitelist: [] },
     patchExtensions: (p) => patches.push(p),
   });
@@ -109,7 +149,7 @@ test('白名单编辑器提供「从最近会话选」，点击拉 /im/known 并
   const quota2 = await loadBrowser('panel-engage-quota.mjs', {
     './util.mjs': { api: async () => ({ ok: true, conversations: [] }) },
   }, slots);
-  const tree2 = quota2.imProactiveSection({
+  const tree2 = quota2.ImProactiveSection({
     ext: { imProactiveEnabled: true, imProactiveWhitelist: [] },
     patchExtensions: (p) => patches.push(p),
   });

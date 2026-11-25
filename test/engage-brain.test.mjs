@@ -195,13 +195,21 @@ test('im runtime: open group window wins over closed DM; all-closed skips withou
       .runImProactiveIfDue({ at: AT });
     assert.equal(r1.sent, true, JSON.stringify(r1));
     assert.equal(sent[0].target.groupId, 'G1');
-    // Every window closed: no authoring, no doomed send, honest reason.
+    // Every window closed + wakeup disabled: no authoring, no doomed send, honest reason.
+    await saveConfigAuto(home, { extensions: { imProactiveWakeup: false } });
     const before = authored;
     const r2 = await mk([]).runImProactiveIfDue({ at: AT + 10 * 60_000 });
     assert.equal(r2.ran, false);
     assert.equal(r2.reason, 'no-open-window');
     assert.equal(authored, before, 'closed windows must not burn a generation');
     assert.equal(sent.length, 1);
+    // Wakeup enabled (default): the closed-window DM is still reachable via the
+    // platform's legal recall push — authors and sends to the c2c target.
+    await saveConfigAuto(home, { extensions: { imProactiveWakeup: true } });
+    const r3 = await mk([]).runImProactiveIfDue({ at: AT + 200 * 60_000 });
+    assert.equal(r3.sent, true, JSON.stringify(r3));
+    assert.equal(sent[sent.length - 1].target.to, 'OWNER1');
+    assert.equal(sent[sent.length - 1].target.groupId, '');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

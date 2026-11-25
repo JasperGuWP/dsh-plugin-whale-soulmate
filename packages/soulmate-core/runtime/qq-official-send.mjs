@@ -5,6 +5,8 @@
 
 import { QQ_OFFICIAL_API_BASE, QQ_OFFICIAL_TOKEN_URL } from '../../soulmate-im/index.mjs';
 import { readQqReplyIds } from '../qqbot-msgid-mirror.mjs';
+import { recordQqOutbound } from '../qqbot-inbound-mirror.mjs';
+import { inspectAndScrub, appendPrivacyAudit } from '../privacy-firewall.mjs';
 import { clip, errMsg, str } from '../small-utils.mjs';
 
 const trimSlash = (u) => String(u || '').replace(/\/+$/, '');
@@ -20,7 +22,7 @@ async function httpJson(fetchImpl, url, { method = 'GET', headers = {}, body, ti
   return { status, ok: status >= 200 && status < 300, data: data && typeof data === 'object' ? data : {}, text };
 }
 
-export function createOfficialQqSender({ bridge, cfg, warn }) {
+export function createOfficialQqSender({ bridge, cfg, warn, home, ops, outboundRecord = recordQqOutbound }) {
   let tokenCache = { key: '', token: '', until: 0 };
 
   async function token(creds, fetchImpl) {
@@ -53,6 +55,14 @@ export function createOfficialQqSender({ bridge, cfg, warn }) {
           ? { ok: false, trySoulmateIm: true, error: 'official qq not configured' }
           : { ok: false, error: `official qq: ${info.reason}` };
       }
+      // Privacy firewall: proactive lines go straight to the platform, bypassing
+      // sendImMessage — they must pass the same gate as every other outbound text.
+      const checked = inspectAndScrub(str(text));
+      if (!checked.allowed) {
+        if (home) await appendPrivacyAudit(home, { action: 'im_send_blocked', platform: 'qq', reason: checked.blockedReason }).catch(() => {});
+        return { ok: false, blockedReason: checked.blockedReason, error: `消息被隐私防火墙拦截：${checked.blockedReason}` };
+      }
+      const safeText = checked.scrubbedText;
       // The SDK mirror IS the authoritative passive-window record (real msg_ids with
       // timestamps). The transcript-based info.targets lagged behind (zstd frame reads),
       // reporting "window closed" while fresh ids sat in the mirror. Trust the mirror.
@@ -60,6 +70,13 @@ export function createOfficialQqSender({ bridge, cfg, warn }) {
       const targetId = target.groupId || target.to;
       const realIds = await readQqReplyIds(scope, targetId, at);
       if (!realIds.length) {
+        // c2c has one legal out-of-window path: the platform's wakeup recall push
+        // (30 days after contact, frequency-capped by QQ). Groups have none.
+        if (scope === 'c2c' && ops?.wakeup) {
+          const w = await ops.wakeup({ to: targetId, text: safeText, at });
+          if (w?.ok) return w;
+          return { ok: false, error: `被动窗口已关；wakeup 召回也失败：${w?.error || 'unknown'}` };
+        }
         return { ok: false, error: '被动窗口已关（群5分钟/私聊30分钟内对方没说话），官方通道此刻发不出主动消息' };
       }
       const fetchImpl = cfg?.fetch || globalThis.fetch;
@@ -76,10 +93,12 @@ export function createOfficialQqSender({ bridge, cfg, warn }) {
             Authorization: `QQBot ${accessToken}`,
             'X-Union-Appid': info.creds.appId,
           },
-          body: { content: clip(str(text), 2000), msg_type: 0, msg_id: cand.msgId },
+          body: { content: clip(safeText, 2000), msg_type: 0, msg_id: cand.msgId },
         });
         if (res.ok && !(res.data.code && !res.data.id)) {
-          return { ok: true, platform: 'qq', mode: 'official-bridge', messageId: str(res.data.id) };
+          const messageId = str(res.data.id);
+          await outboundRecord({ kind: scope, targetId, messageId, text: safeText, via: 'proactive' }).catch(() => {});
+          return { ok: true, platform: 'qq', mode: 'official-bridge', messageId };
         }
         lastErr = `qq official send failed (HTTP ${res.status})${res.data.message ? `: ${clip(res.data.message, 120)}` : ''}`;
         // Only try the next cached id when this one was rejected as invalid/exhausted.

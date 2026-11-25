@@ -387,6 +387,8 @@ test('default config: bili extension defaults are wired in state.mjs (share OFF 
     imProactiveDailyTotal: 4,
     imProactiveMinGapMinutes: 90,
     imProactiveMaxChars: 120,
+    imProactiveWakeup: true,
+    qqVisionEnabled: true,
     imOwnerWeixin: '',
     imOwnerQq: '',
     imOwnerFeishu: '',
@@ -633,7 +635,7 @@ test('plugin wiring: soulmate_video_watch tool, POST /video-watch route and the 
   await withEnv(allVideos(), { search: [{ bvid: BV_B, title: '独立开发' }] }, async ({ service, registeredTools, routes }) => {
     const summary = await service.getState();
     assert.ok(summary);
-    assert.equal(registeredTools.size, 15, '10 v1 tools + bili_manage + bili_action + 2 v3 trust tools + weather');
+    assert.equal(registeredTools.size, 22, '10 v1 + bili_manage + bili_action + 2 trust + weather + 7 official-qq tools');
     assert.ok(registeredTools.has('soulmate_bili_manage'), 'bili auth manage tool registered');
     assert.ok(registeredTools.has('soulmate_memory_promise'), 'v3 promise tool registered');
     assert.ok(registeredTools.has('soulmate_memory_resolve_conflict'), 'v3 conflict tool registered');

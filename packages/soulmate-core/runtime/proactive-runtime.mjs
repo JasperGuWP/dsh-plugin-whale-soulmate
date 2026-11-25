@@ -36,6 +36,9 @@ import { createGrowthRuntime } from './growth-runtime.mjs';
 import { createImProactiveRuntime } from './im-proactive-runtime.mjs';
 import { createQqbotBridgeRuntime } from './qqbot-bridge-runtime.mjs';
 import { createOfficialQqSender } from './qq-official-send.mjs';
+import { createOfficialQqOps } from './qq-official-ops.mjs';
+import { createOfficialQqStream } from './qq-official-stream.mjs';
+import { runQqVisionIfEnabled } from './qq-vision-runtime.mjs';
 import { createExperienceRuntime } from './experience-runtime.mjs';
 
 export function createProactiveRuntime({
@@ -62,9 +65,14 @@ export function createProactiveRuntime({
   const surf = createSurfRuntime({ home, warn, pushEvent, usage, chatHome, cfg, getService });
   // Official QQ bot sessions → IM timeline + memory stars (the two worlds were split).
   const qqbotBridge = createQqbotBridgeRuntime({ home, warn, pushEvent });
+  // Rich ops (media / recall / typing / wakeup / buttons) share the bridge's credentials.
+  const qqOps = createOfficialQqOps({ bridge: qqbotBridge, cfg, warn, home });
+  const qqStream = createOfficialQqStream({ bridge: qqbotBridge, cfg, warn, home });
+  qqOps.streamText = qqStream.streamText;
+  qqOps.openStream = qqStream.openStream;
   const imProactive = createImProactiveRuntime({
     home, warn, pushEvent, usage, cfg,
-    officialSend: createOfficialQqSender({ bridge: qqbotBridge, cfg, warn }),
+    officialSend: createOfficialQqSender({ bridge: qqbotBridge, cfg, warn, home, ops: qqOps }),
     officialTargets: (opts) => qqbotBridge.officialSendTargets(opts),
   });
 
@@ -510,6 +518,23 @@ export function createProactiveRuntime({
       qqBridgeRes = { ok: false, ran: false, reason: 'error', error: errMsg(err) };
       warn('qqbot bridge pass failed', err);
     }
+    // QQ 图片入站 → vision 描述（时间线与记忆星可读图片内容）。
+    let qqVision = { ok: true, ran: false, reason: 'skipped' };
+    try {
+      const controller = typeof chatHome.getSessionController === 'function' ? chatHome.getSessionController() : null;
+      const { createHostVisionSummarize } = await import('../../soulmate-bili/host-vision.mjs');
+      const describe = createHostVisionSummarize({
+        controller,
+        chatHome,
+        fetchImpl: cfg?.imFetch || cfg?.fetch,
+        soulmateRoot: home.rootDir,
+        warn,
+      });
+      qqVision = await runQqVisionIfEnabled({ home, warn, describe });
+    } catch (err) {
+      qqVision = { ok: false, ran: false, reason: 'error', error: errMsg(err) };
+      warn('qq vision pass failed', err);
+    }
     let autoReply = { ok: true, ran: false, reason: 'skipped' };
     try {
       autoReply = await runAutoReplyPatrol(home, {
@@ -540,8 +565,8 @@ export function createProactiveRuntime({
       return { ok: false, error: errMsg(err) };
     });
 
-    return { ok: true, at: new Date(at).toISOString(), plan, delivery, dream, diary, gate, patrol, autoSurf, autoReply, distill, sessionStars, intent: intentRes, imProactive: imRes, qqbotBridge: qqBridgeRes, experience: exp, ...priceInfo(at) };
+    return { ok: true, at: new Date(at).toISOString(), plan, delivery, dream, diary, gate, patrol, autoSurf, autoReply, distill, sessionStars, intent: intentRes, imProactive: imRes, qqbotBridge: qqBridgeRes, qqVision, experience: exp, ...priceInfo(at) };
   }
 
-  return { runProactiveTick, proactiveRecent, priceInfo, syncQqbotBridge: () => qqbotBridge.runQqbotBridgeIfEnabled() };
+  return { runProactiveTick, proactiveRecent, priceInfo, syncQqbotBridge: () => qqbotBridge.runQqbotBridgeIfEnabled(), qqOps };
 }

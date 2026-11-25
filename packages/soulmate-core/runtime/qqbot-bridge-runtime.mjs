@@ -16,6 +16,8 @@ import { appendImChat, listImChat } from '../im-chat.mjs';
 import { upsertSessionEpisode } from '../memory-engine.mjs';
 import { atomicWriteJson, appendJsonl, loadConfig } from '../state.mjs';
 import { clip } from '../small-utils.mjs';
+import { importLiveQqInbound, importQqLifecycleAndInteractions, getSeenRealIds } from './qqbot-live-source.mjs';
+import { describeAttachments, readQqVisionDescriptions } from './qq-vision-runtime.mjs';
 
 const PREF_PATH = join(homedir(), '.dsh-qqbot', 'model-prefs.json');
 const SESSIONS_ROOT = join(homedir(), '.dsh', 'sessions');
@@ -66,7 +68,7 @@ const stripMention = (t) => String(t)
  * Understands the official envelope: history blocks, [Current message], and the
  * `[名字 (openid)] ` speaker prefix in group chats.
  */
-export function parseQqSession(lines, { sinceSeq = 0, kind = 'c2c' } = {}) {
+export function parseQqSession(lines, { sinceSeq = 0, kind = 'c2c', skipRealIds = null } = {}) {
   const out = [];
   for (const row of Array.isArray(lines) ? lines : []) {
     const seq = Number(row?.seq) || 0;
@@ -89,6 +91,9 @@ export function parseQqSession(lines, { sinceSeq = 0, kind = 'c2c' } = {}) {
       continue;
     }
     // User turn: keep only the current message; history blocks are replay context.
+    // The live mirror already imports user turns with REAL ids — skip duplicates.
+    const realId = String(data.id || '').trim();
+    if (skipRealIds && realId && skipRealIds.has(realId)) continue;
     let text = raw;
     const curIdx = text.lastIndexOf('[Current message]');
     if (curIdx >= 0) text = text.slice(curIdx + '[Current message]'.length);
@@ -146,8 +151,17 @@ export function createQqbotBridgeRuntime({ home, warn, pushEvent, prefsPath = PR
       || (entries.find((e) => e.conv.kind === 'c2c')?.conv.peer || '').toUpperCase();
 
     const cursor = await loadCursor();
-    let imported = 0;
-    let conversations = 0;
+    // Live mirror first: real-time inbound (ids/attachments/nicknames), outbound
+    // proactive sends, lifecycle + button events. Transcript scan below then only
+    // adds what the mirror cannot see (bot replies, pre-mirror history).
+    const live = await importLiveQqInbound(home, cursor, { ownerId, warn }).catch((err) => {
+      warn('qq live import failed', err);
+      return { imported: 0, touched: new Set() };
+    });
+    const extra = await importQqLifecycleAndInteractions(home, cursor, { pushEvent }).catch(() => ({ lifecycle: 0, buttons: 0 }));
+    const skipRealIds = getSeenRealIds(cursor);
+    let imported = live.imported;
+    const touched = new Set(live.touched);
     for (const { conv, sessionId } of entries) {
       const file = await findSessionFile(sessionsRoot, sessionId);
       if (!file) continue;
@@ -155,9 +169,9 @@ export function createQqbotBridgeRuntime({ home, warn, pushEvent, prefsPath = PR
       try { raw = zstdDecodeAll(await readFile(file)); } catch { continue; }
       const lines = raw.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
       const sinceSeq = Number(cursor[sessionId]?.seq) || 0;
-      const events = parseQqSession(lines, { sinceSeq, kind: conv.kind });
+      const events = parseQqSession(lines, { sinceSeq, kind: conv.kind, skipRealIds });
       if (!events.length) continue;
-      conversations += 1;
+      touched.add(conv.kind === 'group' ? `group:${conv.groupId}` : `c2c:${conv.peer}`);
       for (const ev of events) {
         const isOwner = ev.role === 'user' && ownerId && ev.senderId === ownerId;
         const label = conv.kind === 'group'
@@ -186,21 +200,28 @@ export function createQqbotBridgeRuntime({ home, warn, pushEvent, prefsPath = PR
     }
     await saveCursor(cursor);
 
-    if (!imported) return { ok: true, ran: true, imported: 0, conversations: 0 };
+    if (!imported) return { ok: true, ran: true, imported: 0, conversations: 0, lifecycle: extra.lifecycle, buttons: extra.buttons };
 
-    // Refresh one memory star per conversation that had new lines.
-    for (const { conv } of entries) {
+    // Refresh one memory star per conversation that had new lines (live or transcript).
+    const vision = await readQqVisionDescriptions(home).catch(() => ({}));
+    for (const key of touched) {
+      const isGroup = key.startsWith('group:');
+      const id = key.slice(isGroup ? 6 : 4);
       try {
-        const thread = conv.kind === 'group'
-          ? await listImChat(home, { platform: 'qq', groupId: conv.groupId, limit: 40 })
-          : await listImChat(home, { platform: 'qq', peerId: conv.peer, limit: 40 });
+        const thread = isGroup
+          ? await listImChat(home, { platform: 'qq', groupId: id, limit: 40 })
+          : await listImChat(home, { platform: 'qq', peerId: id, limit: 40 });
         if (!Array.isArray(thread) || !thread.length) continue;
         const content = thread
-          .map((r) => (r.role === 'bot' ? `我：${r.text}` : `${r.peerLabel || (conv.kind === 'group' ? '群友' : '对方')}：${r.text}`))
+          .map((r) => {
+            const media = describeAttachments(r.media, { descriptions: vision });
+            const line = [r.text, media].filter(Boolean).join(' ');
+            return r.role === 'bot' ? `我：${line}` : `${r.peerLabel || (isGroup ? '群友' : '对方')}：${line}`;
+          })
           .join('\n');
         await upsertSessionEpisode(home, {
-          sessionId: conv.kind === 'group' ? `im:group:qq:${conv.groupId}` : `im:qq:${conv.peer}`,
-          title: conv.kind === 'group' ? `QQ群 · ${conv.groupId.slice(0, 8)}` : 'QQ · 主人',
+          sessionId: isGroup ? `im:group:qq:${id}` : `im:qq:${id}`,
+          title: isGroup ? `QQ群 · ${id.slice(0, 8)}` : 'QQ · 主人',
           content,
           kind: 'im',
         });
@@ -208,8 +229,8 @@ export function createQqbotBridgeRuntime({ home, warn, pushEvent, prefsPath = PR
         warn('qqbot bridge star failed', err);
       }
     }
-    try { pushEvent('qqbot-bridge', { imported, conversations }); } catch { /* optional */ }
-    return { ok: true, ran: true, imported, conversations, ownerKnown: Boolean(ownerId) };
+    try { pushEvent('qqbot-bridge', { imported, conversations: touched.size }); } catch { /* optional */ }
+    return { ok: true, ran: true, imported, conversations: touched.size, ownerKnown: Boolean(ownerId), lifecycle: extra.lifecycle, buttons: extra.buttons };
   }
 
   /**
@@ -218,14 +239,7 @@ export function createQqbotBridgeRuntime({ home, warn, pushEvent, prefsPath = PR
    * from the transcript. Only conversations inside the passive window are returned.
    */
   async function officialSendTargets({ nowMs = Date.now() } = {}) {
-    let creds = null;
-    try {
-      const patch = await readFile(join(homedir(), '.dsh', 'profiles', 'desktop', 'cordis.patch.yml'), 'utf8');
-      const block = patch.slice(patch.indexOf('- id: im-qqbot'));
-      const appId = /appId:\s*"?(\d+)"?/.exec(block)?.[1] || '';
-      const appSecret = /appSecret:\s*"?([^\s"\n]+)"?/.exec(block)?.[1] || '';
-      if (appId && appSecret) creds = { appId, appSecret };
-    } catch { /* no profile patch */ }
+    const creds = await readOfficialCreds();
     if (!creds) return { ok: false, reason: 'no-official-creds', targets: [] };
     // The SDK msg-id mirror is the authoritative passive-window record. Reading the
     // transcript here lagged (frame decoding) and reported closed windows while fresh
@@ -265,5 +279,28 @@ export function createQqbotBridgeRuntime({ home, warn, pushEvent, prefsPath = PR
     return { ok: true, creds, targets };
   }
 
-  return { runQqbotBridgeIfEnabled, officialSendTargets };
+  return { runQqbotBridgeIfEnabled, officialSendTargets, readOfficialCreds };
+}
+
+/**
+ * appId/appSecret of the official bot, from whichever profile mounts im-qqbot.
+ * desktop first (soulmate's usual host), then any other profile (e.g. a standalone
+ * qqbot profile). Exported for the ops layer and tests.
+ */
+export async function readOfficialCreds(profilesRoot = join(homedir(), '.dsh', 'profiles')) {
+  let dirs = [];
+  try { dirs = await readdir(profilesRoot); } catch { return null; }
+  const ordered = ['desktop', ...dirs.filter((d) => d !== 'desktop')];
+  for (const d of ordered) {
+    try {
+      const patch = await readFile(join(profilesRoot, d, 'cordis.patch.yml'), 'utf8');
+      const idx = patch.indexOf('- id: im-qqbot');
+      if (idx < 0) continue;
+      const block = patch.slice(idx);
+      const appId = /appId:\s*"?(\d+)"?/.exec(block)?.[1] || '';
+      const appSecret = /appSecret:\s*"?([^\s"\n]+)"?/.exec(block)?.[1] || '';
+      if (appId && appSecret) return { appId, appSecret };
+    } catch { /* next profile */ }
+  }
+  return null;
 }

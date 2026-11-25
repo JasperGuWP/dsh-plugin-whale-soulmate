@@ -15,6 +15,7 @@ import { apply as applyOfficial } from '@tencent-connect/dsh-qqbot'
 import { QQBot } from '@tencent-connect/qqbot-nodejs'
 import { installQqModelSync } from './qqbot-model-sync.mjs'
 import { startQqMsgIdMirror } from './qqbot-msgid-mirror.mjs'
+import { installQqInboundMirror, installQqBotEventMirror } from './qqbot-inbound-mirror.mjs'
 
 export { name, inject, Config } from '@tencent-connect/dsh-qqbot'
 
@@ -24,5 +25,10 @@ export async function apply(ctx, config) {
   // sender can use REAL QQ msg_ids (the session transcript only has DSH-internal ids,
   // which the platform rejects with "msg_id 无效或越权").
   startQqMsgIdMirror(ctx, QQBot)
+  // Full inbound mirror (text + attachments + nicknames, real-time) — the bridge's
+  // primary source, replacing 2-minute zstd transcript polling.
+  installQqInboundMirror(ctx, QQBot)
+  // Lifecycle (GROUP_ADD_ROBOT / FRIEND_ADD / …) + button interactions → disk journal.
+  installQqBotEventMirror(ctx, QQBot)
   await applyOfficial(ctx, config)
 }

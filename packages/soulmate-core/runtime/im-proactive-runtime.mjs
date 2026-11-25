@@ -142,7 +142,11 @@ export function createImProactiveRuntime({ home, warn, pushEvent, usage, cfg, of
         const hit = gate.targets.find((t) => openKeys.has(keyOf(t)));
         if (hit) target = hit;
         else if (info?.ok) {
-          return { ok: true, ran: false, reason: 'no-open-window', hint: 'QQ 被动窗口都关着：主人在群里 5 分钟内 / 私聊 30 分钟内说过话才会尝试' };
+          // No open window. Private chats still have the platform's legal wakeup
+          // recall push (30 days after contact); groups have nothing — stay silent.
+          const c2c = gate.targets.find((t) => t.platform === 'qq' && !t.groupId);
+          if (c2c && ext.imProactiveWakeup !== false) target = c2c;
+          else return { ok: true, ran: false, reason: 'no-open-window', hint: 'QQ 被动窗口都关着：主人在群里 5 分钟内 / 私聊 30 分钟内说过话才会尝试（私聊可走 wakeup 召回）' };
         }
       } catch { /* keep whitelist order */ }
     }

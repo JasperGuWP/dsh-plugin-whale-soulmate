@@ -29,12 +29,29 @@ export function normalizeImChatEntry(raw = {}) {
     role,
     text,
     messageId: str(raw.messageId),
+    // Rich media (QQ official attachments / outbound media sends). Each item:
+    // { contentType, url, filename?, voiceWavUrl?, asrText? }. Text stays the caption.
+    media: Array.isArray(raw.media)
+      ? raw.media
+        .filter((m) => m && typeof m === 'object' && (str(m.contentType) || str(m.url)))
+        .map((m) => ({
+          contentType: str(m.contentType),
+          url: str(m.url),
+          ...(str(m.filename) ? { filename: str(m.filename) } : {}),
+          ...(str(m.voiceWavUrl) ? { voiceWavUrl: str(m.voiceWavUrl) } : {}),
+          ...(str(m.asrText) ? { asrText: str(m.asrText) } : {}),
+        }))
+        .slice(0, 9)
+      : [],
+    senderId: str(raw.senderId),
+    senderName: str(raw.senderName),
   };
 }
 
 export async function appendImChat(home, entry) {
   const row = normalizeImChatEntry(entry);
-  if (!row.peerId || !row.text.trim()) return { ok: false, error: 'peerId and text required' };
+  const hasMedia = row.media.length > 0;
+  if (!row.peerId || (!row.text.trim() && !hasMedia)) return { ok: false, error: 'peerId and text required' };
   await appendJsonl(imChatPath(home), row);
   return { ok: true, entry: row };
 }

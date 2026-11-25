@@ -72,7 +72,7 @@ async function loadDsBotCard(seed = {}) {
       if (id === 'react') return react;
       if (id === './util.mjs') return { api: async () => ({ ok: true, platforms: {} }) };
       if (id === './panel-qqbot.mjs') return { QqBotColumn: () => ({ type: 'qqbot-stub', props: {}, children: [] }) };
-      if (id === './panel-engage-quota.mjs') return { biliQuotaSection: () => null, imProactiveSection: () => null };
+      if (id === './panel-engage-quota.mjs') return { biliQuotaSection: () => null, ImProactiveSection: () => null };
       throw new Error('unexpected require ' + id);
     },
     console,

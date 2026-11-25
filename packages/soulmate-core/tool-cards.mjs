@@ -110,6 +110,20 @@ export function cardOf(kind, tool, value) {
       };
     case 'soulmate_im_send':
       return { ...card, title: `💬 已发到${value.platform ?? ''}`, lines: [`via ${value.via ?? value.mode ?? 'api'}`] };
+    case 'soulmate_qq_send_media':
+      return { ...card, title: value.ok ? `🖼 QQ ${value.mediaType ?? '媒体'}已发送` : '🖼 QQ 媒体未发出', lines: [value.error || `via ${value.mode ?? 'official'}`] };
+    case 'soulmate_qq_recall':
+      return { ...card, title: value.ok ? '↩️ QQ 消息已撤回' : '↩️ QQ 撤回失败', lines: [value.error || value.messageId || ''] };
+    case 'soulmate_qq_typing':
+      return { ...card, title: value.ok ? '⌨️ QQ 正在输入…' : '⌨️ typing 未生效', lines: [value.error || ''] };
+    case 'soulmate_qq_wakeup':
+      return { ...card, title: value.ok ? '📣 QQ 召回已送达' : '📣 QQ 召回未发出', lines: [value.error || 'wakeup（窗口外合法主动）'] };
+    case 'soulmate_qq_buttons':
+      return { ...card, title: value.ok ? '🔘 QQ 按钮消息已发' : '🔘 QQ 按钮未发出', lines: [value.error || ''] };
+    case 'soulmate_qq_stream':
+      return { ...card, title: value.ok ? '✍️ QQ 流式消息完成' : '✍️ QQ 流式未发出', lines: [value.error || '逐字打出（私聊）'] };
+    case 'soulmate_qq_events':
+      return { ...card, title: '📡 QQ 动态', lines: [value.window ? `窗口：${value.window.open ? '开' : '关'}` : `${(value.buttons || []).length} 次点击 · ${(value.lifecycle || []).length} 个事件`] };
     case 'soulmate_im_manage':
       return { ...card, title: '💬 跨端分身', lines: [value.status ? `状态：${value.status}` : value.platforms ? Object.entries(value.platforms).map(([k, v]) => `${k}:${v.enabled ? 'on' : 'off'}`).join(' · ') : 'ok'] };
     default:

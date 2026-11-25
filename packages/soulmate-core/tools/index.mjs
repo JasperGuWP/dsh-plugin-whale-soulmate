@@ -5,6 +5,7 @@ import { memoryTools } from './memory-tools.mjs';
 import { personaTools } from './persona-tools.mjs';
 import { videoTools } from './video-tools.mjs';
 import { imTools } from './im-tools.mjs';
+import { qqTools } from './qq-tools.mjs';
 import { weatherTools } from './weather-tools.mjs';
 
 export { personaBrief } from './persona-tools.mjs';
@@ -14,9 +15,10 @@ export function buildTools(deps) {
   const persona = personaTools(deps);
   const video = videoTools(deps);
   const im = imTools(deps);
+  const qq = qqTools(deps);
   const weather = weatherTools(deps);
   return {
-    tools: [...memory, ...persona.tools, ...video.tools, ...im.tools, ...weather],
+    tools: [...memory, ...persona.tools, ...video.tools, ...im.tools, ...qq.tools, ...weather],
     evolveOrReset: persona.evolveOrReset,
     videoWatch: video.videoWatch,
     videoSurf: video.videoSurf,

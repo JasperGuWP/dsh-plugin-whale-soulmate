@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { zstdDecodeAll } from './zstd-frames.mjs';
 import { listImContacts } from './im-chat.mjs';
+import { readQqInboundSince } from './qqbot-inbound-mirror.mjs';
 
 const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
 
@@ -14,8 +15,18 @@ const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
  * Returns Map<OPENID, nickname> — best effort, cached per call site is unnecessary
  * (the panel polls this route at human speed).
  */
-export async function readQqSpeakerNames({ homeDir } = {}) {
+export async function readQqSpeakerNames({ homeDir, mirrorDir } = {}) {
   const names = new Map();
+  // Live mirror first — fresher than transcripts and no zstd decoding.
+  try {
+    const mirrorPath = mirrorDir ? join(mirrorDir, 'qq-inbound.jsonl') : undefined;
+    const rows = await readQqInboundSince('', mirrorPath ? { path: mirrorPath, limit: 2000 } : { limit: 2000 });
+    for (const row of rows) {
+      const id = str(row?.senderId).toUpperCase();
+      const name = str(row?.senderName).trim();
+      if (id && name) names.set(id, name);
+    }
+  } catch { /* mirror absent */ }
   const sessionsRoot = join(homeDir || homedir(), '.dsh', 'sessions');
   let dirs = [];
   try { dirs = await readdir(sessionsRoot); } catch { return names; }

@@ -612,6 +612,7 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-dsbot-bubble-row.user{align-self:flex-end;align-items:flex-end}
 .sm-dsbot-bubble-row.bot{align-self:flex-start;align-items:flex-start}
 .sm-dsbot-bubble{padding:10px 12px;border-radius:12px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.sm-dsbot-media{display:block}
 .sm-dsbot-bubble-row.user .sm-dsbot-bubble{background:color-mix(in srgb,#95ec69 88%,#fff);color:#0f1115;border-bottom-right-radius:4px}
 .sm-dsbot-bubble-row.bot .sm-dsbot-bubble{background:#fff;border:1px solid var(--sm-line,#e3e5e8);border-bottom-left-radius:4px}
 /* QQ 气泡蓝色（微信保持绿色）：用户侧深蓝底白字，bot 侧浅蓝底 */
