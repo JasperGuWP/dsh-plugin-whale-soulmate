@@ -74,7 +74,8 @@ function biliQuotaSection({ ext, patchExtensions }) {
 }
 
 /** IM 白名单编辑器：一行一个会话，只有加白的才可能被主动搭话。 */
-function imWhitelistEditor({ ext, patchExtensions }) {
+// 同样必须经 h() 挂载：内含 hooks，随开关条件直接调用会炸父组件。
+function ImWhitelistEditor({ ext, patchExtensions }) {
   const list = Array.isArray(ext.imProactiveWhitelist) ? ext.imProactiveWhitelist : []
   const [known, setKnown] = React.useState(null)
   const [knownBusy, setKnownBusy] = React.useState(false)
@@ -286,7 +287,7 @@ function ImProactiveSection({ ext, patchExtensions }) {
       }),
       h('span', { key: 't' }, '允许她主动给下面加白的会话发消息'),
     ]),
-    on ? imWhitelistEditor({ ext, patchExtensions }) : null,
+    on ? h(ImWhitelistEditor, { key: 'wl', ext, patchExtensions }) : null,
     on ? h('div', { key: 'owners', className: 'sm-quota-grid' }, (() => {
       const list = Array.isArray(ext.imProactiveWhitelist) ? ext.imProactiveWhitelist : []
       const platforms = [...new Set(list.map((e) => String(e.platform || '').trim()).filter(Boolean))]
