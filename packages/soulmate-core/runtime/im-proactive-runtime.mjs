@@ -252,6 +252,9 @@ export function createImProactiveRuntime({ home, warn, pushEvent, usage, cfg, of
           groupId: target.groupId,
           role: 'bot',
           text: parsed.text,
+          // The bridge's outbound-mirror import dedups by platform messageId; without
+          // it the same send landed twice (here + qq-outbound.jsonl).
+          messageId: str(res?.messageId),
         });
         const thread = target.groupId
           ? await listImChat(home, { platform: target.platform, groupId: target.groupId, limit: 40 })

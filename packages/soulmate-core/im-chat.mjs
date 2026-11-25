@@ -52,6 +52,14 @@ export async function appendImChat(home, entry) {
   const row = normalizeImChatEntry(entry);
   const hasMedia = row.media.length > 0;
   if (!row.peerId || (!row.text.trim() && !hasMedia)) return { ok: false, error: 'peerId and text required' };
+  // Platform-messageId dedupe: the same send can arrive from two mirrors (proactive
+  // append + outbound journal import). One platform message = one timeline row.
+  if (row.messageId) {
+    const tail = await readJsonlTail(imChatPath(home), 60).catch(() => []);
+    if (tail.some((r) => r?.messageId === row.messageId && r?.platform === row.platform)) {
+      return { ok: true, entry: row, duplicate: true };
+    }
+  }
   await appendJsonl(imChatPath(home), row);
   return { ok: true, entry: row };
 }
