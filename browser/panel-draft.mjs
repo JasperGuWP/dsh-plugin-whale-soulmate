@@ -297,7 +297,7 @@ function draftFromSummary(snap) {
       intentEnabled: !!(config.proactive && config.proactive.intentEnabled),
       intentLlmDailyCap: clampNum(Number(config.proactive && config.proactive.intentLlmDailyCap) || 60000, 0, 50_000_000),
       intentLlmModel: (config.proactive && typeof config.proactive.intentLlmModel === 'string') ? config.proactive.intentLlmModel : '',
-      intentMaxActsPerDay: clampNum(Number(config.proactive && config.proactive.intentMaxActsPerDay) || 3, 1, 8),
+      intentMaxActsPerDay: clampNum(Number(config.proactive && config.proactive.intentMaxActsPerDay) || 5, 1, 8),
       experienceEnabled: !(config.proactive && config.proactive.experienceEnabled === false),
     },
     chatHome: {

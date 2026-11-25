@@ -38,6 +38,12 @@ export function createPetWindowRuntime(deps) {
   const packageRoot = deps.packageRoot || DEFAULT_ROOT;
   const spawnImpl = deps.spawnImpl || spawn;
   const pollMs = Number(deps.pollMs) || POLL_MS;
+  // Test guard: with windowEnabled default-on, any integration test that boots the
+  // plugin without a spawn seam would launch REAL Electron pets from the repo tree.
+  // Unless explicitly opted in, a repo checkout (has test/ + browser/ sources) never
+  // spawns; installed packages (no source dirs) are unaffected.
+  const isSourceCheckout = existsSync(join(packageRoot, 'test')) && existsSync(join(packageRoot, 'browser'));
+  const allowRealSpawn = deps.allowRealSpawn === true || !isSourceCheckout;
   let server = null;
   let child = null;
   let timer = null;
@@ -87,6 +93,7 @@ export function createPetWindowRuntime(deps) {
 
   async function start() {
     if (disposed || child) return;
+    if (!allowRealSpawn && !deps.spawnImpl) return;
     const conf = await loadConfig(home);
     const exe = String(deps.electronPath || conf?.pet?.windowElectronPath || '').trim() || defaultElectronPath();
     lastElectronPath = exe;

@@ -34,7 +34,7 @@ function skinFrameUrl(skin, looks) {
   return '/dsh-soulmate/api/pet/frame?id=pet-idle-01&skin=' + encodeURIComponent(id)
 }
 
-/** 窗口桌宠缺 Electron 时的提示:按钮把安装请求发进首页对话,由 DSH agent 下载。 */
+/** 窗口桌宠缺 Electron 时的提示:安装是下载行为,必须用户点按钮同意后才发进首页对话。 */
 function WindowPetHint() {
   const [busy, setBusy] = React.useState(false)
   const [note, setNote] = React.useState('')
@@ -45,7 +45,7 @@ function WindowPetHint() {
     try {
       const res = await api('pet-electron-install', {})
       if (!res || res.ok === false) setNote((res && res.error) || '请求发送失败')
-      else setNote('已请 DSH 在对话里安装 Electron，装好后把路径填到下面。')
+      else setNote('已请 DSH 在对话里下载安装 Electron（约 100MB）；装到 ~/.dsh/electron 后窗口会自动起来，无需填路径。')
     } catch (err) {
       setNote(err && err.message ? err.message : '请求发送失败')
     } finally {
@@ -53,11 +53,11 @@ function WindowPetHint() {
     }
   }, [busy])
   return h('p', { className: 'sm-panel-muted', style: { margin: '2px 0 0' } }, [
-    h('span', { key: 't' }, '窗口没起来：没找到 Electron 运行时。'),
+    h('span', { key: 't' }, '桌面独立窗口需要 Electron 运行时（约 100MB 下载），这台电脑上还没有。'),
     h('button', {
       key: 'b', type: 'button', className: 'sm-link', disabled: busy,
       onClick: ask,
-    }, busy ? '正在请求…' : '安装 Electron'),
+    }, busy ? '正在请求…' : '同意并安装 Electron'),
     note ? h('span', { key: 'n', style: { marginLeft: 6, opacity: 0.85 } }, note) : null,
   ])
 }

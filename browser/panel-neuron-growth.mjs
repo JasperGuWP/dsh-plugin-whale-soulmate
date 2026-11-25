@@ -48,18 +48,22 @@ function growthStrip({ weeks, selectedWeek, onSelect }) {
     h('button', {
       key: 'now', type: 'button',
       className: 'sm-growth-week' + (selectedWeek ? '' : ' sm-growth-week-on'),
+      title: '回到当前完整星空（取消按周回看）',
       onClick: () => onSelect(null),
-    }, '现在'),
+    }, [
+      h('b', { key: 'w' }, '现在'),
+      h('span', { key: 'n' }, '完整星空'),
+    ]),
     ...list.map((w, i) => {
       const deltas = traitDeltas(list[i - 1], w)
       const on = selectedWeek === w.week
       return h('button', {
         key: w.week, type: 'button',
         className: 'sm-growth-week' + (on ? ' sm-growth-week-on' : ''),
-        title: deltas.length ? deltas.join(' · ') : '这一周性格没有变化',
+        title: '点击把星空回放到这一周；' + (deltas.length ? '当周性格变化：' + deltas.join(' · ') : '这一周性格没有变化'),
         onClick: () => onSelect(on ? null : w.week),
       }, [
-        h('b', { key: 'w' }, String(w.week).slice(5)),
+        h('b', { key: 'w' }, String(w.week).slice(5) + ' 周'),
         h('span', { key: 'n' }, (w.nodes || 0) + ' 星'),
         deltas.length ? h('span', { key: 'd', className: 'sm-growth-delta' }, deltas.join(' ')) : null,
       ])

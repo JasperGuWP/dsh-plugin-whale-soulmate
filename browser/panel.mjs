@@ -297,7 +297,7 @@ const { SoulShareCard } = require('./panel-soul-share.mjs')
                 intentEnabled: !!current.proactive.intentEnabled,
                 intentLlmDailyCap: Number(current.proactive.intentLlmDailyCap) || 0,
                 intentLlmModel: String(current.proactive.intentLlmModel || ''),
-                intentMaxActsPerDay: Number(current.proactive.intentMaxActsPerDay) || 3,
+                intentMaxActsPerDay: Number(current.proactive.intentMaxActsPerDay) || 5,
                 experienceEnabled: current.proactive.experienceEnabled !== false,
               },
             })

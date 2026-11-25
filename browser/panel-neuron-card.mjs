@@ -78,7 +78,8 @@ function NeuronCard({ mem, onNote }) {
       width: 720, height: 360,
     }),
     growthStrip({ weeks, selectedWeek: week, onSelect: setWeek }),
-    h('p', { key: 'note', className: 'sm-eng-note' }, '拖动旋转，滚轮缩放；单击查看，双击飞近，双击空白回到全景。夜里整理记忆时，新星会在这里点亮。'),
+    h('p', { key: 'strip-note', className: 'sm-neuron-note' }, '成长轨迹：每周一个快照按钮，点某周把星空回放到那一周；点「现在」回到完整星空。'),
+    h('p', { key: 'note', className: 'sm-neuron-note' }, '拖动旋转，滚轮缩放；单击查看，双击飞近，双击空白回到全景。夜里整理记忆时，新星会在这里点亮。'),
     h(NeuronOverlay, { key: 'overlay', open: full, onClose: () => setFull(false) }),
   ])
 }

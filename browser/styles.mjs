@@ -376,6 +376,7 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-eng-tag{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border:1px solid var(--sm-line);border-radius:5px;background:color-mix(in srgb,var(--sm-accent) 4%,transparent);font-family:var(--sm-mono);font-size:10px;letter-spacing:.04em;color:var(--sm-ink2);line-height:1.5}
 .sm-eng-tag>i{display:block;width:3px;height:3px;border-radius:50%;background:color-mix(in srgb,var(--sm-accent) 70%,transparent)}
 .sm-eng-note{margin:11px 0 0;font-size:11px;line-height:1.6;color:var(--sm-ink3)}
+.sm-neuron-note{margin:8px 0 0;font-size:12.5px;line-height:1.6;color:var(--sm-ink2,#4e5561)}
 /* persona: invariant clauses + narrative self + changelog timeline */
 .sm-eng-clauses{display:flex;flex-wrap:wrap;gap:6px}
 .sm-eng-clause{position:relative;max-width:100%;padding:5px 9px 5px 11px;border:1px solid var(--sm-line);border-radius:6px;background:color-mix(in srgb,var(--sm-ink) 3%,transparent);font-size:11.5px;line-height:1.5;color:var(--sm-ink2)}
@@ -466,11 +467,11 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-quota-owner-cands{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px}
 /* 星图轨迹带 + 放大按钮 */
 .sm-neuron-pop{margin-left:auto;font-size:11.5px;padding:2px 10px}
-.sm-growth-strip{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
-.sm-growth-week{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:4px 8px;border:1px solid var(--sm-line,#e3e5e8);border-radius:6px;background:var(--sm-surface,#fff);font:inherit;font-size:11px;color:var(--sm-ink2,#4e5561);cursor:pointer}
+.sm-growth-strip{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 2px;align-items:stretch}
+.sm-growth-week{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:7px 12px;border:1px solid var(--sm-line,#e3e5e8);border-radius:8px;background:var(--sm-surface,#fff);font:inherit;font-size:13px;line-height:1.4;color:var(--sm-ink2,#4e5561);cursor:pointer}
 .sm-growth-week-on{border-color:var(--sm-accent,#4d6bfe);color:var(--sm-accent,#4d6bfe)}
-.sm-growth-week b{font-size:11.5px}
-.sm-growth-delta{color:var(--sm-accent,#4d6bfe);font-size:10.5px}
+.sm-growth-week b{font-size:14px}
+.sm-growth-delta{color:var(--sm-accent,#4d6bfe);font-size:12.5px}
 /* 相处经验 */
 .sm-exp-notes{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px dashed var(--sm-line,#e3e5e8);border-radius:6px}
 .sm-exp-h{margin:0;font-size:12px;font-weight:650;color:var(--sm-ink,#0f1115)}

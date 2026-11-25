@@ -134,13 +134,13 @@ export const DEFAULT_CONFIG = Object.freeze({
     distillLlmAutoOffAt: '',
     distillLlmPetRemindDateKey: '',
     // Intent layer: events are opportunities; she decides in character whether to act.
-    // Off by default until the panel switch lands — enabling flips the schedule gate
-    // from direct delivery to opportunity source.
-    intentEnabled: false,
+    // On by default (user decision 2026-11-25): schedule events become opportunities,
+    // capped at 5 proactive acts per day; quiet hours and the token budget still apply.
+    intentEnabled: true,
     intentLlmDailyCap: 60_000,
     intentLlmModel: '',
-    intentMaxDecisionsPerDay: 6,
-    intentMaxActsPerDay: 3,
+    intentMaxDecisionsPerDay: 8,
+    intentMaxActsPerDay: 5,
     intentMinGapMinutes: 90,
     // Experience layer: weekly lessons from her attempts × his responses. Never touches traits.
     experienceEnabled: true,
@@ -167,8 +167,9 @@ export const DEFAULT_CONFIG = Object.freeze({
     // wall/floor restitution 0~1, ground friction /s, overall throw gain (>0).
     physics: { gravity: 1400, restitution: 0.78, groundFriction: 2.5, throwPower: 1 },
     // 桌面独立窗口形态(透明置顶画布):与页内 enabled 互不影响,可同时开。
-    // windowElectronPath 留空 = 自动找 ~/.dsh/electron 的运行时;找不到只告警,不影响页内形象。
-    windowEnabled: false,
+    // 默认开(用户决策 2026-11-25)。windowElectronPath 留空 = 自动找 ~/.dsh/electron;
+    // 找不到时面板出提示,由用户点「安装 Electron」授权 DSH 在对话里下载安装(绝不静默装)。
+    windowEnabled: true,
     windowElectronPath: '',
     // 闲置自主散步:没人交互 ambientWalkAfterSec 秒后,每次 idle dwell 到期按
     // ambientWalkChance 概率自己走起来(walk 视频 + 位移);run 仍走 idle.next 概率。

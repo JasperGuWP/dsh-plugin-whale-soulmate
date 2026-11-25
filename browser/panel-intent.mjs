@@ -29,7 +29,7 @@ function ExperienceNotes() {
 function intentSection({ h, proDraft, patchProactive, companionThird }) {
   const pp = companionThird || '她'
   const on = !!(proDraft && proDraft.intentEnabled)
-  const acts = Math.max(1, Math.min(8, Number(proDraft && proDraft.intentMaxActsPerDay) || 3))
+  const acts = Math.max(1, Math.min(8, Number(proDraft && proDraft.intentMaxActsPerDay) || 5))
   return h('div', { key: 'intent', className: 'sm-intent-card' }, [
     h('label', { key: 'on', className: 'sm-rhythm-check' }, [
       h('input', {
@@ -45,7 +45,7 @@ function intentSection({ h, proDraft, patchProactive, companionThird }) {
       h('span', { key: 'l' }, '每天最多主动'),
       h('input', {
         key: 'n', type: 'number', min: 1, max: 8, step: 1, value: String(acts),
-        onChange: (e) => patchProactive({ intentMaxActsPerDay: Math.max(1, Math.min(8, Number(e.target.value) || 3)) }),
+        onChange: (e) => patchProactive({ intentMaxActsPerDay: Math.max(1, Math.min(8, Number(e.target.value) || 5)) }),
       }),
       h('span', { key: 'u' }, '次'),
     ]) : null,

@@ -88,7 +88,7 @@ test('pet: config defaults ship enabled and deep-merge keeps untouched fields', 
   assert.deepEqual(DEFAULT_CONFIG.pet, {
     enabled: true, sizePx: 180, sleepAfterIdleSec: 300, thinkQuietSec: 1.5, skin: 'winterboy-chibi', skinAuto: true,
     physics: { gravity: 1400, restitution: 0.78, groundFriction: 2.5, throwPower: 1 },
-    windowEnabled: false, windowElectronPath: '',
+    windowEnabled: true, windowElectronPath: '',
     ambientWalk: true, ambientWalkAfterSec: 15, ambientWalkChance: 0.35,
   });
   const merged = deepMerge(DEFAULT_CONFIG, { pet: { enabled: false } });

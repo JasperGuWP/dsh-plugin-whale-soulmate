@@ -1073,7 +1073,7 @@ test('plugin-integration v3: the promise patrol speaks once per local day for ov
     apply(mockCtx, {});
     await mockCtx.soulmate.ready;
     const { saveConfigAuto } = await import('../packages/soulmate-core/state.mjs');
-    await saveConfigAuto(mockCtx.soulmate.home, { extensions: { biliAutoSurfEnabled: false } });
+    await saveConfigAuto(mockCtx.soulmate.home, { extensions: { biliAutoSurfEnabled: false }, proactive: { intentEnabled: false } });
     const retain = registeredTools.get('soulmate_memory_retain');
     const at = Date.parse('2026-11-10T11:00:00Z'); // 19:00 at UTC+8
     await retain.execute({ kind: 'fact', topic: 'promise', content: '上周答应一起复盘网关', category: 'promise', dueAt: '2026-11-04T00:00:00Z' });

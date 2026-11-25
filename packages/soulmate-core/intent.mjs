@@ -158,10 +158,10 @@ export function evaluateIntentGate({ nowMs = Date.now(), tzOffsetMinutes = 480, 
     return Number.isFinite(t) && localClock(t, num(tzOffsetMinutes, 480)).dateKey === dateKey;
   });
 
-  const maxDecisions = Math.max(1, num(cfg.intentMaxDecisionsPerDay, 6));
+  const maxDecisions = Math.max(1, num(cfg.intentMaxDecisionsPerDay, 8));
   if (todays.length >= maxDecisions) return silence('decision-quota');
 
-  const maxActs = Math.max(1, num(cfg.intentMaxActsPerDay, 3));
+  const maxActs = Math.max(1, num(cfg.intentMaxActsPerDay, 5));
   const acts = todays.filter((d) => d.action && d.action !== 'silent' && d.action !== 'defer');
   if (acts.length >= maxActs) return silence('daily-quota');
 
