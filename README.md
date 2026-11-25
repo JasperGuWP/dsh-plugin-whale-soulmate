@@ -41,7 +41,7 @@
 
 ### 💬 QQ / 微信，同一个她
 
-官方 QQ Bot 的群聊与私聊自动桥接进 DsBot 面板（QQ 蓝气泡 / 微信绿气泡）和记忆星图，逐条区分主人与群友。她可以在平台被动窗口内**主动给你加白的会话发消息**——群 5 分钟、私聊 30 分钟内你说过话，她就能接上话头。
+官方 QQ Bot 的群聊与私聊自动桥接进 DsBot 面板（QQ 蓝气泡 / 微信绿气泡）和记忆星图，逐条区分主人与群友。她可以在平台被动窗口内**主动给你加白的会话发消息**——群 5 分钟、私聊 30 分钟内你说过话，她就能接上话头；私聊窗口关了还有官方 **wakeup 召回**这条合法路（30 天内、平台限频）。你发来的**图片她看得懂**（多模态描述进时间线与记忆），语音自带平台转写；她也能**发图片 / 语音 / 视频 / 文件、撤回、显示「正在输入」、发带按钮的消息、逐字打出流式回复**。
 
 ![DsBot · QQ 群时间线与主动搭话白名单](docs/showcase/dsbot-qq-timeline.png)
 
@@ -51,7 +51,18 @@
 
 ![自主意图与相处经验面板](docs/showcase/intent-experience.png)
 
-## 新版亮点 · v0.2.195
+## 新版亮点 · v0.2.199
+
+- **QQ 官方通道全能力**（v0.2.197+）：
+  - **实时消息镜像**：入站消息（真实 id / 昵称 / 附件）即到即进时间线与星图，不再依赖 2 分钟转录轮询；被拉进群 / 加好友 / 被拒收等动态实时感知。
+  - **富媒体收发**：她可以发图片 / 语音 / 视频 / 文件（官方两步上传，URL 或本地文件）；你发来的图片由多模态模型写描述，时间线显示缩略图 + 「[图片] 描述」，记忆星也可读；语音带平台转写。
+  - **wakeup 主动召回**：私聊被动窗口关闭后仍可合法主动（官方 `is_wakeup`，30 天内、平台限频）；主动调度自动降级走这条路，群聊窗口外依然诚实静默。
+  - **撤回 / 正在输入 / 按钮 / 流式**：撤回自己发错的消息、私聊显示「正在输入…」、带按钮的消息（点击回执可查）、逐字打出的流式回复（官方 stream 协议）。
+  - **7 个新工具**：`soulmate_qq_send_media / recall / typing / wakeup / buttons / stream / events`；所有主动外发文本先过隐私防火墙。
+- **白屏修复**（v0.2.197–199）：IM 主动搭话开关与白名单编辑器改为正规组件挂载，切换开关不再触发 React #310 整页白屏。
+- **主动发送时间线去重**（v0.2.198）：同一条外发经双镜像只落一行。
+
+<details><summary>历史亮点 · v0.2.195</summary>
 
 - **意图自主层**：日常事件汇成机会台账，她自主裁决接不接；克制可见（内心小本本），预算受控（每次意图 ≤6 步、每日计量）。
 - **B 站自主互动**：看完视频可自主评论、点赞、收藏、关注、投币，并在评论区与人讨论；字数与每条评论回复次数上限面板可配，写操作有配额、冷却与审计。
@@ -61,6 +72,8 @@
 - **模型跟随 DSH**：后台模型调用默认用你在 DSH 当前选中的模型；失败允许换线，但会明确提示哪条线失败、换到了哪条。
 - **人设声线贯穿所有对话**：DSH、专属窗、QQ、微信共用口语化说话规则与预设声线卡，拒绝客服腔与 AI 自我介绍。
 - **免密钥天气**：`soulmate_weather` 走 Open-Meteo（CC BY 4.0，非商业），按人设城市查询，可一键关闭。
+
+</details>
 
 <details><summary>历史亮点 · v0.2.131</summary>
 
@@ -109,7 +122,7 @@
 | 全部会话合计每天 | ≤4 条 | 面板可调 1–120 |
 | 两条主动之间 | ≥90 分钟 | 面板可调 1–720 |
 | 免打扰时段 | 00:00–07:00 | 可自定义 |
-| QQ 平台硬限制 | 群 5 分钟 / 私聊 30 分钟 | 对方先说过话才能接（被动窗口），窗口关着她会安静跳过 |
+| QQ 平台硬限制 | 群 5 分钟 / 私聊 30 分钟 | 对方先说过话才能接（被动窗口）；群窗口关着安静跳过，私聊可走官方 wakeup 召回（30 天内、平台限频，面板可关） |
 | 微信 | 需对方近期发来消息 | iLink 官方通道限制：没有新鲜会话凭据发不出，失败会如实记录 |
 | 白名单 | 默认空 = 完全静默 | 只发你显式加白的会话；她自己也可能裁决「不发」 |
 
@@ -302,7 +315,7 @@ Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./N
 
 ![Memory star-sea — topic clusters and semantic links](docs/showcase/neuron-sky.gif)
 
-**💬 QQ / WeChat, same soul** — official QQ bot groups and DMs bridge into the DsBot timeline (blue QQ / green WeChat bubbles) and the star map, with owner-vs-member nicknames per line. She can message first inside QQ's passive window (5 min group / 30 min DM) — **only to conversations you whitelisted**.
+**💬 QQ / WeChat, same soul** — official QQ bot groups and DMs bridge into the DsBot timeline (blue QQ / green WeChat bubbles) and the star map, with owner-vs-member nicknames per line. She can message first inside QQ's passive window (5 min group / 30 min DM) — **only to conversations you whitelisted** — and when the DM window closes, the platform's legal **wakeup recall** push still reaches you (within 30 days, rate-capped by QQ). She **understands images you send** (multimodal descriptions land in the timeline and memory), reads voice transcripts, and can **send images / voice / video / files, recall her own messages, show a typing indicator, send button messages, and stream replies token-by-token**.
 
 ![DsBot — QQ group timeline and proactive whitelist](docs/showcase/dsbot-qq-timeline.png)
 
@@ -310,7 +323,18 @@ Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./N
 
 ![Intent autonomy and experience panel](docs/showcase/intent-experience.png)
 
-### What's new in v0.2.195
+### What's new in v0.2.199
+
+- **Full official-QQ capability surface** (v0.2.197+):
+  - **Real-time message mirror:** inbound messages (real ids / nicknames / attachments) reach the timeline and star map the moment they arrive — no more 2-minute transcript polling; group-join / friend-add / message-reject lifecycle events are sensed live.
+  - **Rich media both ways:** she sends images / voice / video / files (official two-step upload, URL or local file); images you send get a multimodal description — thumbnail + "[image] description" in the timeline, readable in memory stars; voice carries the platform transcript.
+  - **Wakeup proactive recall:** DMs stay reachable after the passive window closes via the platform's legal `is_wakeup` push (within 30 days, rate-capped); the proactive scheduler falls back to it automatically. Groups outside the window stay honestly silent.
+  - **Recall / typing / buttons / streaming:** recall her own messages, show "typing…" in DMs, send inline-button messages (click receipts readable), and stream replies with a live typing-out effect (official stream protocol).
+  - **7 new tools:** `soulmate_qq_send_media / recall / typing / wakeup / buttons / stream / events`; every proactive outbound text passes the privacy firewall first.
+- **White-screen fixes** (v0.2.197–199): the IM-proactive toggle and whitelist editor are now properly mounted components — flipping the switch no longer triggers a React #310 full-page crash.
+- **Proactive timeline dedupe** (v0.2.198): one outbound send mirrored through two paths lands as one row.
+
+<details><summary>Previous highlights · v0.2.195</summary>
 
 - **Intent autonomy:** everyday events become an opportunity ledger; she decides — speak / share / stay silent / defer. Restraint is visible in her inner notebook. Budgeted: ≤6 steps per intent, metered daily.
 - **Autonomous Bilibili engagement:** after watching she may comment, like, favorite, follow, coin, and hold comment-thread discussions; comment length and per-thread reply caps are configurable, with quotas, cooldowns and an audit trail.
@@ -320,6 +344,8 @@ Architecture: [`docs/DESIGN.md`](./docs/DESIGN.md) · Credits: [`NOTICE.md`](./N
 - **Model follows DSH:** background calls use the model currently selected in DSH; on failure it may reroute, but always tells you which route failed and what it used instead.
 - **One voice everywhere:** DSH, the dedicated window, QQ and WeChat share spoken-style rules and preset voice cards — no support-agent tone, no AI self-introductions.
 - **Keyless weather:** `soulmate_weather` via Open-Meteo (CC BY 4.0, non-commercial), city from the persona, one switch to disable.
+
+</details>
 
 <details><summary>Previous highlights · v0.2.131</summary>
 
