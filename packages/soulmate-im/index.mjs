@@ -14,7 +14,7 @@
 //     (`inspectAndScrub`): a message holding a high-risk secret never enters memory.
 //   * Network is injectable (`options.fetchImpl`) so everything is testable offline.
 import { createHash, createHmac, createPrivateKey, randomBytes, sign as edSign, timingSafeEqual } from 'node:crypto';
-import QRCode from 'qrcode';
+import { encodeQrDataUrl } from '../soulmate-core/qr-encode.mjs';
 import { atomicWriteJson, loadConfig, loadCredentials, maskKey, saveConfigAuto } from '../soulmate-core/state.mjs';
 import { appendPrivacyAudit, inspectAndScrub } from '../soulmate-core/privacy-firewall.mjs';
 import { getDisplayName } from '../soulmate-core/persona.mjs';
@@ -315,12 +315,7 @@ export async function startWeixinQrLogin(home, options = {}) {
     let qrDataUrl = '';
     try {
       const width = Number(options.qrWidth) > 0 ? Number(options.qrWidth) : 200;
-      qrDataUrl = await QRCode.toDataURL(encodeText, {
-        margin: 2,
-        width,
-        errorCorrectionLevel: 'M',
-        color: { dark: '#111111', light: '#ffffff' },
-      });
+      qrDataUrl = await encodeQrDataUrl(encodeText, { margin: 2, width });
     } catch {
       qrDataUrl = '';
     }

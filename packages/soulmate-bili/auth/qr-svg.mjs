@@ -1,28 +1,16 @@
-// QR image helpers for Bilibili passport login (wraps `qrcode`, same stack as dsh-bili-whale).
-import QRCode from 'qrcode';
-
-const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
+// QR image helpers for Bilibili passport login. Encoding lives in soulmate-core's
+// qr-encode (createRequire-based — the host loader's ESM default import of the CJS
+// `qrcode` package lost toDataURL on the live runtime).
+import { encodeQrDataUrl as coreDataUrl, encodeQrSvgString } from '../../soulmate-core/qr-encode.mjs';
 
 /**
  * @returns {Promise<{ svg: string }>}
  */
-export async function encodeQrSvg(text, { margin = 2, width = 200, dark = '#111111', light = '#ffffff' } = {}) {
-  const svg = await QRCode.toString(str(text), {
-    type: 'svg',
-    margin,
-    width,
-    errorCorrectionLevel: 'M',
-    color: { dark, light },
-  });
-  return { svg };
+export async function encodeQrSvg(text, opts = {}) {
+  return { svg: await encodeQrSvgString(text, opts) };
 }
 
 /** data:image/png;base64,… — convenient for <img src>. */
-export async function encodeQrDataUrl(text, { margin = 2, width = 200, dark = '#111111', light = '#ffffff' } = {}) {
-  return QRCode.toDataURL(str(text), {
-    margin,
-    width,
-    errorCorrectionLevel: 'M',
-    color: { dark, light },
-  });
+export async function encodeQrDataUrl(text, opts = {}) {
+  return coreDataUrl(text, opts);
 }

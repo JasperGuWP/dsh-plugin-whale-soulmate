@@ -369,3 +369,17 @@ test('qq tools: 7 tools registered; events tool reads journals and window state'
     assert.equal(res.ok, false);
   } finally { await cleanup(dir); }
 });
+// ---------------------------------------------------------------------------
+// 7. QR encoder: CJS interop must survive the host loader (createRequire path)
+// ---------------------------------------------------------------------------
+
+test('qr-encode: data URL and SVG both render; bili/weixin wrappers share the core', async () => {
+  const { encodeQrDataUrl, encodeQrSvgString } = await import('../packages/soulmate-core/qr-encode.mjs');
+  const png = await encodeQrDataUrl('https://example.com/qr');
+  assert.ok(png.startsWith('data:image/png;base64,'));
+  const svg = await encodeQrSvgString('https://example.com/qr');
+  assert.ok(svg.trimStart().startsWith('<svg'));
+  const bili = await import('../packages/soulmate-bili/auth/qr-svg.mjs');
+  assert.ok((await bili.encodeQrDataUrl('x')).startsWith('data:image/png;base64,'));
+  assert.ok((await bili.encodeQrSvg('x')).svg.startsWith('<svg'));
+});
