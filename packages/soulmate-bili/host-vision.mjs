@@ -79,6 +79,8 @@ export function createHostVisionSummarize({
       fetchImpl,
       soulmateRoot,
       readFileImpl,
+      // QQ multimedia rejects the bilibili referer (HTTP 400); only bili frames need it.
+      ...(String(purpose).startsWith('qq-') ? { referer: '' } : {}),
     });
     if (!ready.length) throw new Error('no-images');
     if (!ready.some((img) => str(img?.url).startsWith('data:'))) {

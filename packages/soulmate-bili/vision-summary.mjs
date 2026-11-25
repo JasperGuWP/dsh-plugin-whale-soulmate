@@ -493,8 +493,12 @@ export async function materializeVisionImages(images = [], {
   timeoutMs = 20_000,
   readFileImpl,
   soulmateRoot = '',
+  referer,
 } = {}) {
   const fetchFn = typeof fetchImpl === 'function' ? fetchImpl : globalThis.fetch;
+  // The bili CDN needs its referer; other hosts (QQ multimedia) REJECT a foreign
+  // referer with HTTP 400 — callers pass referer:'' for non-bili sources.
+  const ref = referer === undefined ? 'https://www.bilibili.com' : str(referer);
   const out = [];
   for (const img of Array.isArray(images) ? images : []) {
     const url = str(img?.url).trim();
@@ -519,7 +523,7 @@ export async function materializeVisionImages(images = [], {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
       const res = await fetchFn(url, {
-        headers: { referer: 'https://www.bilibili.com', accept: 'image/*' },
+        headers: { ...(ref ? { referer: ref } : {}), accept: 'image/*' },
         signal: controller?.signal,
       });
       if (timer) clearTimeout(timer);

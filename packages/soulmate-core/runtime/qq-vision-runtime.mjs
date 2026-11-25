@@ -43,7 +43,17 @@ export async function runQqVisionIfEnabled({ home, warn, describe }) {
 
   const journalPath = join(home.rootDir, 'logs', 'qq-vision.jsonl');
   const done = await readJsonlTail(journalPath, 300).catch(() => []);
-  const doneUrls = new Set(done.map((r) => str(r?.url)).filter(Boolean));
+  // Successes are final; transient failures (no-images / network) get ONE retry —
+  // a fetch bug fixed by an update must not leave every past image permanently blind.
+  const failCounts = new Map();
+  const doneUrls = new Set();
+  for (const r of done) {
+    const u = str(r?.url);
+    if (!u) continue;
+    if (str(r?.text)) doneUrls.add(u);
+    else failCounts.set(u, (failCounts.get(u) || 0) + 1);
+  }
+  for (const [u, n] of failCounts) if (n >= 2) doneUrls.add(u);
 
   const rows = await listImChat(home, { platform: 'qq', peerId: '', limit: 60 }).catch(() => []);
   let described = 0;

@@ -383,3 +383,38 @@ test('qr-encode: data URL and SVG both render; bili/weixin wrappers share the co
   assert.ok((await bili.encodeQrDataUrl('x')).startsWith('data:image/png;base64,'));
   assert.ok((await bili.encodeQrSvg('x')).svg.startsWith('<svg'));
 });
+
+test('qq vision: foreign-referer fix — qq purpose fetches without bili referer; transient failure retried once', async () => {
+  const { materializeVisionImages } = await import('../packages/soulmate-bili/vision-summary.mjs');
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push(init?.headers || {});
+    const hasBiliRef = Boolean(init?.headers?.referer);
+    if (hasBiliRef) return { ok: false, status: 400, headers: { get: () => 'application/json' }, arrayBuffer: async () => new ArrayBuffer(0) };
+    const bytes = Buffer.from('GIF89a pixels');
+    return { ok: true, status: 200, headers: { get: () => 'image/gif' }, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+  };
+  const out = await materializeVisionImages([{ url: 'https://multimedia.nt.qq.com.cn/x' }], { fetchImpl, referer: '' });
+  assert.equal(out.length, 1);
+  assert.ok(out[0].url.startsWith('data:image/gif;base64,'));
+  assert.ok(!seen[0].referer, 'qq fetch must carry NO bili referer');
+  // default (bili) still sends its referer
+  await materializeVisionImages([{ url: 'https://i0.hdslb.com/x.jpg' }], { fetchImpl }).catch(() => {});
+  assert.equal(seen[1].referer, 'https://www.bilibili.com');
+
+  // one retry for transient failures, then stop
+  const { dir } = await tmp();
+  try {
+    const home = resolveSoulmateHome(join(dir, 'home'));
+    await mkdir(home.rootDir, { recursive: true });
+    await saveConfigAuto(home, {});
+    await appendImChat(home, { platform: 'qq', peerId: OWNER, role: 'user', text: '', media: [{ contentType: 'image/gif', url: 'https://x/retry.gif' }] });
+    let calls = 0;
+    const failing = async () => { calls += 1; throw new Error('no-images'); };
+    await runQqVisionIfEnabled({ home, warn: () => {}, describe: failing });
+    await runQqVisionIfEnabled({ home, warn: () => {}, describe: failing });
+    const third = await runQqVisionIfEnabled({ home, warn: () => {}, describe: failing });
+    assert.equal(calls, 2, 'failed url retried exactly once');
+    assert.equal(third.described, 0);
+  } finally { await cleanup(dir); }
+});
