@@ -178,8 +178,8 @@ function draftFromSummary(snap) {
         : DEFAULT_SPRITE_URL,
     },
     pet: {
-      enabled: !!(config.pet && config.pet.enabled),
-      sizePx: clampNum(Number(config.pet && config.pet.sizePx) || 148, 96, 320),
+      enabled: !(config.pet && config.pet.enabled === false),
+      sizePx: clampNum(Number(config.pet && config.pet.sizePx) || 180, 96, 320),
       sleepAfterIdleSec: clampNum(Number(config.pet && config.pet.sleepAfterIdleSec) || 300, 30, 3600),
       thinkQuietSec: (Number.isFinite(Number(config.pet && config.pet.thinkQuietSec)) ? Number(config.pet.thinkQuietSec) : 1.5),
       skin: (config.pet && typeof config.pet.skin === 'string' && config.pet.skin.trim())
@@ -188,7 +188,10 @@ function draftFromSummary(snap) {
       skinAuto: !(config.pet && config.pet.skinAuto === false),
       // Window form + physics + idle walk: keep every pet key in the draft, otherwise the
       // switch appears to flip back after any reload/autosave round-trip.
-      windowEnabled: !!(config.pet && config.pet.windowEnabled),
+      // Defaults must match DEFAULT_CONFIG (state.mjs): window ON since 0.2.201 —
+      // `!!undefined` here used to erase the default whenever pet/windowEnabled was
+      // absent from the payload, and the next full-pet save wrote false to disk.
+      windowEnabled: !(config.pet && config.pet.windowEnabled === false),
       windowElectronPath: (config.pet && typeof config.pet.windowElectronPath === 'string') ? config.pet.windowElectronPath : '',
       physics: {
         gravity: (Number.isFinite(Number(config.pet && config.pet.physics && config.pet.physics.gravity)) ? Number(config.pet.physics.gravity) : 1400),
@@ -203,7 +206,7 @@ function draftFromSummary(snap) {
     notify: { enabled: !(config.notify && config.notify.enabled === false) },
     extensions: {
       biliEnabled: !(config.extensions && config.extensions.biliEnabled === false),
-      biliAutoSurfEnabled: !!(config.extensions && config.extensions.biliAutoSurfEnabled),
+      biliAutoSurfEnabled: !(config.extensions && config.extensions.biliAutoSurfEnabled === false),
       biliAutoSurfEveryHours: Number(config.extensions && config.extensions.biliAutoSurfEveryHours) || 6,
       biliAutoSurfEveryMinutes: (() => {
         const {
@@ -219,7 +222,7 @@ function draftFromSummary(snap) {
         const mins = resolveSurfIntervalMinutes(config.extensions || {})
         return clampSurfMaxPick(config.extensions && config.extensions.biliAutoSurfMaxPick, mins)
       })(),
-      biliAutoSurfDeepWatch: !!(config.extensions && config.extensions.biliAutoSurfDeepWatch),
+      biliAutoSurfDeepWatch: !(config.extensions && config.extensions.biliAutoSurfDeepWatch === false),
       biliSurfIncludePopular: !(config.extensions && config.extensions.biliSurfIncludePopular === false),
       biliSurfSearchOrder: ['totalrank', 'pubdate', 'click'].includes(config.extensions && config.extensions.biliSurfSearchOrder)
         ? config.extensions.biliSurfSearchOrder
@@ -294,7 +297,7 @@ function draftFromSummary(snap) {
       distillLlmEnabled: !!(config.proactive && config.proactive.distillLlmEnabled),
       distillLlmDailyCap: clampNum(Number(config.proactive && config.proactive.distillLlmDailyCap) || 200000, 0, 50_000_000),
       distillLlmModel: (config.proactive && typeof config.proactive.distillLlmModel === 'string') ? config.proactive.distillLlmModel : '',
-      intentEnabled: !!(config.proactive && config.proactive.intentEnabled),
+      intentEnabled: !(config.proactive && config.proactive.intentEnabled === false),
       intentLlmDailyCap: clampNum(Number(config.proactive && config.proactive.intentLlmDailyCap) || 60000, 0, 50_000_000),
       intentLlmModel: (config.proactive && typeof config.proactive.intentLlmModel === 'string') ? config.proactive.intentLlmModel : '',
       intentMaxActsPerDay: clampNum(Number(config.proactive && config.proactive.intentMaxActsPerDay) || 5, 1, 8),

@@ -127,7 +127,7 @@ function lookPetCard({
         })) : null,
         field('petsize', '尺寸 ' + petDraft.sizePx + ' 像素（高；滚轮也可缩放）', h('input', {
           key: 'control', type: 'range', min: 96, max: 320, step: 4,
-          value: Math.min(320, Math.max(96, Number(petDraft.sizePx) || 148)),
+          value: Math.min(320, Math.max(96, Number(petDraft.sizePx) || 180)),
           onChange: (event) => patchPet({ sizePx: Number(event.target.value) }),
         })),
         h('button', {
