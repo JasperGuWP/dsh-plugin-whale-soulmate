@@ -9,6 +9,19 @@ export function updateRoutes({ selfUpdate }) {
       handler: async () => jsonOut(200, { ok: true, ...selfUpdate.status() }),
     },
     {
+      // 面板「检查更新」：立即探测三渠道后返回最新状态（GET status 只读缓存）。
+      method: 'POST',
+      paths: ['/dsh-soulmate/api/update-check'],
+      handler: async () => {
+        try {
+          if (typeof selfUpdate.checkNow === 'function') await selfUpdate.checkNow();
+          return jsonOut(200, { ok: true, ...selfUpdate.status() });
+        } catch (err) {
+          return jsonOut(200, { ok: false, error: err instanceof Error ? err.message : String(err), ...selfUpdate.status() });
+        }
+      },
+    },
+    {
       method: 'POST',
       paths: ['/dsh-soulmate/api/self-update'],
       handler: async () => jsonOut(200, await selfUpdate.install()),

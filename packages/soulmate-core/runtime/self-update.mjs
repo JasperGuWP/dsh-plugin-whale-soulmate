@@ -207,5 +207,5 @@ export function createSelfUpdate(deps) {
     if (timer) { clearInterval(timer); timer = null; }
   }
 
-  return { begin, dispose, install, restart, status: () => ({ ...state, inProfile }) };
+  return { begin, dispose, install, restart, status: () => ({ ...state, inProfile }), checkNow: check };
 }

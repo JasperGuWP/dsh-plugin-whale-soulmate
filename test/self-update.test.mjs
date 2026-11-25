@@ -153,3 +153,25 @@ test('self-update: restart only self-restarts the desktop exe host', async () =>
   assert.equal((await su2.restart()).ok, false);
   su2.dispose();
 });
+test('self-update: checkNow forces a fresh probe and update-check route returns latest state', async () => {
+  const e = await env({ version: '0.2.119' });
+  const su = createSelfUpdate({ getConfig: async () => e.conf, packageRoot: e.pkgRoot, warn: () => {} });
+  await su.begin();
+  assert.equal(typeof su.checkNow, 'function');
+  // 源目录后放一个更新包：status 缓存不变，checkNow 后立即可见
+  await writeFile(join(e.src, 'dsh-plugin-whale-soulmate-0.2.121.tgz'), 'x');
+  assert.equal(su.status().latest, '0.2.120', 'status 只读缓存');
+  await su.checkNow();
+  assert.equal(su.status().latest, '0.2.121');
+  assert.equal(su.status().available, true);
+  su.dispose();
+
+  const { updateRoutes } = await import('../packages/soulmate-core/routes/update-routes.mjs');
+  const routes = updateRoutes({ selfUpdate: { status: () => ({ current: '0.2.119', latest: '0.2.121', available: true }), checkNow: async () => {} } });
+  const check = routes.find((r) => r.paths.includes('/dsh-soulmate/api/update-check'));
+  assert.ok(check && check.method === 'POST');
+  const out = await check.handler({});
+  const body = JSON.parse(out.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.latest, '0.2.121');
+});
