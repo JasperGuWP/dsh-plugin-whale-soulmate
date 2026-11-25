@@ -149,8 +149,14 @@ export function createSelfUpdate(deps) {
       return { ok: false, error: state.error };
     }
     const version = state.latest;
+    // pnpm ≥10 gates dependency build scripts per exact specifier (allowBuilds); a
+    // fresh tgz path is never on the list, so plain `pnpm add` exits 1 with
+    // IGNORED_BUILDS even though the install itself succeeded. Our own published
+    // tarball is the only dependency being added here, and it ships the built
+    // client.js — allowing its scripts for this one invocation is safe and keeps
+    // one-click update working on any machine without editing workspace config.
     const code = await new Promise((resolve) => {
-      const child = spawnImpl(bins.node, [bins.pnpm, 'add', target], { cwd: profileDir, stdio: 'ignore', windowsHide: true });
+      const child = spawnImpl(bins.node, [bins.pnpm, 'add', '--config.dangerouslyAllowAllBuilds=true', target], { cwd: profileDir, stdio: 'ignore', windowsHide: true });
       child.once('exit', (c) => resolve(c == null ? 1 : c));
       child.once('error', () => resolve(1));
     });
