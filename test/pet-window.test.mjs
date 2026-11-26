@@ -149,6 +149,31 @@ test('window runtime: missing electron warns once and never spawns', async () =>
   runtime.dispose();
 });
 
+test('window runtime: spawn ETXTBSY (half-extracted Electron) cools down instead of crashing', async () => {
+  // 回归:Electron 解压到一半时 electron.exe 存在但被写锁占用,spawn 同步抛
+  // ETXTBSY(Node 不把它转成异步 error 事件),此前会越过 .once('error') 直接
+  // 让宿主进程 fatal。必须捕获、释放 loopback 服务、冷却后再试。
+  let attempts = 0;
+  const warns = [];
+  const { home, runtime } = await env({
+    spawnImpl: () => {
+      attempts += 1;
+      const err = new Error('spawn ETXTBSY');
+      err.code = 'ETXTBSY';
+      throw err;
+    },
+    warn: (m) => warns.push(m),
+  });
+  runtime.begin();
+  await saveConfigAuto(home, { pet: { windowEnabled: true } });
+  await new Promise((r) => setTimeout(r, 250));
+  assert.equal(runtime.alive(), false);
+  assert.equal(attempts, 1, '30s cooldown despite 50ms polling — no crash loop');
+  assert.equal(runtime.port(), null, 'loopback server released after failed spawn');
+  assert.ok(warns.some((w) => w.includes('ETXTBSY')), 'logs the failure once');
+  runtime.dispose();
+});
+
 test('window runtime: apply begins at setup and disposes at teardown (track semantics)', async () => {
   // 回归:track(fn) 立即执行 fn 取 disposer——误传 () => rt.dispose() 会在 setup 就关掉运行时
   const dir = await mkdtemp(join(tmpdir(), 'sm-petwin-apply-'));

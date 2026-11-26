@@ -9,6 +9,7 @@ const { gestureSayPool } = require('./pet-says.mjs')
 const { wirePetDrag } = require('./pet-drag.mjs')
 const { createPetThrow } = require('./pet-throw.mjs')
 const { isOpaquePetPixel } = require('./pet-hit.mjs')
+const { createPetBubble } = require('./pet-bubble.mjs')
 
     // ------------------------------------------------------------------
     // Floating widget
@@ -28,9 +29,18 @@ const { isOpaquePetPixel } = require('./pet-hit.mjs')
       const canvas = el('canvas', { class: 'sm-avatar', width: 140, height: 140 })
       const spriteImg = el('img', { class: 'sm-avatar-sprite', alt: '精灵', style: 'display:none', draggable: 'false' })
       spriteImg.draggable = false
-      // Corner speech bubble retired — greets go to OS toast / 专属窗 only.
-      // Turn status card (思考中/说完了) shelved for now — keep turn-card.mjs for later.
-      function showPetSay() { /* no-op: sm-pet-say removed by user request */ }
+      // Desktop-pet speech bubble (独立窗口形态 only). In-page corner bubble stays retired:
+      // greets there go to OS toast / 专属窗. Turn card shelved — keep turn-card.mjs for later.
+      let petBubble = null
+      function showPetSay(say) {
+        if (!petBubble || !say) return
+        const text = typeof say === 'object' ? say.text : say
+        const at = typeof say === 'object' ? say.at : ''
+        // Dots are a loading indicator, not a truncation marker: only the preview line
+        // (model still working) animates; the settled reply is clipped with no dots.
+        const loading = typeof say === 'object' && say.preview === true
+        petBubble.show(text, { at, loading })
+      }
       // Local say lines live in pet-says.mjs (persona-aware pools + trait heuristics).
       function gesturePool(kind) {
         return gestureSayPool(snapshot && snapshot.config && snapshot.config.persona, kind)
@@ -223,6 +233,9 @@ const { isOpaquePetPixel } = require('./pet-hit.mjs')
       let petWindowScreens = null
       if (petWindowBridge) {
         try { petWindowScreens = JSON.parse(new URLSearchParams(window.location.search).get('screens') || 'null') } catch (_) { petWindowScreens = null }
+        // Speech bubble rides above the pet; the transparent window lets it sit over
+        // otherwise click-through space, so its rect joins the body hit rect below.
+        petBubble = createPetBubble({ doc: document, mount: card })
       }
       let lastBodySend = 0
       // 光标位置:宠物自己走/飞到静止光标底下时,靠它每帧重采 alpha,穿透判定不滞后
@@ -482,19 +495,34 @@ const { isOpaquePetPixel } = require('./pet-hit.mjs')
         if (destroyed) return
         if (petWindowBridge && time - lastBodySend > 100) {
           lastBodySend = time
-          const r = widget.getBoundingClientRect()
+          const base = widget.getBoundingClientRect()
+          const bubbleRect = petBubble && petBubble.visible() ? petBubble.rect() : null
+          // The bubble can float over transparent window space; union its rect so the
+          // main-process ignore pump keeps the pointer while it is over the bubble.
+          let r = { x: base.x, y: base.y, w: base.width, h: base.height }
+          if (bubbleRect) {
+            const x = Math.min(base.left, bubbleRect.left)
+            const y = Math.min(base.top, bubbleRect.top)
+            r = {
+              x,
+              y,
+              w: Math.max(base.right, bubbleRect.right) - x,
+              h: Math.max(base.bottom, bubbleRect.bottom) - y,
+            }
+          }
           // busy 只算「手拿着」:m.dragging 在飞行期间也真(保持悬垂姿势),
           // 若把它当 busy,整窗会在飞行的几秒里收鼠标、挡住桌面点击。
           const busy = !!(pet && pet.m.dragging && !(petThrow && petThrow.active()))
+          const overBubble = !!(petBubble && lastPointer && petBubble.contains(lastPointer.x, lastPointer.y))
           // 包围盒内透明余量也要穿透:hit=光标当前像素是否不透明(素材未就绪时按透明)
-          const hit = !!pet && !!lastPointer && isOpaquePetPixel({
+          const hit = overBubble || (!!pet && !!lastPointer && isOpaquePetPixel({
             clientX: lastPointer.x,
             clientY: lastPointer.y,
             frontVideo: () => (petLayer ? petLayer.frontVideo() : null),
             spriteImg,
             failClosed: false,
-          })
-          petWindowBridge.setBody({ x: r.x, y: r.y, w: r.width, h: r.height }, busy, hit)
+          }))
+          petWindowBridge.setBody(r, busy, hit)
         }
         if (petThrow) petThrow.step(time)
         if (petMotion) petMotion.step(time)

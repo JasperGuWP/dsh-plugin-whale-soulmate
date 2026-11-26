@@ -62,6 +62,24 @@ const { CSS_KEY } = require('./util.mjs')
 .sm-turn-card-end::after{content:"";position:absolute;inset:9px;border-radius:2px;background:var(--dsw-alias-label-secondary,#61666b)}
 .sm-pet-say.on{opacity:1;transform:translateY(0);pointer-events:auto}
 .sm-pet-say::after{content:"";position:absolute;left:auto;right:28px;bottom:-6px;width:10px;height:10px;background:inherit;transform:rotate(45deg);box-shadow:1px 1px 0 0 color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 8%,transparent)}
+/* Desktop-window bubble: centered over the pet, two 25-char lines, animated dots. */
+.sm-pet-say-window{left:calc(50% + var(--sm-pet-bubble-shift,0px));right:auto;bottom:calc(100% + 12px);transform:translate(-50%,4px);width:max-content;min-width:0;max-width:calc(25em + 26px);white-space:nowrap;border-radius:14px;padding:9px 13px;line-height:1.4}
+/* .sm-widget * forces border-box; the bubble needs content-box so 25 CJK glyphs +
+   the three dots are never clipped by the box width. */
+.sm-widget-avatar .sm-pet-say-window{box-sizing:content-box;max-width:min(calc(25em + 48px),calc(100vw - 44px))}
+.sm-pet-say-window.on{transform:translate(-50%,0)}
+.sm-pet-say-window::after{left:50%;right:auto;bottom:-6px;transform:translateX(-50%) rotate(45deg)}
+.sm-pet-say-window.sm-pet-say-below{bottom:auto;top:calc(100% + 12px);transform:translate(-50%,-4px);border-radius:14px}
+.sm-pet-say-window.sm-pet-say-below.on{transform:translate(-50%,0)}
+.sm-pet-say-window.sm-pet-say-below::after{bottom:auto;top:-6px}
+.sm-pet-line{display:block;white-space:nowrap;overflow:hidden;line-height:1.4}
+.sm-pet-line-2{min-height:1.4em}
+.sm-pet-dots{display:inline-flex;align-items:flex-end;gap:3px;height:1em;margin-left:4px;transform:translateY(-1px);vertical-align:baseline}
+.sm-pet-dots i{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.22;animation:sm-pet-dots-pulse 1.1s infinite ease-in-out}
+.sm-pet-dots i:nth-child(2){animation-delay:.14s}
+.sm-pet-dots i:nth-child(3){animation-delay:.28s}
+@keyframes sm-pet-dots-pulse{0%,80%,100%{opacity:.2;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
+@media (prefers-reduced-motion:reduce){.sm-pet-dots i{animation:none;opacity:.55}}
 /* Collapsed state also free-floats when showing a sprite — no white tile. */
 .sm-mini.sm-mini-sprite{width:56px;height:56px;border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible}
 .sm-mini.sm-mini-sprite:hover{background:transparent;box-shadow:none}

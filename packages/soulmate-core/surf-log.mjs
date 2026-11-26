@@ -82,6 +82,19 @@ export function normalizeSurfEntry(raw = {}, platform = 'bilibili') {
   };
 }
 
+/** One row per video per local day for the panel; the journal keeps every watch. */
+function dedupeSurfEntries(entries) {
+  const seen = new Set();
+  const out = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const key = `${entry.videoId || entry.id}|${surfEntryDayKey(entry.at)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entry);
+  }
+  return out;
+}
+
 export async function appendSurfLog(home, entry, platform = 'bilibili') {
   await migrateLegacySurfLog(home).catch(() => {});
   const row = normalizeSurfEntry(entry, platform);
@@ -119,7 +132,7 @@ export async function listSurfLogDates(home, {
   await migrateLegacySurfLog(home).catch(() => {});
   const rows = await readJsonlTail(surfLogPath(home, platform), Math.min(5000, Math.max(200, Math.floor(Number(scan) || 2000))));
   const normalized = rows.map((r) => normalizeSurfEntry(r, platform)).reverse();
-  const filtered = applySurfFilters(normalized, { filter });
+  const filtered = dedupeSurfEntries(applySurfFilters(normalized, { filter }));
   const counts = new Map();
   for (const e of filtered) {
     const day = surfEntryDayKey(e.at);
@@ -141,6 +154,7 @@ export async function listSurfLogPage(home, {
   day = '',
   limit = 20,
   offset = 0,
+  dedupe = true,
 } = {}) {
   await migrateLegacySurfLog(home).catch(() => {});
   const cap = Math.min(200, Math.max(1, Math.floor(Number(limit) || 20)));
@@ -149,7 +163,9 @@ export async function listSurfLogPage(home, {
   const need = Math.min(5000, Math.max((skip + cap) * 6, 200));
   const rows = await readJsonlTail(surfLogPath(home, platform), need);
   const normalized = rows.map((r) => normalizeSurfEntry(r, platform)).reverse();
-  const out = applySurfFilters(normalized, { filter, day });
+  let out = applySurfFilters(normalized, { filter, day });
+  // The panel shows one card per video per local day; the journal keeps every rewatch.
+  if (dedupe !== false) out = dedupeSurfEntries(out);
   const total = out.length;
   const entries = out.slice(skip, skip + cap);
   return {
@@ -163,7 +179,8 @@ export async function listSurfLogPage(home, {
 }
 
 export async function listSurfLog(home, opts = {}) {
-  const page = await listSurfLogPage(home, opts);
+  // Internal callers read the raw journal (including same-day rewatches).
+  const page = await listSurfLogPage(home, { ...opts, dedupe: false });
   return page.entries;
 }
 
@@ -214,7 +231,18 @@ export async function deleteSurfLogEntry(home, {
   }
   if (hit < 0) return { ok: false, error: 'not-found' };
   const removed = normalizeSurfEntry(rows[hit], platform);
-  rows.splice(hit, 1);
+  // The panel collapses same-video/same-day rows into one card, so deleting that card
+  // removes the whole day's rows for the video (otherwise an older twin would pop up).
+  const removedDay = surfEntryDayKey(removed.at);
+  const groupDelete = Boolean(removed.videoId && removedDay);
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    if (!groupDelete) {
+      if (i === hit) rows.splice(i, 1);
+      continue;
+    }
+    const n = normalizeSurfEntry(rows[i], platform);
+    if (n.videoId === removed.videoId && surfEntryDayKey(n.at) === removedDay) rows.splice(i, 1);
+  }
   const text = rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');
   await writeFile(path, text, 'utf8');
   return { ok: true, entry: removed, remaining: rows.length };

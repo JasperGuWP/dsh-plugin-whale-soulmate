@@ -12,7 +12,8 @@ const FFMPEG_ASK_TEXT = [
 
 const ELECTRON_ASK_TEXT = [
   '（桌面小伙伴）我想开「窗口桌宠」，但这台电脑上没找到 Electron 运行时。',
-  '请帮我下载并安装 Electron 桌面版（Windows x64），解压到 ~/.dsh/electron/，确保里面有 electron.exe；需要代理就用本机现有代理。',
+  '请帮我下载并安装 Electron 桌面版（Windows x64），放到 ~/.dsh/electron/，确保里面有 electron.exe；需要代理就用本机现有代理。',
+  '务必一次性装完再让它出现在 ~/.dsh/electron/：先解压到临时目录，确认 electron.exe 与 resources/ 齐全后整体移动/改名过去。不要边解压边让 electron.exe 可见——桌宠会去启动半截文件（spawn ETXTBSY）。',
   '装好后把 electron.exe 的完整路径告诉我，我会填进「Electron 路径」，窗口桌宠就能起来了。',
 ].join('\n');
 

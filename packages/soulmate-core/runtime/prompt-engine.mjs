@@ -276,7 +276,7 @@ export function createPromptEngine({ home, warn, sessionController, pushEvent })
       lastToastText = t;
       lastToastAt = Date.now();
     }
-    lastPetSay = { text: t, kind: String(kind || 'proactive'), at: new Date().toISOString() };
+    lastPetSay = { text: t, kind: String(kind || 'proactive'), at: new Date().toISOString(), ...(preview ? { preview: true } : {}) };
     const payload = { text: t, kind: lastPetSay.kind };
     if (preview) payload.preview = true;
     const sid = String(extra.sessionId || lastSessionId || '').trim();

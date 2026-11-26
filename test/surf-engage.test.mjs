@@ -255,3 +255,39 @@ test('surf schedule: interval presets and pick caps', () => {
   assert.equal(clampSurfMaxPick(5, 30), 5);
   assert.equal(clampSurfMaxPick(99, 1440), 20);
 });
+
+test('surf-log append: journal keeps rewatches; panel shows one card per video per local day', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sm-surf-dup-'));
+  const home = { rootDir: dir };
+  try {
+    await appendSurfLog(home, {
+      videoId: 'BVdup', title: '重复测试', summary: '第一次', worthScore: 10,
+      at: '2026-11-26T04:00:00Z',
+      actions: { like: false, favorite: false, comment: false, follow: false },
+    }, 'bilibili');
+    await appendSurfLog(home, {
+      videoId: 'BVdup', title: '重复测试', summary: '第二次', worthScore: 14,
+      at: '2026-11-26T05:00:00Z',
+      actions: { like: true, favorite: false, comment: false, follow: false },
+    }, 'bilibili');
+
+    const raw = await listSurfLog(home, { platform: 'bilibili', limit: 10 });
+    assert.equal(raw.filter((e) => e.videoId === 'BVdup').length, 2, 'journal keeps every watch');
+    const page = await listSurfLogPage(home, { platform: 'bilibili', limit: 10 });
+    const dayRows = page.entries.filter((e) => e.videoId === 'BVdup');
+    assert.equal(dayRows.length, 1, 'panel shows one row per video per local day');
+    assert.equal(dayRows[0].summary, '第二次');
+    assert.equal(dayRows[0].worthScore, 14);
+    assert.equal(dayRows[0].actions.like, true);
+
+    await appendSurfLog(home, {
+      videoId: 'BVdup', title: '重复测试', summary: '隔天', worthScore: 15,
+      at: '2026-11-27T05:00:00Z',
+      actions: { like: false, favorite: false, comment: false, follow: false },
+    }, 'bilibili');
+    const nextPage = await listSurfLogPage(home, { platform: 'bilibili', limit: 10 });
+    assert.equal(nextPage.entries.filter((e) => e.videoId === 'BVdup').length, 2, 'a new day gets its own card');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

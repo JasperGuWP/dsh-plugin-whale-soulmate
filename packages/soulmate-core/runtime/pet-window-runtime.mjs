@@ -14,6 +14,10 @@ import { runRoute, jsonOut, writeOut } from '../http-plumbing.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = join(HERE, '..', '..', '..');
 const POLL_MS = 2000;
+// Electron 正在解压时 electron.exe 已存在但被写锁占用:Windows 上 spawn 直接抛
+// ETXTBSY(Node 只把 EACCES/EAGAIN/EMFILE/ENFILE/ENOENT 转成异步 error 事件,其余同步抛,
+// 会绕过 child.once('error') 把宿主进程打死)。冷却后再试,别把轮询变成崩溃循环。
+const SPAWN_FAIL_COOLDOWN_MS = 30_000;
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>桌面小伙伴</title>
 <style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}</style></head><body>
@@ -109,7 +113,21 @@ export function createPetWindowRuntime(deps) {
     try { port = await listen(); } catch (err) { log(`loopback 服务启动失败: ${err && err.message}`); server = null; return; }
     const env = { ...process.env, SOULMATE_PET_WINDOW_URL: `http://127.0.0.1:${port}/` };
     delete env.ELECTRON_RUN_AS_NODE;
-    child = spawnImpl(exe, [join(packageRoot, 'runtime', 'pet-window', 'main.cjs')], { env, stdio: 'ignore', windowsHide: true });
+    let launched;
+    try {
+      launched = spawnImpl(exe, [join(packageRoot, 'runtime', 'pet-window', 'main.cjs')], { env, stdio: 'ignore', windowsHide: true });
+    } catch (err) {
+      // 半截 electron.exe(解压中/被杀毒占用)会同步抛 ETXTBSY 之类;收掉已开的
+      // loopback 服务并冷却,否则每个轮询都崩一次。
+      log(`helper 启动失败(${exe}): ${err && err.message}——${Math.round(SPAWN_FAIL_COOLDOWN_MS / 1000)}s 后重试`);
+      if (server) {
+        try { server.close(); } catch { /* already closed */ }
+        server = null;
+      }
+      cooldownUntil = Date.now() + SPAWN_FAIL_COOLDOWN_MS;
+      return;
+    }
+    child = launched;
     child.once('exit', () => {
       child = null;
       // 启动即退(页面加载失败等)时冷却 5s,避免轮询变成崩溃循环
@@ -145,8 +163,10 @@ export function createPetWindowRuntime(deps) {
 
   function begin() {
     if (disposed || timer) return;
-    sync();
-    timer = setInterval(() => { sync(); }, pollMs);
+    // 轮询里的意外异常(例如 spawn 同步抛)绝不能让宿主进程 fatal。
+    const tick = () => { sync().catch((err) => log(`同步失败: ${err && err.message}`)); };
+    tick();
+    timer = setInterval(tick, pollMs);
     timer.unref?.();
   }
 
