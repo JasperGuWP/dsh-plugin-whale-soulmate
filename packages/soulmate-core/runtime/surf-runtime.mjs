@@ -94,8 +94,9 @@ export function createSurfRuntime({ home, warn, pushEvent, usage, chatHome, cfg,
       kind: 'auto-surf',
       speak: false,
       reason: decision.reason,
-      delivered: res.ok ? ((res.pickedCount ?? 0) > 0 ? 'watched' : 'no-picks') : 'failed',
+      delivered: res.ok ? ((res.pickedCount ?? 0) > 0 ? 'watched' : (res.heldCount ?? 0) > 0 ? 'needs-consent' : 'no-picks') : 'failed',
       picked: res.pickedCount ?? 0,
+      held: res.heldCount ?? 0,
       ...(res.error ? { error: res.error } : {}),
       ...(res.ok && (res.pickedCount ?? 0) === 0 && res.errors?.length ? { errors: res.errors.slice(0, 5) } : {}),
       keywordsChanged: keywordsRefresh?.changed === true,
@@ -114,10 +115,21 @@ export function createSurfRuntime({ home, warn, pushEvent, usage, chatHome, cfg,
         )),
       });
     }
+    if (res.ok && (res.heldCount ?? 0) > 0) {
+      pushEvent('bili-consent', {
+        count: res.heldCount,
+        items: (res.pendingConsent || []).slice(0, 3).map((x) => ({
+          bvid: x.bvid,
+          title: x.title,
+          durationSec: x.durationSec,
+        })),
+      });
+    }
     return {
       ok: res.ok !== false,
       ran: true,
       picked: res.pickedCount ?? 0,
+      held: res.heldCount ?? 0,
       reason: decision.reason,
       error: res.error,
       keywordsRefresh,

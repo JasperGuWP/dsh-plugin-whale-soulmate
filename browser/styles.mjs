@@ -504,6 +504,7 @@ video.sm-sprite-preview{background:transparent;object-fit:contain;object-positio
 .sm-surf-filters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
 .sm-surf-log-list{display:flex;flex-direction:column;gap:12px}
 .sm-surf-log{display:flex;flex-direction:column;gap:10px}
+.sm-surf-consent{display:flex;flex-direction:column;gap:8px;border:1px solid rgba(212,160,23,.38);background:color-mix(in srgb,var(--sm-gold,#d4a017) 6%,transparent)}
 .sm-surf-log-head{align-items:flex-start;padding-right:0}
 .sm-surf-log-head-text{flex:1;min-width:0}
 .sm-surf-now-btn{margin-left:auto;flex-shrink:0;white-space:nowrap}

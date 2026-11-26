@@ -98,12 +98,30 @@ async function readText(path) {
   }
 }
 
+// Windows: antivirus / indexers briefly open a file right after it changes, so an atomic
+// rename over it fails with EPERM/EBUSY. Retry instead of losing the write.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+async function renameWithRetry(from, to, attempts = 6) {
+  let last;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (err) {
+      last = err;
+      if (!RENAME_RETRY_CODES.has(err?.code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 40 * (i + 1) * (i + 1)));
+    }
+  }
+  throw last;
+}
+
 async function atomicWrite(path, text) {
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   try {
     await writeFile(tmp, text, 'utf8');
-    await rename(tmp, path);
+    await renameWithRetry(tmp, path);
   } catch (err) {
     await rm(tmp, { force: true }).catch(() => {});
     throw err;
@@ -1570,6 +1588,16 @@ export async function composePresenceDigest(home, options = {}) {
   if (lastEpisode) tail.push(`- 最近经历：${lastEpisode.date} ${clipText(lastEpisode.body.split('\n')[0], 50)}`);
   const emotion = active.filter((f) => f.decayClass === 'emotion').sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0];
   if (emotion) tail.push(`- 情绪底色：${clipText(emotion.text, 50)}`);
+  // 超长视频的同意队列：让他在聊天里也能被问一句，而不是只能去面板点。
+  try {
+    const { listPendingLongConsents } = await import('../../soulmate-bili/long-consent.mjs');
+    const pendingConsent = await listPendingLongConsents(home, { nowMs });
+    if (pendingConsent.length) {
+      const first = pendingConsent[0];
+      const mins = Math.max(1, Math.round((Number(first.durationSec) || 0) / 60));
+      tail.push(`- 待你点头：超长视频《${clipText(first.title, 40)}》${mins} 分钟（还没看${pendingConsent.length > 1 ? `，共 ${pendingConsent.length} 支` : ''}）`);
+    }
+  } catch { /* consent store optional */ }
 
   // Nothing to say -> no digest at all (the anchor stays persona-only).
   if (!promiseLines.length && !conflictLines.length && !anchors.length && !candidates.length && !tail.length) {

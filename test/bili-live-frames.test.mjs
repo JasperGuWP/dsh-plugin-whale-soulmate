@@ -26,11 +26,14 @@ test('clampLiveFrameEverySec: densest is 5s, fine-grained 5–120 integers', () 
 });
 
 test('liveFrameBudget: duration / everySec with hard cap', () => {
-  assert.deepEqual(liveFrameBudget(150, 15), { everySec: 15, count: 10, truncated: false });
+  assert.deepEqual(liveFrameBudget(150, 15), { everySec: 15, requestedEverySec: 15, count: 10, truncated: false });
   assert.equal(liveFrameBudget(60, 30).count, 2);
   const long = liveFrameBudget(3600 * 3, 15); // 3h @ 15s → 720 raw → cap 240
   assert.equal(long.count, 240);
   assert.equal(long.truncated, true);
+  // The cap must widen the interval, not stop at the first 20 minutes.
+  assert.equal(long.everySec, 45);
+  assert.ok(long.count * long.everySec >= 3600 * 3, 'covers the whole duration');
 });
 
 test('pickPlayurlStream prefers lowest dash bandwidth', () => {

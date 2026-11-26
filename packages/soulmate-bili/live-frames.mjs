@@ -31,11 +31,19 @@ export function clampLiveFrameEverySec(raw) {
 export function liveFrameBudget(durationSec, everySec) {
   const every = clampLiveFrameEverySec(everySec);
   const dur = Math.max(1, Math.floor(num(durationSec, 60)));
-  const n = Math.ceil(dur / every);
-  const truncated = n > LIVE_FRAME_MAX_COUNT;
+  const wanted = Math.ceil(dur / every);
+  const truncated = wanted > LIVE_FRAME_MAX_COUNT;
+  // A hard cap must widen the interval, not stop at the first N frames: 3h at 5s used to
+  // return only the first 20 minutes, so the timeline never reached the rest of the film.
+  const effectiveEvery = truncated ? Math.ceil(dur / LIVE_FRAME_MAX_COUNT) : every;
+  const count = Math.min(
+    LIVE_FRAME_MAX_COUNT,
+    Math.max(1, truncated ? Math.ceil(dur / effectiveEvery) : wanted),
+  );
   return {
-    everySec: every,
-    count: Math.min(LIVE_FRAME_MAX_COUNT, Math.max(1, n)),
+    everySec: effectiveEvery,
+    requestedEverySec: every,
+    count,
     truncated,
   };
 }

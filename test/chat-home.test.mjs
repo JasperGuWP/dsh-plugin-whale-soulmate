@@ -16,8 +16,10 @@ import {
   buildPetSay,
   composeHandoffSummary,
   deliverViaPrompt,
+  describeLastUserContact,
   ensureChatHomeSession,
   isSessionFull,
+  latestRealUserMessageAt,
   measureFromRecords,
   normalizeChatHome,
   titleForIndex,
@@ -95,6 +97,40 @@ test('chatHome: rotate archives old id and bumps index', () => {
   assert.equal(titleForIndex('大海', 1, '暗黑'), '大海 · 暗黑');
   assert.equal(titleForIndex('大海', 8, '暗黑'), '大海 · 暗黑 · 8');
   assert.equal(applyAdopt({ nextIndex: 1 }, 's1').activeSessionId, 's1');
+});
+
+test('chatHome: absence is HIS last real message, never the previous wake turn', () => {
+  const text = (s) => ({ content: [{ type: 'text', text: s }] });
+  const page = {
+    records: [
+      { type: 'user/message', time: 1_000, data: text(`${WAKE_BUBBLE_MARK}soulmate想跟你打个招呼`) },
+      { type: 'user/message', time: 2_000, data: text('<system-reminder>\nThe following information describes your current session: …') },
+      { type: 'user/message', time: 3_000, data: text('Time sampled while preparing turn 14, step 1: 2026-11-25T19:21:59+08:00[Asia/Shanghai]') },
+      { type: 'user/message', time: 4_000, data: text('你的记忆检索有问题嘛') },
+      { type: 'assistant/message', time: 5_000, data: { message: { role: 'assistant', content: [{ type: 'text', text: '在。' }] } } },
+    ],
+  };
+  assert.equal(latestRealUserMessageAt(page), 4_000);
+  assert.equal(latestRealUserMessageAt({ records: [] }), 0);
+
+  // 16.5h overnight gap: must read as 16 小时前, not "快一个钟头".
+  const at = Date.parse('2026-11-25T10:16:55Z');
+  const now = Date.parse('2026-11-26T02:46:00Z');
+  assert.equal(describeLastUserContact(at, now, 480), '16 小时前（11-25 18:16）');
+  assert.equal(describeLastUserContact(0, now, 480), '');
+
+  const instr = buildWakeInstructions('proactive', { callUser: '你', absenceText: '16 小时前（11-25 18:16）' });
+  assert.match(instr, /时间纪律/);
+  assert.match(instr, /Elapsed since the preceding model-visible message/);
+  assert.match(instr, /上一次真正开口.*16 小时前/);
+  assert.match(instr, /唯一可用的离开时长/);
+  assert.match(instr, /不许拿它说「你都多久没出现了」/);
+
+  // The invisible wake bubble carries the same fact — the one channel the model always reads.
+  const notice = buildWakeVisibleNotice('boot', { callUser: '你', absenceText: '16 小时前（11-25 18:16）' });
+  assert.equal(isWakeBubbleText(notice), true);
+  assert.match(notice, /他上一次真正开口是 16 小时前/);
+  assert.doesNotMatch(buildWakeVisibleNotice('handoff-seed', { callUser: '你', absenceText: '16 小时前' }), /上一次真正开口/);
 });
 
 test('chatHome: wake prompts stay short and kind-specific', () => {

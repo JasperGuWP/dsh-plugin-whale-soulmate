@@ -1,12 +1,17 @@
 // Surf journal API — platform-scoped (bilibili / douyin / …).
 
 import { jsonOut } from '../http-plumbing.mjs';
+import { loadConfig } from '../state.mjs';
 import {
   deleteSurfLogEntry,
   listSurfLogDates,
   listSurfLogPage,
   SURF_PLATFORMS,
 } from '../surf-log.mjs';
+import {
+  listPendingLongConsents,
+  longVideoConsentMinutes,
+} from '../../soulmate-bili/long-consent.mjs';
 
 function platformOr400(raw) {
   const platform = String(raw || 'bilibili').trim() || 'bilibili';
@@ -16,8 +21,36 @@ function platformOr400(raw) {
   return { platform };
 }
 
-export function surfRoutes({ home }) {
+export function surfRoutes({ home, video }) {
   return [
+    {
+      // 超长视频待确认队列：自动巡片不会自己看，等用户在这里点头。
+      method: 'GET',
+      paths: ['/dsh-soulmate/api/long-video-consent'],
+      handler: async () => {
+        const conf = await loadConfig(home).catch(() => null);
+        return jsonOut(200, {
+          ok: true,
+          thresholdMinutes: longVideoConsentMinutes(conf?.extensions ?? {}),
+          pending: await listPendingLongConsents(home),
+        });
+      },
+    },
+    {
+      method: 'POST',
+      paths: ['/dsh-soulmate/api/long-video-consent'],
+      handler: async ({ body }) => {
+        const action = String(body?.action || '').trim();
+        if (action !== 'approve' && action !== 'decline') {
+          return jsonOut(400, { ok: false, error: 'action 须为 approve | decline' });
+        }
+        if (typeof video?.videoConsent !== 'function') {
+          return jsonOut(503, { ok: false, error: 'consent runtime not ready' });
+        }
+        const res = await video.videoConsent({ action, bvid: body?.bvid });
+        return jsonOut(res?.ok === false ? 400 : 200, res);
+      },
+    },
     {
       method: 'GET',
       paths: ['/dsh-soulmate/api/surf-log'],

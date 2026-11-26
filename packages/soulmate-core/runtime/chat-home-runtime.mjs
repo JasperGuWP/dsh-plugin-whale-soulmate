@@ -15,8 +15,10 @@ import {
   buildWakeInstructions,
   buildWakeVisibleNotice,
   deliverViaPrompt,
+  describeLastUserContact,
   ensureChatHomeSession,
   isSessionFull,
+  latestRealUserMessageAt,
   measureFromRecords,
   normalizeChatHome,
   stripWakeBubbleMark,
@@ -202,6 +204,29 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
               warn('wake persona/memory brief failed', err);
             }
           }
+          // Snapshot before prompt so we only bill the new assistant turn's provider usage,
+          // and read when HE last really spoke — never infer it from the previous wake.
+          const tz = Number(conf.proactive?.tzOffsetMinutes) || 480;
+          let beforeMessageId = '';
+          let beforeAssistantCount = 0;
+          let lastUserAt = 0;
+          if (typeof controller.events === 'function') {
+            try {
+              const page = await controller.events({
+                address: { kind: 'session', sessionId: ensured.sessionId },
+                // Wider than the usage baseline needs: the real "he last spoke" line may be
+                // many turns back after a night of wakes.
+                maxMessages: 120,
+              }, new AbortController().signal);
+              const snap = extractLatestAssistantUsage(page);
+              beforeMessageId = snap.messageId || '';
+              beforeAssistantCount = snap.assistantCount || 0;
+              lastUserAt = latestRealUserMessageAt(page);
+            } catch {
+              // Baseline is best-effort; missing it only risks attributing an older turn.
+            }
+          }
+          const absenceText = describeLastUserContact(lastUserAt, Date.now(), tz);
           const instructions = buildWakeInstructions(deliveryKind, {
             callUser,
             hint: text,
@@ -210,9 +235,10 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
             voiceHint,
             voice,
             memory,
+            absenceText,
             steps: intentSteps,
           });
-          const visible = buildWakeVisibleNotice(deliveryKind, { callUser, hint: text, name });
+          const visible = buildWakeVisibleNotice(deliveryKind, { callUser, hint: text, name, absenceText });
           const petLine = buildPetSay(deliveryKind, {
             callUser,
             hint: text,
@@ -225,23 +251,6 @@ export function createChatHomeRuntime({ home, ctx, sessionController, promptEngi
           promptEngine.setWakeInstructions(instructions);
           // Preview only — OS toast waits for the专属窗 final reply (see notePetSay below).
           notePetSay(petLine, deliveryKind, { preview: true });
-
-          // Snapshot before prompt so we only bill the new assistant turn's provider usage.
-          let beforeMessageId = '';
-          let beforeAssistantCount = 0;
-          if (typeof controller.events === 'function') {
-            try {
-              const page = await controller.events({
-                address: { kind: 'session', sessionId: ensured.sessionId },
-                maxMessages: 40,
-              }, new AbortController().signal);
-              const snap = extractLatestAssistantUsage(page);
-              beforeMessageId = snap.messageId || '';
-              beforeAssistantCount = snap.assistantCount || 0;
-            } catch {
-              // Baseline is best-effort; missing it only risks attributing an older turn.
-            }
-          }
 
           const delivered = await deliverViaPrompt(controller, {
             sessionId: ensured.sessionId,

@@ -43,6 +43,11 @@ import {
   visionSkipNote,
 } from './vision-summary.mjs';
 import { assessTitleWatchWorth } from './title-gate.mjs';
+import {
+  longVideoConsentMinutes,
+  needsLongVideoConsent,
+  requestLongConsent,
+} from './long-consent.mjs';
 
 export {
   composeVideoTakeaway,
@@ -758,6 +763,7 @@ export async function digestBiliVideo(target, options = {}) {
     title,
     author,
     authorMid: num(owner.mid),
+    tname: str(view.tname),
     durationSec,
     pubdate: num(view.pubdate) ? new Date(num(view.pubdate) * 1000).toISOString() : '',
     url: `https://www.bilibili.com/video/${bvid}/${parsed.page > 1 ? `?p=${parsed.page}` : ''}`,
@@ -884,10 +890,15 @@ function composeNotes(digest, conf) {
 /** 把细看裁决理由缀到 takeaway/summary 末尾（日志与面板可见）。 */
 function appendJudgeNote(digest, verdict, secondPass) {
   if (!verdict?.reason || !str(digest.takeaway)) return;
-  const note = `\n细看裁决：${verdict.reason}${secondPass ? '（已按人设认真看完第二遍）' : ''}`;
+  const note = `细看裁决：${verdict.reason}${secondPass ? '（已按人设认真看完第二遍）' : ''}`;
   if (digest.takeaway.includes('细看裁决：')) return;
-  digest.takeaway += note;
-  if (str(digest.summary)) digest.summary += note;
+  // Put the judge note BEFORE 观感: appending at the end used to become part of the
+  // opinion line, so the 500-char opinion ended with a process note.
+  const idx = digest.takeaway.lastIndexOf('\n观感：');
+  digest.takeaway = idx >= 0
+    ? `${digest.takeaway.slice(0, idx)}\n${note}${digest.takeaway.slice(idx)}`
+    : `${digest.takeaway}\n${note}`;
+  if (str(digest.summary)) digest.summary += `\n${note}`;
 }
 
 /**
@@ -905,6 +916,35 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
   if (cookie === undefined) cookie = await cookieFromCredentials(home);
   const digest = options.digest ?? (await digestBiliVideo(input.target ?? input.url ?? input.bvid, { keywords: conf.extensions?.biliKeywords, ...options, cookie }));
   if (!digest.ok) return digest;
+
+  // 超长视频：必须先得到用户同意。自动巡片把它挂进待办；模型手动看片拿到 needsConsent
+  // 后应先问用户，用户点头再用 userConsent: true 重试。这里拦在看帧/字幕/ASR/记忆之前，
+  // 一次都不消费。
+  if (needsLongVideoConsent(digest.durationSec, conf.extensions ?? {}) && options.userConsent !== true) {
+    const minutes = longVideoConsentMinutes(conf.extensions ?? {});
+    const info = {
+      bvid: digest.bvid,
+      title: digest.title,
+      author: digest.author,
+      durationSec: digest.durationSec,
+      url: digest.url,
+      coverUrl: digest.coverUrl,
+      source: str(input.source),
+      keyword: str(input.keyword),
+    };
+    const consent = options.auto === true
+      ? await requestLongConsent(home, { ...info, nowMs: options.nowMs }).catch(() => null)
+      : null;
+    return {
+      ok: false,
+      held: true,
+      needsConsent: true,
+      reason: 'long-video-needs-consent',
+      error: `《${clip(str(digest.title), 40)}》有 ${formatClock(digest.durationSec)}，超过 ${minutes} 分钟，得先问过你再决定看不看。`,
+      digest: info,
+      consent,
+    };
+  }
 
   // Live frames + optional ASR + vision timeline BEFORE memory/surf so takeaway is final.
   const confLive = await loadConfig(home);
@@ -1234,8 +1274,9 @@ export async function watchAndRecordVideo(soulmateService, input = {}, options =
     });
   }
 
-  // mood & affinity
-  recorded.state = await soulmateService.interact('chat');
+  // mood & affinity — but this is HER viewing, not him being present. Keeping it out of
+  // lastInteractionAt stops "多久没聊 / sulk" from counting a watched video as a chat turn.
+  recorded.state = await soulmateService.interact('chat', { stampPresence: false, source: 'bili-watch' });
   await markVideoSeen(home, digest.bvid, { title: digest.title, worthScore: digest.worthScore }, options.nowMs);
 
   // Surf journal + optional persona engage (like / fav / comment / follow) — after takeaway.
@@ -1705,6 +1746,8 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
   let hotWatched = 0;
   let articleWatched = 0;
   let skippedTitleCount = 0;
+  let heldCount = 0;
+  const pendingConsent = [];
   // pass 1：热门受配额约束（给兴趣前几留位）；pass 2：配额放开，谁剩谁补满。
   for (const respectHotQuota of [true, false]) {
     for (const c of picked) {
@@ -1769,7 +1812,7 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
           }
           continue;
         }
-        const res = await watchAndRecordVideo(soulmateService, { target: c.bvid, source: c.source, keyword: c.keyword }, { ...net, maxStoryboardFrames: frameCap });
+        const res = await watchAndRecordVideo(soulmateService, { target: c.bvid, source: c.source, keyword: c.keyword }, { ...net, maxStoryboardFrames: frameCap, auto: true });
         if (res.ok) {
           watched += 1;
           if (isHot(c)) hotWatched += 1;
@@ -1815,6 +1858,34 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
               howIWatched: d.coverage?.report || '',
             });
           }
+        } else if (res.needsConsent) {
+          // Extra-long video: parked for the user's yes. Mark it seen for the auto-picker
+          // (so every round does not re-fetch its digest), but approval bypasses the seen
+          // ledger because it calls watchAndRecordVideo directly.
+          heldCount += 1;
+          if (res.consent) pendingConsent.push(res.consent);
+          await markVideoSeen(home, c.bvid, {
+            title: c.title,
+            skipped: 'needs-consent',
+            reason: res.reason,
+          }, options.nowMs);
+          videos.push({
+            ok: false,
+            held: true,
+            needsConsent: true,
+            skipKind: 'needs-consent',
+            kind: 'video',
+            bvid: c.bvid,
+            title: c.title,
+            author: res.digest?.author,
+            durationSec: res.digest?.durationSec,
+            url: res.digest?.url,
+            keyword: c.keyword,
+            source: c.source,
+            reason: res.reason,
+            error: res.error,
+          });
+          continue;
         } else {
           videos.push({ ok: false, kind: 'video', bvid: c.bvid, error: res.error });
           errors.push(`${c.bvid}: ${res.error}`);
@@ -1836,6 +1907,8 @@ export async function runAutonomousSurfRound(soulmateService, options = {}) {
     skippedSeenCount,
     skippedOldCount,
     skippedTitleCount,
+    heldCount,
+    pendingConsent,
     maxAgeDays,
     maxPick,
     searchOrder,

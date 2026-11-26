@@ -96,15 +96,16 @@ export function composeImProactivePrompt({ target, angle, voice, context = {}, p
   const dm = str(context.dm).trim();
   const memory = str(context.memory).trim();
   const material = str(context.material).trim();
-  const freshness = context.lastActivity ? `最近一条消息在 ${context.lastActivity}` : '这个会话还没有任何聊天记录';
+  const freshness = context.lastActivity ? `他最后一次开口在 ${context.lastActivity}` : '这个会话里他还没开过口';
   return [
     `你是${displayName}（自称「${selfRef}」），想主动给${callUser}发一条${str(target?.platform)}消息（${where}）。现在是 ${clock}。`,
     voice ? `【你的性格】${voice}` : '',
     recent ? `【会话近况】（${freshness}）\n${recent}` : `【会话近况】${freshness}。`,
     dm ? `【你和他的私聊近况】（只有你俩可见；群里发言可以据此关心他，但不得复述私聊原话）\n${dm}` : '',
     memory ? `【你此刻记得】\n${memory}` : '',
-    material ? `【你今天的真实见闻】（可当新话题聊）\n${material}` : '',
-    angle ? `【你想说的】${angle}` : '自主挑一种：接着近况里的真事聊一句／用今天的真实见闻开个新话题／按性格聊聊你此刻在想什么。保持你自己的个性，别缩成客套问候。',
+    material ? `【你最近的真实见闻】（每条都标了实际发生时间；可当新话题聊）\n${material}` : '',
+    angle ? `【你想说的】${angle}` : '自主挑一种：接着近况里的真事聊一句／用最近的真实见闻开个新话题／按性格聊聊你此刻在想什么。保持你自己的个性，别缩成客套问候。',
+    '【时间纪律】提到多久没聊/事情发生在什么时候，只能用上面标出的数字与「今天/昨天 HH:MM」；标着「昨天」或「N 小时前」的见闻不许说成「刚看完/刚啃完」，没标时间的就别提具体时长，更不要自己编「隔了三十多个小时」这类数字。',
     `要求：口语、真实、不超过 ${maxChars} 字；事实只能来自上面给出的近况、记忆与见闻——可以聊想法、感受、新话题，但不得编造发生过的事件（比如「有人在起哄/欺负你」这类近况里没有的事）；不要提系统/插件/AI；不要客服腔；不要用「@你」这类假 at。`,
     '觉得现在不该发就只输出两个字：不发。只输出消息正文或「不发」，不要解释。',
   ].filter(Boolean).join('\n');

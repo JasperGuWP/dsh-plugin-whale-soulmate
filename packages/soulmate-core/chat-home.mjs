@@ -93,6 +93,71 @@ export function extractPlainText(content) {
 }
 
 /**
+ * Was this user/message row something HE actually typed?
+ *
+ * The host also writes user-role messages for: plugin wake notices (marked with
+ * WAKE_BUBBLE_MARK), system-reminder context dumps, and its own turn-time notes.
+ * Counting those as "he spoke" is how the companion concluded "快一个钟头了" from
+ * the gap between two of her own wake-ups.
+ */
+export function isRealUserText(text) {
+  const t = str(text).trim();
+  if (!t) return false;
+  if (isWakeBubbleText(t) || t.includes('soulmate-wake')) return false;
+  if (/^<system-reminder>/i.test(t)) return false;
+  if (/^Time sampled while preparing turn\b/i.test(t)) return false;
+  if (/^Browser time zone for this request:/i.test(t)) return false;
+  return true;
+}
+
+/**
+ * Epoch ms of the newest message the USER actually typed in a session page.
+ * 0 when the page has no such message. Tolerates the host's record shapes.
+ */
+export function latestRealUserMessageAt(pageOrRecords) {
+  const records = Array.isArray(pageOrRecords)
+    ? pageOrRecords
+    : Array.isArray(pageOrRecords?.records) ? pageOrRecords.records
+      : Array.isArray(pageOrRecords?.messages) ? pageOrRecords.messages
+        : [];
+  let newest = 0;
+  for (const rec of records) {
+    const ev = rec?.type === 'event' ? rec.event : rec?.event ?? rec;
+    if (!ev || typeof ev !== 'object') continue;
+    if (str(ev.type) !== 'user/message') continue;
+    const data = ev.data && typeof ev.data === 'object' ? ev.data : ev;
+    const message = data?.message && typeof data.message === 'object' ? data.message : data;
+    const text = extractPlainText(message?.content ?? data?.content);
+    if (!isRealUserText(text)) continue;
+    const raw = ev.time ?? data?.time ?? ev.at ?? data?.at ?? ev.createdAt ?? data?.createdAt ?? message?.createdAt;
+    const t = Number.isFinite(Number(raw)) && Number(raw) > 0 ? Number(raw) : Date.parse(str(raw));
+    if (Number.isFinite(t) && t > newest) newest = t;
+  }
+  return newest;
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/** "16 小时前（11-25 18:16）" — the only absence wording a wake prompt may quote. */
+export function describeLastUserContact(atMs, nowMs = Date.now(), tzOffsetMinutes = 480) {
+  if (atMs === 0 || atMs === '' || atMs == null) return '';
+  const n = Number(atMs);
+  const t = Number.isFinite(n) && n > 0 ? n : Date.parse(str(atMs));
+  if (!Number.isFinite(t) || t <= 0) return '';
+  const mins = Math.max(0, Math.round((nowMs - t) / 60_000));
+  const rel = mins < 1 ? '刚刚' : mins < 60 ? `${mins} 分钟前` : mins < 48 * 60 ? `${Math.round(mins / 60)} 小时前` : `${Math.round(mins / 1440)} 天前`;
+  const d = new Date(t + (Number(tzOffsetMinutes) || 0) * 60_000);
+  const stamp = `${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+  return `${rel}（${stamp}）`;
+}
+
+/** True when the page's newest REAL user message is a row that proves he is present. */
+export function lastUserContactLine(absenceText) {
+  const a = str(absenceText).trim();
+  return a ? `【唯一可用的离开时长】他上一次真正开口跟你说话是在 ${a}。提到「多久没见」必须原样用这个数，不能改用系统回合间隔。` : '这扇窗里还没认出他真正开口的记录；不知道他多久没说话就别提时长。';
+}
+
+/**
  * Measure user/assistant surface messages from a Session events page (`records`).
  * Tolerates a few host shapes so tests and real DSH both work.
  */
@@ -200,6 +265,14 @@ export function buildWakeInstructions(kind, options = {}) {
   }
   const voiceBlock = str(options.voice).trim();
   const memoryBlock = str(options.memory).trim();
+  // The harness stamps every turn with "Elapsed since the preceding model-visible
+  // message". Wake turns are model-visible too, so two self-wakes an hour apart made
+  // her say 「快一个钟头了」 overnight. Absence must come from HIS last real message.
+  const timeRule = [
+    '【时间纪律】系统里的「Elapsed since the preceding model-visible message」是距上一次模型回合的时间，通常包含你自己的主动唤醒，不等于他离开/多久没来——不许拿它说「你都多久没出现了」。',
+    options.absenceText !== undefined ? lastUserContactLine(options.absenceText) : '',
+    '不知道他多久没说话就别提具体时长，更不要自己编「隔着三十多个小时」这类数字。',
+  ].filter(Boolean).join('');
   if (kind === 'boot') {
     const selfRef = str(options.selfRef).trim() || '我';
     const preset = str(options.preset).trim();
@@ -208,6 +281,7 @@ export function buildWakeInstructions(kind, options = {}) {
       '【Soulmate 插件·开机问候·勿复述】',
       `DSH 刚启动。请用当前人设口吻（自称「${selfRef}」${preset ? `，预设 ${preset}` : ''}）主动跟${callUser}打个自然招呼。`,
       '【强制中文】整条回复必须是中文台词。禁止英文、禁止英文思考过程、禁止数「第N回 / turn / wake」、禁止规划怎么说。',
+      timeRule,
       '必须保持主人翁第一人称与当前性格腔，禁止套用固定撒娇句（例如「哥哥我醒了～」这类与人设不符的模板）。',
       voiceBlock ? `【你的性格】${voiceBlock}` : '',
       memoryBlock ? `【你此刻记得】\n${memoryBlock}\n打招呼优先从上面挑一件真实近事/约定自然提起（说成「因为那天你说过…」）；没有合适的就按性格轻松开口，禁止编造记忆。` : '可顺手提近事或约定，也可只轻松一句；不知道近事就别硬编。',
@@ -237,6 +311,7 @@ export function buildWakeInstructions(kind, options = {}) {
       '【Soulmate 插件·自主意图·勿复述】',
       `你刚自己决定：${intentLine}。这不是系统派的任务，是你的念头——按你的性格把它说出来。`,
       '【强制中文】整条回复必须是中文台词。禁止英文、禁止英文思考过程、禁止数回合。',
+      timeRule,
       voiceBlock ? `【你的性格】${voiceBlock}` : '',
       memoryBlock ? `【你此刻记得】\n${memoryBlock}\n说话有据可依（有出处就说「因为那天你说过…」）；禁止编造记忆。` : '不知道近事就别硬编。',
       hint ? `【你的意图】${hint}` : '',
@@ -250,6 +325,7 @@ export function buildWakeInstructions(kind, options = {}) {
     '【Soulmate 插件·主动开口·勿复述】',
     `请现在用当前人设的口吻主动跟${callUser}搭话。`,
     '【强制中文】整条回复必须是中文台词。禁止英文、禁止英文思考过程、禁止数回合。',
+    timeRule,
     voiceBlock ? `【你的性格】${voiceBlock}` : '',
     memoryBlock ? `【你此刻记得】\n${memoryBlock}\n从上面挑一件真实近事/约定自然开口（有出处就说「因为那天你说过…」）；没有合适的就按性格聊一句，禁止编造记忆。` : '结合时段与记忆，自然开口一两句；不知道近事就别硬编。',
     hint ? `语气与意图参考：${hint}` : '',
@@ -282,6 +358,7 @@ export function buildWakeVisibleNotice(kind, options = {}) {
   const callUser = str(options.callUser).trim() || '你';
   const hint = str(options.hint).trim();
   const name = str(options.name || options.titlePrefix).trim() || DEFAULT_CHAT_HOME.titlePrefix;
+  const absence = str(options.absenceText).trim();
   let body = '';
   if (kind === 'persona-quiz') {
     const quizName = str(options.name || options.displayName).trim() || 'soulmate';
@@ -295,7 +372,13 @@ export function buildWakeVisibleNotice(kind, options = {}) {
   } else {
     body = `${name}想跟${callUser}说两句`;
   }
-  return WAKE_BUBBLE_MARK + body;
+  // The model sees this user bubble (the browser hides it). The harness's elapsed
+  // line counts wake turns too, so state HIS real last-contact time right here —
+  // the only place a proactive turn cannot miss it.
+  const timeNote = absence && kind !== 'persona-quiz' && kind !== 'handoff-seed'
+    ? `\n（他上一次真正开口是 ${absence}；要提多久没见只能用这个数。）`
+    : '';
+  return WAKE_BUBBLE_MARK + body + timeNote;
 }
 
 /**

@@ -449,6 +449,21 @@ function autoSurfSection({ draft, patchExtensions }) {
         }),
         h('span', { key: 't' }, '认真看完（加深字幕/分镜消化）'),
       ]),
+      field(
+        'long-video-consent',
+        '超长视频先问你：≥ ' + (Number(ext.biliLongVideoConsentMinutes ?? 60) || 0) + ' 分钟（0 = 不设限）',
+        h('input', {
+          key: 'control',
+          type: 'number',
+          min: 0,
+          max: 600,
+          step: 5,
+          value: Number(ext.biliLongVideoConsentMinutes ?? 60),
+          onChange: (event) => patchExtensions({
+            biliLongVideoConsentMinutes: Math.max(0, Math.min(600, Number(event.target.value) || 0)),
+          }),
+        }),
+      ),
       h('label', {
         key: 'vision-summary',
         className: 'sm-rhythm-check',

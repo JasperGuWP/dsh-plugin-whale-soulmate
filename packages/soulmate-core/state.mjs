@@ -557,13 +557,31 @@ export function parseSimpleYaml(text) {
   return root;
 }
 
+// Windows: antivirus / indexers briefly hold a freshly written file, making the atomic
+// rename over it fail with EPERM/EBUSY. Retry with backoff instead of dropping the save.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+async function renameWithRetry(from, to, attempts = 6) {
+  let last;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (err) {
+      last = err;
+      if (!RENAME_RETRY_CODES.has(err?.code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 40 * (i + 1) * (i + 1)));
+    }
+  }
+  throw last;
+}
+
 export async function atomicWriteText(path, text, { mode } = {}) {
   const run = async () => {
     await mkdir(dirname(path), { recursive: true });
     const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
     try {
       await writeFile(tmp, text, { encoding: 'utf8', mode });
-      await rename(tmp, path);
+      await renameWithRetry(tmp, path);
     } catch (err) {
       await rm(tmp, { force: true }).catch(() => {});
       throw err;
@@ -651,7 +669,7 @@ export async function atomicWriteJson(path, data, { mode } = {}) {
     const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
     try {
       await writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf8', mode });
-      await rename(tmp, path);
+      await renameWithRetry(tmp, path);
     } catch (err) {
       await rm(tmp, { force: true }).catch(() => {});
       throw err;

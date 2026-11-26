@@ -92,24 +92,51 @@ export function renderImContextRows(rows, { tzOffsetMinutes = 480, nowMs = Date.
 
 const ageLabel = (atMs, nowMs) => {
   const mins = Math.max(0, Math.round((nowMs - atMs) / MINUTE));
+  if (mins < 1) return '刚刚';
   if (mins < 60) return `${mins} 分钟前`;
   const hours = Math.round(mins / 60);
   if (hours < 48) return `${hours} 小时前`;
   return `${Math.round(hours / 24)} 天前`;
 };
 
+// 哪天 + 几点（本地）。见闻不带日期时，16 小时前看的片子会被说成「刚啃完」；
+// 主动消息里每个时间事实都必须是可以被读出来的，而不是模型自己估的。
+const dayWord = (atMs, nowMs, tzOffsetMinutes) => {
+  const key = (ms) => {
+    const d = new Date(ms + tzOffsetMinutes * MINUTE);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+  };
+  const at = key(atMs);
+  if (at === key(nowMs)) return '今天';
+  if (at === key(nowMs - 86_400_000)) return '昨天';
+  return dayKey(atMs, tzOffsetMinutes);
+};
+
+/** "昨天 18:16，16 小时前" — the only time wording the proactive prompt may quote. */
+export function describeMoment(atMs, nowMs = Date.now(), tzOffsetMinutes = 480) {
+  return `${dayWord(atMs, nowMs, tzOffsetMinutes)} ${hhmm(atMs, tzOffsetMinutes)}，${ageLabel(atMs, nowMs)}`;
+}
+
 /**
  * Fresh real material she can bring up as a NEW topic (user decision 2026-11-25:
  * high autonomy — new topics / news / free chat allowed, but only from real finds).
  * Today's watched-video notes first; her IM memory stars as background.
+ * Each find carries WHEN it happened: the model used to read a 16-hour-old video as
+ * "刚啃完" because the brief had no timestamp.
  */
-export async function composeImTopicMaterial(home, { nowMs = Date.now(), maxItems = 3 } = {}) {
+export async function composeImTopicMaterial(home, { nowMs = Date.now(), maxItems = 3, tzOffsetMinutes = 480, windowHours = 24 } = {}) {
   const bits = [];
   try {
     const seen = await listSurfLog(home, { platform: 'bilibili', limit: 12 });
-    const fresh = seen.filter((e) => nowMs - (Date.parse(e.at) || 0) < 24 * 60 * MINUTE && (str(e.summary) || str(e.title)));
+    const windowMs = Math.max(1, Number(windowHours) || 24) * 60 * MINUTE;
+    const fresh = seen.filter((e) => {
+      const at = Date.parse(e.at);
+      return Number.isFinite(at) && nowMs - at < windowMs && (str(e.summary) || str(e.title));
+    });
     for (const e of fresh.slice(0, maxItems)) {
-      bits.push(clip(`看过的视频《${str(e.title)}》：${str(e.summary) || '（只有标题）'}`, 110));
+      const when = describeMoment(Date.parse(e.at), nowMs, tzOffsetMinutes);
+      bits.push(clip(`看过的视频《${str(e.title)}》（${when}看的）：${str(e.summary) || '（只有标题）'}`, 140));
     }
   } catch { /* surf log optional */ }
   return bits.join('\n');
@@ -134,7 +161,12 @@ export async function composeImProactiveContext(home, {
     ? await listImChat(home, { platform, groupId: target.groupId, limit: recentLines }).catch(() => [])
     : await listImChat(home, { platform, peerId: target.to, limit: recentLines }).catch(() => []);
   const recent = render(targetRows, Boolean(target.groupId));
-  const newest = (Array.isArray(targetRows) ? targetRows : []).reduce((m, r) => Math.max(m, Date.parse(r?.at) || 0), 0);
+  // "He last spoke" — the bot's own proactive lines must not masquerade as his activity,
+  // or a fresh self-sent message reads as "he was just here".
+  const newest = (Array.isArray(targetRows) ? targetRows : []).reduce(
+    (m, r) => (r?.role === 'bot' ? m : Math.max(m, Date.parse(r?.at) || 0)),
+    0,
+  );
   const lastActivity = newest ? ageLabel(newest, nowMs) : '';
 
   // The owner's private thread on the same platform — skipped when it IS the target.
@@ -143,7 +175,7 @@ export async function composeImProactiveContext(home, {
     const dmRows = await listImChat(home, { platform, peerId: ownerId, limit: dmLines }).catch(() => []);
     dm = render(dmRows, false);
   }
-  const material = await composeImTopicMaterial(home, { nowMs }).catch(() => '');
+  const material = await composeImTopicMaterial(home, { nowMs, tzOffsetMinutes }).catch(() => '');
   return { recent, dm, memory: str(memory), material, lastActivity };
 }
 

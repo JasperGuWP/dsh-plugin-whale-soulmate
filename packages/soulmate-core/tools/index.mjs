@@ -23,6 +23,7 @@ export function buildTools(deps) {
     videoWatch: video.videoWatch,
     videoSurf: video.videoSurf,
     videoShare: video.videoShare,
+    videoConsent: video.videoConsent,
     biliAuthManage: video.biliAuthManage,
     imNet: im.imNet,
     mountIm: im.mountIm,

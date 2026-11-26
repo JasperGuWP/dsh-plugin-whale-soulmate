@@ -4,12 +4,30 @@
  */
 import { clampLiveFrameEverySec, LIVE_FRAME_DEFAULT_EVERY_SEC } from './live-frames.mjs';
 import { composeVideoTakeaway } from './subtitle-align.mjs';
+import { classifyVideoGenre, opinionInstruction } from './video-genre.mjs';
 
 export const VISION_FRAME_MAX = 16;
+/** 观感上限：500 字（用户要求）。模型写超了就截断，别让观感淹没时间线。 */
+export const VISION_OPINION_MAX_CHARS = 500;
 /** 分批看图：每批帧数上限（宿主单条消息图片上限 20，末帧锚点占 1 席也够）。 */
 export const VISION_BATCH_SIZE = 16;
 /** 分批看图：单次看片最多批数，防超长片把 token 烧穿；超出部分均匀降采样覆盖全片。 */
 export const VISION_BATCH_MAX = 10;
+
+/**
+ * How many frames a video of this length is worth sending, in whole 16-frame batches.
+ * Under an hour keeps the old "all available up to 160" behavior. Longer videos get a
+ * time-based budget: ~1 frame / 90 s normally, ~1 frame / 60 s on a deep second pass.
+ * 153-min compilation → 112 frames (7 batches) normal, 160 (10 batches) deep.
+ */
+export function visionFrameBudget(durationSec, { deep = false } = {}) {
+  const d = Math.max(0, Math.floor(num(durationSec, 0)));
+  if (d < 60 * 60) return VISION_BATCH_SIZE * VISION_BATCH_MAX;
+  const per = deep ? 60 : 90;
+  const raw = Math.ceil(d / per);
+  const batches = Math.min(VISION_BATCH_MAX, Math.max(2, Math.ceil(raw / VISION_BATCH_SIZE)));
+  return batches * VISION_BATCH_SIZE;
+}
 
 const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
 const num = (v, d = 0) => {
@@ -57,6 +75,34 @@ export function evenIndices(n, max = VISION_FRAME_MAX) {
     }
   }
   return out;
+}
+
+/** Keep start/end coverage when there are too many chapters: thin evenly, never slice the tail. */
+export function thinChapters(chapters, max) {
+  const list = Array.isArray(chapters) ? chapters : [];
+  const cap = Math.max(1, Math.floor(num(max, 16)));
+  if (list.length <= cap) return list;
+  return evenIndices(list.length, cap).map((i) => list[i]);
+}
+
+/**
+ * Deterministic whole-film overview when no synthesis call is available: one slice each
+ * from the opening, the middle and the ending — never a 10-batch comma chain.
+ */
+export function composeLongOverview(batchBits, batchCount) {
+  const bits = (Array.isArray(batchBits) ? batchBits : []).map((s) => str(s).trim()).filter(Boolean);
+  const n = Math.max(1, Math.floor(num(batchCount, bits.length || 1)));
+  if (!bits.length) return '';
+  if (bits.length <= 3) return clip(`本片共 ${n} 段：${bits.join('；')}`, 420);
+  const clean = (s) => clip(str(s)
+    .replace(/^(这一批|本批|这批)[，,：:]?\s*/, '')
+    .replace(/^(开场|开头|开篇|片头)(是|从)?[，,：:]?\s*/, '')
+    .replace(/^(收尾|结尾|最后|最终)(是|从|落在)?[，,：:]?\s*/, '')
+    .trim(), 60);
+  const first = clean(bits[0]);
+  const mid = clean(bits[Math.floor((bits.length - 1) / 2)]);
+  const last = clean(bits[bits.length - 1]);
+  return `本片共 ${n} 段：开场${first}；中段${mid}；收尾${last}。`;
 }
 
 /**
@@ -142,9 +188,11 @@ export function pickVisionFrames({
   };
 }
 
-export function buildVisionPrompt({ title = '', desc = '', transcript = '', frames = [], worthScore = 0, persona = '', transcriptChars = 800, segment = null } = {}) {
+export function buildVisionPrompt({ title = '', desc = '', transcript = '', frames = [], worthScore = 0, persona = '', transcriptChars = 800, segment = null, genre = null, durationSec = 0 } = {}) {
   const voice = str(persona).trim();
   const seg = segment && num(segment.total, 1) > 1 ? segment : null;
+  const g = genre && genre.opinion ? genre : classifyVideoGenre({ title, desc });
+  const long = num(durationSec) >= 60 * 60;
   const lines = [];
   if (seg) {
     const idx = Math.max(1, Math.floor(num(seg.index, 1)));
@@ -160,17 +208,19 @@ export function buildVisionPrompt({ title = '', desc = '', transcript = '', fram
   }
   lines.push('输出格式（严格）：');
   lines.push('总览：<一句话，' + (seg ? '本批画面' : '这片子整体') + '讲了什么>');
-  lines.push('时间线：');
+  lines.push(`时间线（按【类型：${g.label}】切章）：`);
   lines.push('· mm:ss–mm:ss <章标题>：<要点>');
-  lines.push('· …（' + (seg ? '2–5 段，只写本批时间段' : '3–6 段') + '）');
+  lines.push('· …（' + (seg ? '2–5 段，只写本批时间段' : long ? '8–16 段，长片/合集按季或单元分段' : '3–6 段') + '）');
+  lines.push(`切章侧重：${g.timeline}`);
   if (!seg || num(seg.index, 1) >= num(seg.total, 1)) {
     lines.push(voice
-      ? '观感：<2–3 句，用你的口吻评价这支视频的内容本身：讲了什么、值不值、亮点或槽点在哪、推不推荐对方看。像跟搭档聊你刚看完的东西，不是影评——不要评镜头/机位/剪辑/运镜，除非片子本身就是讲拍摄的。必须带当前性格的措辞与态度，不是中性分析报告。>'
-      : '观感：<2–3 句，评价这支视频的内容本身：讲了什么、值不值、亮点或槽点、推不推荐看。聊内容，不要评镜头/机位/剪辑，除非片子本身就是讲拍摄的。>');
+      ? opinionInstruction(g, { voice, maxChars: VISION_OPINION_MAX_CHARS })
+      : `观感：<不超过 ${VISION_OPINION_MAX_CHARS} 字，3–6 句。必须覆盖全片（开头、中段、结尾），不能只评其中一段。按【类型：${g.label}】的侧重点写：${g.opinion} 用自然口语写，不要中性分析报告；不要复述时间线，不要编造画面外内容。>`);
     if (voice) lines.push(`【你的性格（只影响观感措辞）】${clip(voice, 300)}`);
   }
   lines.push('');
   lines.push(`标题：${clip(title, 120)}`);
+  lines.push(`类型：${g.label}`);
   lines.push(`简介：${clip(desc, 400) || '（无）'}`);
   lines.push(`评分参考：${num(worthScore, 0)}/20`);
   const tx = str(transcript).trim();
@@ -215,6 +265,8 @@ export function parseVisionTimelineText(raw) {
     const t = line.replace(/^[\s·\-•*]+/, '').trim();
     if (!t) continue;
     if (/^(总览|观感|标题|简介)/.test(t)) continue;
+    // Our type-aware prompt emits a「（按【类型：…】切章）：」header; it is not a chapter.
+    if (t.includes('按【类型') || /切章[)）]?[:：]?$/.test(t)) continue;
     const m = t.match(/^(\d{1,2}:\d{2}(?::\d{2})?)\s*[–—\-~～至到]+\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*(.*)$/);
     if (m) {
       chapters.push({ start: m[1], end: m[2], text: m[3].replace(/^[:：]\s*/, '').trim() });
@@ -235,7 +287,7 @@ export function formatVisionTakeaway({ overview, chapters, opinion, worthScore =
     : score >= 7
       ? '一般，挑着看就行。'
       : '水分偏多，下次换方向。';
-  const op = str(opinion).replace(/^观感\s*[:：]\s*/, '').trim() || fallbackOpinion;
+  const op = clip(str(opinion).replace(/^观感\s*[:：]\s*/, '').trim() || fallbackOpinion, VISION_OPINION_MAX_CHARS);
   const lines = [`讲了什么：${str(overview).trim() || '（画面摘要生成中）'}`];
   if (chapters?.length) {
     lines.push('时间线：');
@@ -267,27 +319,31 @@ export function appendEngagePhrase(summary, actions = {}) {
 }
 
 /** 无画面模型时的纯文本推断 prompt:字幕/热评/弹幕高峰做时间锚点,明示未看画面。 */
-export function buildTextFallbackPrompt(digest = {}, { persona = '' } = {}) {
+export function buildTextFallbackPrompt(digest = {}, { persona = '', genre = null } = {}) {
   const comments = (Array.isArray(digest.hotComments) ? digest.hotComments : [])
     .slice(0, 5).map((c) => str(c?.text ?? c)).filter(Boolean).join(' / ');
   const peaks = (Array.isArray(digest.peaks) ? digest.peaks : [])
     .slice(0, 8).map((p) => `${formatClock(p?.tSec ?? p?.sec ?? p?.t ?? 0)}(${p?.count ?? p?.text ?? ''})`).join(' / ');
   const voice = str(persona).trim();
+  const g = genre && genre.opinion ? genre : classifyVideoGenre(digest);
+  const long = num(digest.durationSec) >= 60 * 60;
   const lines = [
     '请以当前人设的身份看这支视频。当前没有可用的画面模型,请仅根据下列文本信息推断本片内容与章节时间线。',
     '要求:以"按文案/弹幕推断,未看画面"为前提;时间线用字幕/弹幕高峰的时间锚点,不得编造具体画面细节。总览与时间线客观准确,性格只体现在「观感」里。',
     '输出格式(严格):',
     '总览:<一句话,这片子整体讲了什么>',
-    '时间线:',
+    `时间线(按【类型:${g.label}】切章):`,
     '· mm:ss–mm:ss <章标题>:<要点>',
-    '· …(3–6 段)',
+    `· …(${long ? '8–16 段' : '3–6 段'})`,
+    `切章侧重:${g.timeline}`,
     voice
-      ? '观感:<2–3 句,用你的口吻评价这支视频的内容本身:讲了什么、值不值、亮点或槽点、推不推荐对方看。像跟搭档聊你刚看完的东西,不是影评——不要评镜头/机位/剪辑/运镜,除非片子本身就是讲拍摄的。带当前性格的态度。>'
-      : '观感:<2–3 句,评价这支视频的内容本身:讲了什么、值不值、亮点或槽点、推不推荐看。聊内容,不要评镜头/机位/剪辑,除非片子本身就是讲拍摄的。>',
+      ? opinionInstruction(g, { voice, maxChars: VISION_OPINION_MAX_CHARS })
+      : `观感:<不超过 ${VISION_OPINION_MAX_CHARS} 字,3–6 句。必须覆盖全片(开头、中段、结尾),不能只评其中一段。按【类型:${g.label}】的侧重点写:${g.opinion} 用自然口语写,不要复述时间线,不要编造画面外内容。>`,
   ];
   if (voice) lines.push(`【你的性格（只影响观感措辞）】${clip(voice, 300)}`);
   lines.push('');
   lines.push(`标题:${clip(digest.title, 120)}`);
+  lines.push(`类型:${g.label}`);
   lines.push(`简介:${clip(digest.desc, 400) || '(无)'}`);
   lines.push(`字幕摘录:${clip(digest.transcript, 800) || '(无)'}`);
   lines.push(`热评:${clip(comments, 400) || '(无)'}`);
@@ -328,7 +384,11 @@ export async function composeVisionTimelineSummary({
   // 采样密度只决定抽帧/时间点候选；这里取全片候选（≤240），超过单批上限就分批喂。
   // 深看（含二刷）字幕摘录放宽到 2400 字。
   const deep = deepWatch === true || maxFrames > VISION_FRAME_MAX;
-  const totalCap = Math.min(240, VISION_BATCH_SIZE * VISION_BATCH_MAX);
+  const totalCap = Math.min(
+    240,
+    VISION_BATCH_SIZE * VISION_BATCH_MAX,
+    visionFrameBudget(digest.durationSec, { deep }),
+  );
   const picked = pickVisionFrames({
     liveFrames: live,
     storyboardFrames: board,
@@ -338,6 +398,7 @@ export async function composeVisionTimelineSummary({
   });
   const transcriptChars = deep ? 2400 : 800;
   const modelArg = str(model).trim() || undefined;
+  const genre = classifyVideoGenre(digest);
   const basePrompt = {
     title: digest.title,
     desc: digest.desc,
@@ -345,6 +406,8 @@ export async function composeVisionTimelineSummary({
     worthScore: digest.worthScore,
     persona,
     transcriptChars,
+    durationSec: digest.durationSec,
+    genre,
   };
   const toImages = (frames) => frames.map((f) => ({
     tSec: f.tSec,
@@ -442,13 +505,45 @@ export async function composeVisionTimelineSummary({
   if (!raws.length) {
     return visionTextFallback({ digest, persona, modelArg, visionSummarize, picked, err: new Error('all-batches-failed') });
   }
-  const lastBatchOk = notes.length === batches.length;
-  const overview = lastBatchOk && finalParsed?.overview
-    ? finalParsed.overview
-    : notes.map((n) => n.replace(/^第\d+批（[^）]*）：/, '')).join('；');
+  // Whole-film overview. Each batch overview describes only its slice; a long film's
+  // "讲了什么" must not be the last slice or a comma-chain of all of them. One cheap
+  // text-only call synthesizes a 1–2 sentence overview across the whole run.
+  let synthesizedOverview = '';
+  if (batches.length > 1 && num(digest.durationSec) >= 60 * 60 && typeof visionSummarize === 'function') {
+    try {
+      const noteLines = notes
+        .map((n) => n.replace(/^第\d+批（[^）]*）：/, ''))
+        .join('\n');
+      const out = await visionSummarize({
+        model: modelArg,
+        prompt: [
+          `你看完了一支 ${formatClock(digest.durationSec)} 的视频，下面是你每批画面的简短结论。`,
+          '请用 1–2 句中文写「全片总览」：覆盖开头、中段、结尾；不要分点，不要逐批复述，不超过 120 字。',
+          '只输出总览正文，不要解释。',
+          noteLines,
+        ].join('\n'),
+        images: [],
+      });
+      const t = str(out?.text ?? out?.content ?? out).trim();
+      if (t && !visionResponseLooksBlind(t)) {
+        synthesizedOverview = clip(t.split('\n').find((l) => l.trim()) || t, 180);
+      }
+    } catch { /* fall back to the batch chain below */ }
+  }
+  // Each batch's 总览 only describes its own slice. Using the last one as the whole-film
+  // overview made a 153-min film read as "本批在夜间尸潮…". Synthesize from every batch,
+  // capped so the line stays readable.
+  const batchBits = notes
+    .map((n) => clip(n.replace(/^第\d+批（[^）]*）：/, ''), 55))
+    .filter(Boolean);
+  const overview = synthesizedOverview || (batchBits.length
+    ? composeLongOverview(batchBits, batches.length)
+    : (finalParsed?.overview || ''));
+  // 16 used to be a hard slice, which cut the last batches off a long compilation.
+  const chapterCap = Math.min(24, Math.max(16, batches.length * 3));
   const takeaway = formatVisionTakeaway({
     overview,
-    chapters: chapters.slice(0, 16),
+    chapters: thinChapters(chapters, chapterCap),
     opinion: finalParsed?.opinion,
     worthScore: digest.worthScore,
   });
@@ -469,7 +564,7 @@ async function visionTextFallback({ digest, persona, modelArg, visionSummarize, 
     try {
       const out2 = await visionSummarize({
         model: modelArg,
-        prompt: buildTextFallbackPrompt(digest, { persona }),
+        prompt: buildTextFallbackPrompt(digest, { persona, genre: classifyVideoGenre(digest) }),
         images: [],
       });
       const raw2 = str(out2?.text ?? out2?.content ?? out2).trim();

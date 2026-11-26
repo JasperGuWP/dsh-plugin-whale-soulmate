@@ -115,6 +115,13 @@ function toastFor(ev, name) {
       const body = '新看了 ' + (ev.pickedCount ?? 0) + ' 个视频' + (first ? '：' + clipText(first.title, 48) : '')
       return { title: n + ' 冲浪回来', body, fullText: body, tag: 'dsh-soulmate-video-surf' }
     }
+    case 'bili-consent': {
+      const first = Array.isArray(ev.items) && ev.items[0]
+      const count = Number(ev.count) || (Array.isArray(ev.items) ? ev.items.length : 0) || 1
+      const mins = first && first.durationSec ? ' · ' + Math.max(1, Math.round(Number(first.durationSec) / 60)) + ' 分钟' : ''
+      const body = count + ' 支超长视频还没看' + (first ? '：' + clipText(first.title, 40) + mins : '') + '。去冲浪页点头才看。'
+      return { title: n + ' 在等你同意', body, fullText: body, tag: 'dsh-soulmate-bili-consent' }
+    }
     case 'daily-diary':
       return {
         title: n + ' 写好了今天的信',

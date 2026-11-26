@@ -5,7 +5,7 @@ const h = React.createElement
 const { api } = require('./util.mjs')
 const { autoSurfSection } = require('./panel-forms.mjs')
 const { biliAuthCard } = require('./panel-bili.mjs')
-const { SurfLightbox, StillThumb, stillUrl, surfSourceLabel } = require('./surf-lightbox.mjs')
+const { SurfLightbox, StillThumb, stillUrl, surfSourceLabel, localStamp } = require('./surf-lightbox.mjs')
 const { biliQuotaSection } = require('./panel-engage-quota.mjs')
 
 const PLATFORMS = [
@@ -117,7 +117,7 @@ function surfLogCard(entry, onOpen, onDelete) {
           : h('span', { key: 't' }, entry.title || entry.videoId || '视频'),
       ]),
       h('p', { key: 'meta', className: 'sm-panel-muted' },
-        [surfSourceLabel(entry), entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', entry.at ? String(entry.at).slice(0, 19).replace('T', ' ') : '']
+        [surfSourceLabel(entry), entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', localStamp(entry.at)]
           .filter(Boolean).join(' · ')),
       h('p', {
         key: 'sum',
@@ -201,6 +201,7 @@ function surfCard(view) {
   const [openBili, setOpenBili] = React.useState(false)
   const [surfing, setSurfing] = React.useState(false)
   const [surfHint, setSurfHint] = React.useState('')
+  const [consent, setConsent] = React.useState({ items: [], loading: false, error: '', threshold: 60, busy: '' })
   const closeLightbox = React.useCallback(() => setLightbox(null), [])
 
   const deriveDatesFromEntries = React.useCallback((entries) => {
@@ -304,6 +305,53 @@ function surfCard(view) {
     await fetchLogPage(day, 0, { append: false })
   }, [fetchDates, fetchLogPage, selectedDay])
 
+  const decideConsent = React.useCallback(async (item, decision) => {
+    if (!item || !item.bvid || consent.busy) return
+    const verb = decision === 'approve' ? 'approve' : 'decline'
+    setConsent((prev) => ({ ...prev, busy: item.bvid + ':' + verb }))
+    setSurfHint(verb === 'approve' ? '正在看这支超长视频，稍等…' : '正在跳过…')
+    const res = await api('long-video-consent', { action: verb, bvid: item.bvid })
+    if (!res || res.ok === false) {
+      setSurfHint((res && res.error) || (verb === 'approve' ? '同意失败' : '取消失败'))
+      setConsent((prev) => ({ ...prev, busy: '' }))
+      return
+    }
+    setConsent((prev) => ({
+      ...prev,
+      items: prev.items.filter((x) => x.bvid !== item.bvid),
+      busy: '',
+    }))
+    setSurfHint(verb === 'approve'
+      ? '看完了「' + String(item.title || item.bvid).slice(0, 30) + '」，已写进冲浪日志'
+      : '已跳过「' + String(item.title || item.bvid).slice(0, 30) + '」')
+    if (verb === 'approve') await reloadLog()
+  }, [consent.busy, reloadLog])
+
+  const fetchConsent = React.useCallback(() => {
+    setConsent((prev) => ({ ...prev, loading: true, error: '' }))
+    return api('long-video-consent')
+      .then((res) => {
+        if (!res || res.ok === false) {
+          setConsent((prev) => ({ ...prev, loading: false, error: (res && res.error) || '' }))
+          return
+        }
+        setConsent({
+          items: Array.isArray(res.pending) ? res.pending : [],
+          loading: false,
+          error: '',
+          threshold: Number(res.thresholdMinutes) || 60,
+          busy: '',
+        })
+      })
+      .catch((err) => setConsent((prev) => ({
+        ...prev, loading: false, error: err && err.message ? err.message : String(err),
+      })))
+  }, [])
+
+  React.useEffect(() => {
+    fetchConsent()
+  }, [fetchConsent])
+
   React.useEffect(() => {
     let cancelled = false
     fetchDates().then((items) => {
@@ -404,6 +452,47 @@ function surfCard(view) {
     className: 'sm-btn' + (filter === id ? ' primary' : ''),
     onClick: () => setFilter(id),
   }, label)))
+
+  const consentSection = (consent.items.length || consent.error)
+    ? h('div', { key: 'consent', className: 'sm-eng-card sm-surf-consent' }, [
+      h('header', { key: 'h', className: 'sm-eng-head' }, [
+        h('span', { key: 'n', className: 'sm-eng-num' }, '同意'),
+        h('div', { key: 't' }, [
+          h('h3', { key: 'title' }, '超长视频等你点头'),
+          h('p', { key: 'sub', className: 'sm-panel-muted' },
+            '≥' + (consent.threshold || 60) + ' 分钟的片子，你说看才看；自动巡片只把它放到这里，不碰内容。'),
+        ]),
+      ]),
+      consent.error ? h('p', { key: 'err', className: 'sm-panel-muted' }, consent.error) : null,
+      ...consent.items.map((item) => h('div', {
+        key: item.bvid,
+        style: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid rgba(127,127,127,.18)' },
+      }, [
+        h('div', { key: 'm', style: { flex: '1 1 auto', minWidth: 0 } }, [
+          item.url
+            ? h('a', { key: 'a', href: item.url, target: '_blank', rel: 'noreferrer' }, item.title || item.bvid)
+            : h('span', { key: 't' }, item.title || item.bvid),
+          h('p', { key: 'meta', className: 'sm-panel-muted', style: { margin: '2px 0 0' } },
+            [item.author ? '@' + item.author : '', Math.max(1, Math.round((Number(item.durationSec) || 0) / 60)) + ' 分钟', '自动巡片发现，还没看']
+              .filter(Boolean).join(' · ')),
+        ]),
+        h('button', {
+          key: 'ok',
+          type: 'button',
+          className: 'sm-btn primary',
+          disabled: !!consent.busy,
+          onClick: () => decideConsent(item, 'approve'),
+        }, consent.busy === item.bvid + ':approve' ? '正在看…' : '看'),
+        h('button', {
+          key: 'no',
+          type: 'button',
+          className: 'sm-btn',
+          disabled: !!consent.busy,
+          onClick: () => decideConsent(item, 'decline'),
+        }, '不看'),
+      ])),
+    ])
+    : null
 
   const logSection = h('div', { key: 'log', className: 'sm-eng-card sm-surf-log' }, [
     h('header', { key: 'h', className: 'sm-eng-head sm-surf-log-head' }, [
@@ -510,6 +599,7 @@ function surfCard(view) {
         ]),
         engageSection({ draft, patchExtensions }),
         biliQuotaSection({ ext: draft.extensions || {}, patchExtensions }),
+        consentSection,
         logSection,
       ]),
     lightbox

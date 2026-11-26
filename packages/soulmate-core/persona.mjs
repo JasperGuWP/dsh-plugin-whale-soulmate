@@ -455,6 +455,10 @@ const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 export async function applyInteraction(home, action, nowMs = Date.now(), payload = {}) {
   // tap/nuzzle are the desktop-pet light gestures; pat stays the 3D-home "摸摸头" (+8).
+  // `payload.stampPresence === false` keeps the mood/affinity effect but does NOT count as
+  // the user being present: the Bilibili watcher calls `interact('chat')` after a video,
+  // which used to stamp `lastInteractionAt` — so "多久没聊" and sulk timing read the
+  // companion's own viewing time as if he had just spoken.
   const KNOWN = ['feed', 'pat', 'tap', 'nuzzle', 'chat', 'work_assist', 'sleep'];
   if (!KNOWN.includes(action)) {
     throw new Error(`[soulmate] unknown interaction "${action}" (expected one of ${KNOWN.join(', ')})`);
@@ -500,12 +504,14 @@ export async function applyInteraction(home, action, nowMs = Date.now(), payload
   state.affinity = clamp(state.affinity, 0, AFFINITY_MAX);
   const crossing = bondStageCrossing(prev.affinity, state.affinity);
 
-  const gapDays =
-    Math.floor(nowMs / DAY_MS) - Math.floor(Date.parse(prev.lastInteractionAt) / DAY_MS);
-  if (gapDays === 1) state.streakDays = (state.streakDays || 0) + 1;
-  else if (gapDays > 1 || !(state.streakDays >= 1)) state.streakDays = 1;
-  state.interactionCount = (state.interactionCount || 0) + 1;
-  state.lastInteractionAt = new Date(nowMs).toISOString();
+  if (payload?.stampPresence !== false) {
+    const gapDays =
+      Math.floor(nowMs / DAY_MS) - Math.floor(Date.parse(prev.lastInteractionAt) / DAY_MS);
+    if (gapDays === 1) state.streakDays = (state.streakDays || 0) + 1;
+    else if (gapDays > 1 || !(state.streakDays >= 1)) state.streakDays = 1;
+    state.interactionCount = (state.interactionCount || 0) + 1;
+    state.lastInteractionAt = new Date(nowMs).toISOString();
+  }
 
   await atomicWriteJson(home.statePath, state);
 

@@ -199,6 +199,17 @@ test('persona: applyInteraction actions', async () => {
   });
 });
 
+test('persona: stampPresence=false (video watch) keeps mood but never counts as the user present', async () => {
+  await withHome(async (home) => {
+    const t0 = Date.parse('2026-11-01T10:00:00Z');
+    await loadSoulmateState(home, t0);
+    const watched = await applyInteraction(home, 'chat', t0 + 3_600_000, { stampPresence: false });
+    assert.equal(watched.affinity, 25); // the action itself still applies
+    assert.equal(watched.interactionCount, 0);
+    assert.equal(watched.lastInteractionAt, new Date(t0).toISOString()); // presence unchanged
+  });
+});
+
 test('persona: chat while sulking returns to happy; streak counts consecutive days', async () => {
   await withHome(async (home) => {
     const t0 = Date.parse('2026-11-01T10:00:00Z');

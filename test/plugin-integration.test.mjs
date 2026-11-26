@@ -126,7 +126,7 @@ test('plugin-integration: registers tools, systemPrompt, ctx.soulmate service, a
     assert.ok(registeredTools.has('soulmate_video_surf'));
     assert.ok(registeredTools.has('soulmate_im_send'));
     assert.ok(registeredTools.has('soulmate_im_manage'));
-    assert.equal(registeredTools.size, 22, '10 v1 + bili_manage + bili_action + 2 trust + weather + 7 official-qq tools');
+    assert.equal(registeredTools.size, 23, '10 v1 + bili_manage + bili_action + video_consent + 2 trust + weather + 7 official-qq tools');
     assert.ok(registeredTools.has('soulmate_bili_action'));
     assert.ok(registeredTools.has('soulmate_memory_promise'));
     assert.ok(registeredTools.has('soulmate_memory_resolve_conflict'));

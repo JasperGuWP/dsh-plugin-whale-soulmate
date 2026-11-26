@@ -341,7 +341,7 @@ export function apply(ctx, config = {}) {
     petWindowStatus: () => (petWindow ? petWindow.status() : null),
     neuronWindow,
     evolvePersona: memory.evolvePersona,
-    video: { videoWatch: toolSet.videoWatch, videoSurf: toolSet.videoSurf, videoShare: toolSet.videoShare, biliAuthManage: toolSet.biliAuthManage },
+    video: { videoWatch: toolSet.videoWatch, videoSurf: toolSet.videoSurf, videoShare: toolSet.videoShare, videoConsent: toolSet.videoConsent, biliAuthManage: toolSet.biliAuthManage },
     imNet: toolSet.imNet,
   });
 

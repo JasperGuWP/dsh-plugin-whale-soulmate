@@ -29,6 +29,17 @@ function surfSourceLabel(entry) {
   return map[src] || ''
 }
 
+/** ISO UTC → local wall-clock stamp. Cards used to slice the UTC string, so an
+ *  18:16 local watch showed as 10:16 and the user read it as a different day/time. */
+function localStamp(at) {
+  if (!at) return ''
+  const d = new Date(String(at))
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' '
+    + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds())
+}
+
 function openShotFromStill(still) {
   if (!still) return null
   if (typeof still === 'string') return { kind: 'image', url: still }
@@ -126,7 +137,7 @@ function SurfLightbox({ shot, onClose, onDelete, actionLine }) {
         h('header', { key: 'h', className: 'sm-surf-detail-head' }, [
           h('strong', { key: 't' }, entry.title || entry.videoId || '冲浪详情'),
           h('span', { key: 'm', className: 'sm-panel-muted' },
-            [surfSourceLabel(entry), entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', entry.at ? String(entry.at).slice(0, 19).replace('T', ' ') : '']
+            [surfSourceLabel(entry), entry.author ? '@' + entry.author : '', entry.worthScore != null ? '评分 ' + entry.worthScore + '/20' : '', localStamp(entry.at)]
               .filter(Boolean).join(' · ')),
         ]),
         h('pre', { key: 'sum', className: 'sm-surf-detail-summary' }, summary),
@@ -258,4 +269,4 @@ function SurfLightbox({ shot, onClose, onDelete, actionLine }) {
   ])
 }
 
-module.exports = { SurfLightbox, StillThumb, stillUrl, cssUrl, openShotFromStill, surfSourceLabel }
+module.exports = { SurfLightbox, StillThumb, stillUrl, cssUrl, openShotFromStill, surfSourceLabel, localStamp }

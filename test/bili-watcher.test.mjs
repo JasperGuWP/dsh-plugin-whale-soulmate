@@ -589,10 +589,12 @@ test('watchAndRecordVideo: grows a fact neuron, writes both diaries, hangs the c
     assert.equal(memento.url, `https://www.bilibili.com/video/${BV_GOOD}/`);
     assert.ok(memento.createdAt);
 
-    // mood & affinity (chat = +5)
+    // mood & affinity (chat = +5) — but this is HER viewing, not him speaking:
+    // presence (lastInteractionAt / interactionCount) must not move.
     const after = await service.getState();
     assert.equal(after.affinity, before.affinity + 5);
-    assert.equal(after.interactionCount, before.interactionCount + 1);
+    assert.equal(after.interactionCount, before.interactionCount);
+    assert.equal(after.lastInteractionAt, before.lastInteractionAt);
 
     // seen ledger
     const ledger = JSON.parse(await readFile(seenLedgerPath(service.home), 'utf8'));
@@ -636,7 +638,7 @@ test('plugin wiring: soulmate_video_watch tool, POST /video-watch route and the 
   await withEnv(allVideos(), { search: [{ bvid: BV_B, title: '独立开发' }] }, async ({ service, registeredTools, routes }) => {
     const summary = await service.getState();
     assert.ok(summary);
-    assert.equal(registeredTools.size, 22, '10 v1 + bili_manage + bili_action + 2 trust + weather + 7 official-qq tools');
+    assert.equal(registeredTools.size, 23, '10 v1 + bili_manage + bili_action + video_consent + 2 trust + weather + 7 official-qq tools');
     assert.ok(registeredTools.has('soulmate_bili_manage'), 'bili auth manage tool registered');
     assert.ok(registeredTools.has('soulmate_memory_promise'), 'v3 promise tool registered');
     assert.ok(registeredTools.has('soulmate_memory_resolve_conflict'), 'v3 conflict tool registered');
@@ -1069,6 +1071,10 @@ test('watchAndRecordVideo: 细看裁决 — agent 判 deep 且初扫没看够 �
     assert.equal(res.digest.deepJudge.via, 'agent');
     assert.match(res.digest.takeaway, /细看裁决：硬核长片/);
     assert.match(res.digest.takeaway, /已按人设认真看完第二遍/);
+    assert.ok(
+      res.digest.takeaway.indexOf('细看裁决：') < res.digest.takeaway.indexOf('观感：'),
+      'judge note sits before 观感, not inside it',
+    );
     assert.equal(res.digest.channels.deepJudge, 'ok:agent');
     // 二刷后的记录只写一份（fact/日志不重复）
     const { listSurfLog } = await import('../packages/soulmate-core/surf-log.mjs');

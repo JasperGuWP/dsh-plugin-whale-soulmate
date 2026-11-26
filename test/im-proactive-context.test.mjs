@@ -89,6 +89,8 @@ test('im prompt: grounded context blocks, autonomy preserved, fabrication and fa
   assert.match(prompt, /不得编造发生过的事件/);
   assert.match(prompt, /假 at/);
   assert.match(prompt, /7 分钟前/);
+  assert.match(prompt, /时间纪律/);
+  assert.match(prompt, /刚看完\/刚啃完/); // yesterday's find may not be sold as "just finished"
   assert.match(prompt, /不发/);
 });
 
@@ -98,7 +100,7 @@ test('im prompt: empty conversation says so honestly instead of inventing recent
     context: { recent: '', dm: '', memory: '', material: '', lastActivity: '' },
     persona: {},
   });
-  assert.match(prompt, /还没有任何聊天记录/);
+  assert.match(prompt, /还没开过口/);
   assert.match(prompt, /不得编造发生过的事件/);
 });
 
@@ -119,6 +121,7 @@ test('proactive context + star: group and owner DM both fed, send refreshes one 
     await appendImChat(home, { platform: 'qq', peerId: GROUP, groupId: GROUP, role: 'bot', text: '起来，把虾剥了。', at: '2026-11-25T07:53:23Z' });
     await appendImChat(home, { platform: 'qq', peerId: OWNER, role: 'user', senderId: OWNER, text: '你下次什么时候主动发消息', at: '2026-11-25T05:37:11Z' });
     await appendSurfLog(home, { videoId: 'BV1x', title: '装机翻车合集', summary: '供电接反主板冒烟', at: '2026-11-25T06:00:00Z' });
+    await appendSurfLog(home, { videoId: 'BV1y', title: '昨天的AI产业视频', summary: '65 分钟长片', at: '2026-11-24T10:16:55Z' });
 
     const ctx = await composeImProactiveContext(home, {
       target: { platform: 'qq', to: GROUP, groupId: GROUP },
@@ -130,8 +133,13 @@ test('proactive context + star: group and owner DM both fed, send refreshes one 
     assert.match(ctx.recent, /我：起来，把虾剥了/);
     assert.match(ctx.dm, /你下次什么时候主动发消息/);
     assert.match(ctx.material, /装机翻车合集/);
+    // Every find carries WHEN it happened — a 16-hour-old video must never read as "刚看完".
+    assert.match(ctx.material, /今天 14:00/);
+    assert.match(ctx.material, /小时前看的/);
+    // A video watched yesterday evening (still inside the 24h window) is labelled 昨天.
+    assert.match(ctx.material, /昨天的AI产业视频》（昨天 18:16/);
     assert.match(ctx.memory, /他此刻记得/);
-    assert.equal(ctx.lastActivity, '7 分钟前');
+    assert.equal(ctx.lastActivity, '8 分钟前'); // HIS last line, not her bot reply 7 min ago
 
     // DM target: the DM thread is the recent block, no duplicate dm section.
     const dmCtx = await composeImProactiveContext(home, {

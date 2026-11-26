@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import {
   appendEngagePhrase,
   composeVisionTimelineSummary,
+  composeLongOverview,
   evenIndices,
   formatVisionTakeaway,
   materializeVisionImages,
@@ -15,6 +16,7 @@ import {
   pickVisionFrames,
   resolveLiveFrameDiskPath,
   sampleTimes,
+  thinChapters,
   visionResponseLooksBlind,
 } from '../packages/soulmate-bili/vision-summary.mjs';
 
@@ -200,14 +202,16 @@ test('vision prompts carry persona voice and ask for a whole-video opinionated �
   assert.ok(p.includes('以当前人设的身份'));
   assert.ok(p.includes('【你的性格（只影响观感措辞）】'));
   assert.ok(p.includes('吐槽犀利'));
-  assert.match(p, /观感：<2–3 句/);
-  assert.match(p, /评价这支视频的内容本身/);
+  assert.match(p, /观感：<不超过 500 字/);
+  assert.match(p, /按【类型：/);
+  assert.match(p, /不要复述时间线/);
+  assert.match(p, /侧重点|落在具体内容上/);
   assert.match(p, /不要评镜头/);
   const plain = buildVisionPrompt({ title: 'T', frames: [] });
   assert.ok(!plain.includes('【你的性格'), '无人设时不加性格块');
   const f = buildTextFallbackPrompt({ title: 'T' }, { persona: voice });
   assert.ok(f.includes('【你的性格（只影响观感措辞）】'));
-  assert.match(f, /观感:<2–3 句/);
+  assert.match(f, /观感[:：]<不超过 500 字/);
 });
 
 test('parseVisionTimelineText keeps multi-line 观感 and compose passes persona through', async () => {
@@ -299,4 +303,62 @@ test('composeVisionTimelineSummary: 分批中间一批失败 → 其余批保留
   assert.equal(fallback.ok, true);
   assert.equal(fallback.channel, 'ok:text-only');
   assert.equal(fallback.fallback, 'text-infer');
+});
+
+test('parse: the type-aware 「（按【类型…】切章）」 header is not a chapter', () => {
+  const parsed = parseVisionTimelineText(
+    '总览：x\n时间线（按【类型：剧情/短剧】切章）：\n· （按【类型：剧情/短剧】切章）：\n· 00:00–00:30 开场：y\n观感：z'
+  );
+  assert.equal(parsed.chapters.length, 1);
+  assert.match(parsed.chapters[0].text, /开场/);
+});
+
+test('compose: multi-batch overview spans all batches and chapter thinning keeps the tail', async () => {
+  const live = Array.from({ length: 7 * 16 }, (_, i) => ({ tSec: i * 83, url: `https://example.test/l${i}.jpg` }));
+  let calls = 0;
+  let synthCalls = 0;
+  const res = await composeVisionTimelineSummary({
+    digest: { title: '末日丧尸第1季+第2季完整版合集', durationSec: 153 * 60, worthScore: 19, liveFrameStills: live },
+    visionSummarize: async ({ prompt }) => {
+      if (String(prompt).includes('全片总览')) {
+        synthCalls += 1;
+        return { text: '全片从末日开智讲到尸潮决战，双季完整收束。' };
+      }
+      calls += 1;
+      const n = calls;
+      const lines = [`总览：第${n}段自己的概览`, '时间线（按【类型：剧情/短剧】切章）：'];
+      for (let k = 0; k < 4; k += 1) {
+        lines.push(`· ${String(n).padStart(2, '0')}:0${k}–${String(n).padStart(2, '0')}:1${k} 第${n}批章${k + 1}：要点`);
+      }
+      lines.push('观感：整片不错。');
+      return { text: lines.join('\n') };
+    },
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.batches.total, 7);
+  assert.equal(calls, 7);
+  assert.equal(synthCalls, 1);
+  assert.match(res.takeaway, /全片从末日开智讲到尸潮决战/);
+  assert.doesNotMatch(res.takeaway, /本片分 7 段/);
+  // 28 chapters thin to 21, but the final batch's last chapter must survive.
+  assert.match(res.takeaway, /第7批章4/);
+  assert.doesNotMatch(res.takeaway, /按【类型/);
+});
+
+test('thinChapters keeps first and last when thinning', () => {
+  const list = Array.from({ length: 30 }, (_, i) => ({ text: `c${i + 1}` }));
+  const out = thinChapters(list, 10);
+  assert.equal(out.length, 10);
+  assert.equal(out[0].text, 'c1');
+  assert.equal(out[out.length - 1].text, 'c30');
+});
+
+test('composeLongOverview: long films get opening/middle/ending, not a 10-batch chain', () => {
+  const bits = Array.from({ length: 10 }, (_, i) => `第${i + 1}批：这批从第${i + 1}段讲起`);
+  const out = composeLongOverview(bits, 10);
+  assert.match(out, /本片共 10 段：开场/);
+  assert.match(out, /中段/);
+  assert.match(out, /收尾/);
+  assert.ok(out.length < 250);
+  assert.doesNotMatch(out, /第2批/);
 });
